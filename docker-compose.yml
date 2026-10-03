@@ -1,0 +1,117 @@
+# ════════════════════════════════════════════════════════════════════
+# Déploiement Dokploy (type : Compose)
+#
+# Dokploy fournit Traefik + Let's Encrypt : on n'expose donc PAS 80/443 et
+# on ne met pas de reverse-proxy ici. Le service `web` est joint au réseau
+# externe `dokploy-network` ; on attribue le domaine dans l'onglet "Domains"
+# de Dokploy (service: web, port: 3000). Les labels Traefik ci-dessous sont
+# une alternative si tu préfères router à la main.
+#
+# Variables : à définir dans Dokploy → onglet "Environment" (écrit le .env).
+# ════════════════════════════════════════════════════════════════════
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    # Plugin d'auth natif : évite d'ajouter une dépendance crypto côté drivers.
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Migrations jouées uniquement au premier démarrage (volume vierge)
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      # Laisse le temps à MySQL d'initialiser la base + jouer les migrations au 1er boot
+      start_period: 90s
+
+  searxng:
+    # Image construite depuis searxng/ : settings.yml y est embarqué (un montage relatif n'est pas appliqué par Dokploy).
+    # Après une modification de searxng/settings.yml : redéployer avec reconstruction de l'image.
+    build: ./searxng
+    restart: unless-stopped
+    environment:
+      # Obligatoire : le déploiement échoue avec ce message si la variable manque (sinon secret vide).
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET manquant (onglet Environment de Dokploy)}
+      SEARXNG_BASE_URL: http://searxng:8080/
+    volumes:
+      - searxng_cache:/var/cache/searxng
+    networks: [internal]
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [internal, dokploy-network]
+    expose:
+      - "3000"
+    healthcheck:
+      # 127.0.0.1 (IPv4) et pas localhost : Next écoute en IPv4, localhost peut
+      # résoudre en IPv6 (::1) -> faux négatif.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/robots.txt >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      # HTTP (port 80) -> redirige vers HTTPS
+      - traefik.http.routers.prospection-web.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.prospection-web.entrypoints=web
+      - traefik.http.routers.prospection-web.middlewares=prospection-redirect
+      - traefik.http.middlewares.prospection-redirect.redirectscheme.scheme=https
+      # HTTPS (port 443) + certificat Let's Encrypt
+      - traefik.http.routers.prospection-secure.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.prospection-secure.entrypoints=websecure
+      - traefik.http.routers.prospection-secure.tls.certresolver=letsencrypt
+      - traefik.http.routers.prospection-secure.service=prospection-web
+      - traefik.http.services.prospection-web.loadbalancer.server.port=3000
+
+  worker:
+    # Contexte = racine du dépôt pour embarquer db/updates dans l'image.
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Paris
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [internal]
+    volumes:
+      - worker_logs:/app/logs
+      # Pas de bind mount pour db/ : les migrations sont embarquées dans l'image
+      # (un montage relatif n'est pas appliqué par Dokploy).
+    healthcheck:
+      # Base joignable (détail : `python -m worker.healthcheck`) ; une recherche indisponible n'est pas critique, le worker attend et reprend.
+      # Sans effet sur le fonctionnement : sert de signal dans Dokploy / `docker compose ps`.
+      test: ["CMD-SHELL", "python -m worker.healthcheck --quiet"]
+      interval: 10m
+      timeout: 30s
+      retries: 3
+      start_period: 5m
+
+networks:
+  internal:
+  dokploy-network:
+    external: true
+
+volumes:
+  mysql_data:
+  worker_logs:
+  searxng_cache:

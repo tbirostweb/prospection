@@ -1,0 +1,38 @@
+# Configuration SearXNG pour usage API (format JSON activé) — recherche du site officiel des entreprises.
+use_default_settings: true
+
+server:
+  # Pas de secret_key ici : SearXNG le lit dans la variable d'environnement SEARXNG_SECRET (obligatoire, voir docker-compose.yml).
+  limiter: false
+  image_proxy: false
+
+search:
+  # IMPORTANT : json requis par le worker
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true
+
+# Ce fichier est EMBARQUÉ dans l'image (searxng/Dockerfile) : après une modification, redéployer le service searxng AVEC reconstruction.
+# Moteurs web activés explicitement : sur le VPS, seuls brave, duckduckgo et google cse étaient actifs par défaut. Avec 3 moteurs, le budget
+# de requêtes par moteur (LOCAL_ENGINE_DAILY_BUDGET) est vite atteint. Chaque moteur en plus = de la capacité en plus ; un moteur qui bloque
+# (CAPTCHA, 429) est mis en cooldown automatiquement par le worker, sans gêner les autres. Vérifier après déploiement :
+#   docker compose exec worker python -m worker.local.engines
+# mojeek et startpage ne sont PAS listés : les versions récentes de SearXNG les marquent `inactive: true` (CAPTCHA à preuve de travail),
+# ils ne sont donc jamais chargés ; on ne force pas leur activation. « google cse » reste actif par défaut (fermeture prévue le 1er janvier 2027).
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+    paging: true   # le bing.py récent ne déclare plus `paging` → /config dit paging:false et le worker (discover_enabled) l'écarte
+  - name: qwant
+    disabled: false
+  - name: yahoo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: duckduckgo
+    disabled: false

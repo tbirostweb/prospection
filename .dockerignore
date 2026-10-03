@@ -1,0 +1,9 @@
+# Contexte de build racine (utilisé par le service worker, qui a besoin de
+# worker/ ET de db/updates). On exclut ce qui est lourd ou inutile.
+.git
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+.env
+.env.local
