@@ -74,3 +74,15 @@ def test_rotation_garde_les_dernieres_lignes(tmp_path):
     scheduler.trim_logs(tmp_path, keep=5)
     assert f.read_text().splitlines() == [f"l{i}" for i in range(15, 20)]
     assert oct(f.stat().st_mode & 0o777) == "0o640"
+
+
+@pytest.mark.parametrize("setting", [None, "false", "1", "TRUE", "true"])
+def test_retention_requires_explicit_authorization(monkeypatch, setting):
+    if setting is None:
+        monkeypatch.delenv("RETENTION_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("RETENTION_ENABLED", setting)
+    jobs = scheduler.Scheduler().jobs
+    retention = [j for j in jobs if j[1] == ["-m", "worker.local.retention"]]
+    assert bool(retention) is (setting == "true")
+    assert len(jobs) == len(scheduler.JOBS) - (setting != "true")

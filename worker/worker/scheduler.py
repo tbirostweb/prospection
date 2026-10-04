@@ -119,6 +119,9 @@ class Scheduler:
     def __init__(self, jobs=JOBS, log_dir: pathlib.Path = LOG_DIR, popen=subprocess.Popen):
         for expr, _, _ in jobs:
             parse(expr)                                # refuse une planification invalide dès le démarrage
+        # Keep all schedules except retention unless deletion is explicitly authorized.
+        enabled = os.environ.get("RETENTION_ENABLED") == "true"
+        jobs = [job for job in jobs if enabled or job[1] != ["-m", "worker.local.retention"]]
         self.jobs, self.log_dir, self.popen = jobs, log_dir, popen
         self.children: list = []
         self.stopping = False

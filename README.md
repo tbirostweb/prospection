@@ -219,3 +219,7 @@ Au prochain déploiement, le worker joue automatiquement les fichiers pas encore
 ```bash
 python3 scripts/check_migrations.py      # garde-fou (à lancer avant de livrer)
 ```
+
+## Autorisation de rétention
+
+Le job de purge/anonymisation de 04:30 est exclu du planificateur par défaut. `RETENTION_ENABLED=true` le réactive uniquement après autorisation explicite et sauvegarde restaurable ; les autres tâches gardent leurs horaires. Un déploiement seul ne réactive pas ce job.
