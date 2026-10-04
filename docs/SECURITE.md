@@ -75,6 +75,21 @@ api.search.brave.com, api.tavily.com, google.serper.dev, www.googleapis.com (Pag
 tile.openstreetmap.org (fonds de carte), geo.api.gouv.fr (recherche de commune). Stockage local du navigateur : préférence de carte
 (centre/rayon), strictement fonctionnel ; aucun outil de mesure d'audience.
 
+### Inventaire technique vérifié dans le code (faits uniquement)
+
+- **Champs collectés par le worker** (`local_prospects`, migration 015) : SIREN/SIRET, raison sociale, adresse, coordonnées GPS, NAF, forme juridique,
+  effectif, site web, téléphone, e-mail et son type, page source du contact, scores. Le **nom du dirigeant** (personne physique, registre officiel)
+  est enregistré dans `manager_name` (`worker/worker/local/sirene.py`, `store.py`) ; seuls les établissements actifs et diffusables sont retenus.
+- **Telegram** : les alertes contiennent le nom de l'entreprise, l'activité, la ville et des indicateurs ☎/✉ ; le résumé quotidien contient le
+  **numéro de téléphone** du prospect et un lien d'itinéraire (`worker/worker/local/notify.py`, `digest.py`).
+- **E-mail** : aucun envoi applicatif, aucun SMTP configuré ; brouillons ouverts par `mailto:` dans la messagerie de l'utilisateur.
+- **Cookies** : aucun cookie posé par l'application. **Stockage navigateur** : une seule entrée `localStorage` (centre et rayon de la carte, `MapView.tsx`).
+- **Mesure d'audience** : aucune.
+- **Polices** : IBM Plex via `next/font/google`, servies par l'application (CSP `font-src 'self'`).
+- **Licences** : aucun fichier LICENSE dans le dépôt. Dépendances directes web : MIT / Apache-2.0 (`node_modules`) ; Python : httpx BSD-3-Clause, PyMySQL et selectolax MIT.
+  Données cartographiques : attribution OpenStreetMap affichée sur la carte.
+- **Hébergeur du VPS, pays des sous-traitants, base légale, durées retenues** : non déterminables par le code (voir les marqueurs [À FOURNIR] ci-dessus).
+
 ## 6. Preuves à fournir par l'exploitant (hors dépôt)
 
 Pare-feu et ports, SSH (clés, root/mot de passe désactivés, accès de secours), versions OS/Docker, TLS et redirection HTTP→HTTPS,
