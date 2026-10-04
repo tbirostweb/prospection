@@ -24,7 +24,8 @@ def test_message_html_valide_et_echappe():
 
 def test_message_contenu_et_jamais_de_faux_besoin():
     msg = notify.format_prospect(NASTY)
-    assert "71/100" in msg and "À contacter" in msg and "site confirmé (93 %)" in msg and "03 25 12 34 56" in msg and "2,4 km" in msg or "2,3 km" in msg
+    assert "71/100" in msg and "À contacter" in msg and "site confirmé (93 %)" in msg and ("2,4 km" in msg or "2,3 km" in msg)
+    assert "téléphone disponible sur la fiche" in msg and "0325123456" not in msg and "03 25 12 34 56" not in msg   # indicateur, jamais le numéro
     assert "Fiabilité des données : 82/100" in msg and "Prospect à froid" in msg
     assert "cherche" not in msg.lower()                                                   # jamais « cherche un développeur »
 

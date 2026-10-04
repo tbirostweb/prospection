@@ -17,7 +17,7 @@ def test_prospects_travailles_purges_apres_36_mois_sauf_gagnes(env, conn):
     a = _add(conn, "w_old", 48, status="LOST", response_status="NOT_INTERESTED")
     db.execute(conn, f"UPDATE local_prospects SET contacted_at={old}, last_contacted_at={old} WHERE id=%s", (a,))
     b = _add(conn, "w_recent", 48, status="CONTACTED")
-    db.execute(conn, "UPDATE local_prospects SET contacted_at=UTC_TIMESTAMP() - INTERVAL 40 MONTH, last_contacted_at=UTC_TIMESTAMP() - INTERVAL 2 MONTH WHERE id=%s", (b,))
+    db.execute(conn, "UPDATE local_prospects SET contacted_at=UTC_TIMESTAMP() - INTERVAL 40 MONTH, last_prospect_contact_at=UTC_TIMESTAMP() - INTERVAL 2 MONTH WHERE id=%s", (b,))
     _add(conn, "w_won", 60, status="WON", contacted_at="2021-01-01")
     _add(conn, "w_note", 40, status="TO_CONTACT", notes="ancienne note")
     _add(conn, "dnc_old", 40, do_not_contact=1, status="DO_NOT_CONTACT")

@@ -48,7 +48,7 @@ Traitement : entreprises et contacts professionnels issus de sources publiques, 
 | --- | --- | --- |
 | Prospect jamais travaillé | 18 mois après découverte | `worker.local.retention` (quotidien 04:30) |
 | Prospect exclu / écarté | 6 mois | idem |
-| Prospect travaillé (hors « Gagné ») | 36 mois après la dernière activité | idem (`LOCAL_RETENTION_WORKED_MONTHS`) |
+| Prospect travaillé (hors « Gagné ») | 36 mois après la collecte ou la dernière réponse enregistrée du prospect (`last_prospect_contact_at`, voir « Limites de minimisation restantes ») | idem (`LOCAL_RETENTION_WORKED_MONTHS`) |
 | Prospect « Gagné » (client) | **[À FIXER par l'éditeur]** (relation contractuelle) | non purgé automatiquement |
 | Résultats d'apprentissage | anonymisés 36 mois après, si le prospect n'existe plus | idem |
 | Liste « ne plus contacter » | conservée (données minimales nécessaires au respect de l'opposition) | — |
@@ -80,8 +80,9 @@ tile.openstreetmap.org (fonds de carte), geo.api.gouv.fr (recherche de commune).
 - **Champs collectés par le worker** (`local_prospects`, migration 015) : SIREN/SIRET, raison sociale, adresse, coordonnées GPS, NAF, forme juridique,
   effectif, site web, téléphone, e-mail et son type, page source du contact, scores. Le **nom du dirigeant** (personne physique, registre officiel)
   est enregistré dans `manager_name` (`worker/worker/local/sirene.py`, `store.py`) ; seuls les établissements actifs et diffusables sont retenus.
-- **Telegram** : les alertes contiennent le nom de l'entreprise, l'activité, la ville et des indicateurs ☎/✉ ; le résumé quotidien contient le
-  **numéro de téléphone** du prospect et un lien d'itinéraire (`worker/worker/local/notify.py`, `digest.py`).
+- **Telegram** : les alertes prospect contiennent le nom de l'entreprise, l'activité, la ville et des indicateurs « email disponible sur la fiche »
+  / « téléphone disponible sur la fiche », sans l'adresse ni le numéro (`worker/worker/notify.py`) ; le message de veille contient des indicateurs ☎/✉
+  (`worker/worker/local/notify.py`) ; le résumé quotidien contient un indicateur « ☎ appeler », sans le numéro, et un lien d'itinéraire (`worker/worker/digest.py`).
 - **E-mail** : aucun envoi applicatif, aucun SMTP configuré ; brouillons ouverts par `mailto:` dans la messagerie de l'utilisateur.
 - **Cookies** : aucun cookie posé par l'application. **Stockage navigateur** : une seule entrée `localStorage` (centre et rayon de la carte, `MapView.tsx`).
 - **Mesure d'audience** : aucune.
@@ -95,3 +96,18 @@ tile.openstreetmap.org (fonds de carte), geo.api.gouv.fr (recherche de commune).
 Pare-feu et ports, SSH (clés, root/mot de passe désactivés, accès de secours), versions OS/Docker, TLS et redirection HTTP→HTTPS,
 sauvegardes chiffrées hors hôte et **restauration testée** (RPO/RTO), privilèges du compte MySQL applicatif (limité à sa base),
 limites CPU/RAM, supervision et alertes reçues. Commandes de contrôle : `scripts/vps_check.sh` et l'annexe d'infrastructure de l'audit.
+
+### Limites de minimisation restantes
+
+Les règles de 18 mois (jamais travaillé) et 6 mois (exclu / écarté) partent de `discovered_at`. La règle de 36 mois des prospects travaillés
+part de `LAST_ACTIVITY` (`worker/worker/local/retention.py`) = la plus récente de `discovered_at` et `last_prospect_contact_at`. Cette colonne
+(migration additive `db/updates/024_prospect_contact_retention.sql`) est horodatée par l'API quand une réponse entrante est saisie
+(`REPLIED`, `INTERESTED`, `NOT_INTERESTED`, `WON`) ; relances, brouillons et notes internes ne repoussent plus l'échéance. Les réponses
+antérieures à la migration n'ont pas de date fiable : la colonne reste NULL (aucune date reconstituée) et l'échéance repart de la collecte,
+ce qui peut purger un prospect travaillé collecté il y a plus de 36 mois même s'il a répondu avant la migration. Ressaisir la réponse
+avant le premier passage de la purge si ce cas existe. Une ressaisie de la même réponse remet l'horodatage à la date du jour.
+`local_prospects` n'a pas de colonne `updated_at` ; l'anonymisation de `local_outcomes` part toujours d'une date interne
+(`COALESCE(contacted_at, updated_at)`). Ce n'est donc PAS une mise en conformité démontrée. Aucune purge n'a été lancée
+sur une base réelle lors de cette correction locale.
+
+Leaflet reste chargé depuis cdnjs avec SRI : aucune dépendance Leaflet locale n’est disponible dans le projet. Son auto-hébergement reste à réaliser avec une version et une licence conservées. Les tuiles OpenStreetMap restent un service externe distinct.

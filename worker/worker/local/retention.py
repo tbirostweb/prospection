@@ -6,7 +6,7 @@
     (s'il existe toujours, une campagne le retrouvera à jour) ;
   * prospect exclu ou écarté (chaîne, agence web, SCI, radiation…) : supprimé après 6 mois ;
   * prospect TRAVAILLÉ (contacté, noté, brouillon, écarté, « ne plus contacter »…) sans aucune activité depuis 36 mois : supprimé
-    (repère CNIL pour la prospection : 3 ans à compter du dernier contact) — SAUF les prospects « Gagné » (relation client :
+    (collecte ou dernier contact entrant enregistré, jamais une relance interne) — SAUF les prospects « Gagné » (relation client :
     durée à fixer par l'éditeur, voir docs/SECURITE.md) ;
   * résultats d'apprentissage (`local_outcomes`) dont le prospect n'existe plus et datant de plus de 36 mois : ANONYMISÉS
     (identifiant SIRET remplacé par une clé aléatoire ; seules restent activité, ville, signaux et issue, pour les statistiques) ;
@@ -28,8 +28,8 @@ MONTHS = int(os.getenv("LOCAL_RETENTION_MONTHS", "18"))
 EXCLUDED_MONTHS = int(os.getenv("LOCAL_RETENTION_EXCLUDED_MONTHS", "6"))
 WORKED_MONTHS = int(os.getenv("LOCAL_RETENTION_WORKED_MONTHS", "36"))
 # Dernière activité connue d'un prospect (chaque date absente est remplacée par la découverte).
-LAST_ACTIVITY = """GREATEST(discovered_at, COALESCE(contacted_at, discovered_at), COALESCE(last_contacted_at, discovered_at),
-                            COALESCE(last_followup_at, discovered_at), COALESCE(draft_created_at, discovered_at))"""
+# Une relance ou une note interne ne redémarre jamais la durée de prospection.
+LAST_ACTIVITY = "GREATEST(discovered_at, COALESCE(last_prospect_contact_at, discovered_at))"
 UNTOUCHED = """status IN ('DISCOVERED','ENRICHED','AUDITED','QUALIFIED') AND contacted_at IS NULL AND response_status IS NULL
                AND (notes IS NULL OR notes = '') AND draft_created_at IS NULL AND do_not_contact = 0"""
 

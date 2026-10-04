@@ -23,10 +23,6 @@ def _name(r: dict) -> str:
     return (r.get("trade_name") or r.get("company_name") or "").strip().title()
 
 
-def _phone(r: dict) -> str:
-    return " ".join(r["phone"][i:i + 2] for i in range(0, len(r["phone"]), 2)) if r.get("phone") else ""
-
-
 def daily() -> None:
     """Le matin : 🔁 relances du jour, ⭐ les 3 meilleurs prospects à contacter, 🗺️ la tournée proposée. Rien n'est envoyé aux prospects."""
     with db.connect() as conn:
@@ -39,7 +35,7 @@ def daily() -> None:
     if due:
         lines.append(f"\n🔁 <b>Relances du jour ({len(due)})</b>")
         for r in due[:6]:
-            how = f"☎ {_phone(r)} · {today.best_time(r['activity_key'])}" if r.get("phone") else ("✉ par e-mail" if r.get("email") else "")
+            how = f"☎ appeler · {today.best_time(r['activity_key'])}" if r.get("phone") else ("✉ par e-mail" if r.get("email") else "")
             page = _link(f"/local/{r['id']}", _name(r))
             lines.append(f"• {page} — {notify.esc(r['due'])}" + (f"\n   {notify.esc(how)}" if how else ""))
         if len(due) > 6:
@@ -47,7 +43,7 @@ def daily() -> None:
     if top:
         lines.append("\n⭐ <b>Les 3 meilleurs à contacter</b>")
         for r in top:
-            how = f"☎ {_phone(r)} · {today.best_time(r['activity_key'])}" if r.get("phone") else ("✉ e-mail" if r.get("email") else "passer sur place")
+            how = f"☎ appeler · {today.best_time(r['activity_key'])}" if r.get("phone") else ("✉ e-mail" if r.get("email") else "passer sur place")
             page, city = _link(f"/local/{r['id']}", _name(r)), notify.esc((r["city"] or "").title())
             lines.append(f"• {page} ({city}) — {r['prospect_score']}/100"
                          + (f"\n   {notify.esc(r['signal'])}" if r.get("signal") else "") + f"\n   {notify.esc(how)}")

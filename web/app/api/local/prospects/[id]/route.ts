@@ -80,7 +80,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   if (b.response_status !== undefined) {
     if (!RESPONSES.includes(b.response_status)) return NextResponse.json({ error: "réponse invalide" }, { status: 400 });
-    await query("UPDATE local_prospects SET response_status=? WHERE id=?", [b.response_status || null, id]);
+    await query("UPDATE local_prospects SET response_status=?, last_prospect_contact_at=IF(? IN ('REPLIED','INTERESTED','NOT_INTERESTED','WON'), UTC_TIMESTAMP(), last_prospect_contact_at) WHERE id=?", [b.response_status || null, b.response_status || null, id]);
   }
   if (b.draft_message !== undefined || b.draft_subject !== undefined) {
     if (p.do_not_contact && b.draft_message !== null) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });

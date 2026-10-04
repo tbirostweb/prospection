@@ -76,10 +76,6 @@ def send_text(text: str, disable_preview: bool = True, reply_markup: dict | None
     return ok
 
 
-def _phone(p: str | None) -> str:
-    return " ".join(p[i:i + 2] for i in range(0, len(p), 2)) if p and len(p) == 10 else (p or "")
-
-
 def format_prospect(p: dict, issues: list[dict] | None = None, summary: list[str] | None = None) -> str:
     """Message d'alerte : qui, où, site + confiance, pourquoi, problèmes objectifs, contact. Jamais « cherche un développeur » : c'est un prospect à froid."""
     name = (p.get("trade_name") or p.get("company_name") or "").strip().title()
@@ -98,7 +94,7 @@ def format_prospect(p: dict, issues: list[dict] | None = None, summary: list[str
     bad = [i["label"] for i in (issues or []) if i.get("severity") in ("high", "medium")][:2]
     if bad:
         lines.append("⚠ " + esc(" · ".join(bad)))
-    contact = [x for x in (p.get("email"), _phone(p.get("phone")), "formulaire de contact" if p.get("contact_form") else None) if x]
+    contact = [x for x in ("email disponible sur la fiche" if p.get("email") else None, "téléphone disponible sur la fiche" if p.get("phone") else None, "formulaire de contact" if p.get("contact_form") else None) if x]
     lines.append("📇 " + (esc(" · ".join(contact)) if contact else "aucune coordonnée trouvée"))
     if p.get("data_confidence_score") is not None:
         lines.append(f"Fiabilité des données : {int(p['data_confidence_score'])}/100")

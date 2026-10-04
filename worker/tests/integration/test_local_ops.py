@@ -96,7 +96,8 @@ def test_resume_du_matin_relances_dues_meilleurs_et_tournee(env, conn, monkeypat
     monkeypatch.setattr(today, "followups", lambda c: due)
     digest.daily()
     text = telegram.texts[-1]
-    assert "Relances du jour (2)" in text and "☎ 03 25 00 00 00 · tôt (7 h 30" in text and "Couverture D" in text
+    assert "Relances du jour (2)" in text and "☎ appeler · tôt (7 h 30" in text and "Couverture D" in text
+    assert "0325000000" not in text and "03 25 00 00 00" not in text and "0325111111" not in text and "03 25 11 11 11" not in text   # jamais le numéro
     assert "Chaine E" not in text and "Pas Bon F" not in text and "Incomplet G" not in text
 
 
