@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query, queryOne } from "@/lib/db";
+import { query, queryOne, transaction } from "@/lib/db";
+import { readJson, routeId } from "@/lib/api";
 import { DISLIKE_REASONS, MANUAL_STATUSES } from "@/lib/local";
 
 const RESPONSES = ["", "REPLIED", "INTERESTED", "NOT_INTERESTED", "NO_ANSWER", "NOT_A_FIT", "WON"];
 
 /** Suivi commercial d'un prospect : statut, réponse, notes, « ne plus contacter ». Aucun envoi automatique, jamais. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const b = await req.json();
+  const r = await routeId(params);
+  if ("error" in r) return r.error;
+  const { id } = r;
+  const parsed = await readJson(req);
+  if ("error" in parsed) return parsed.error;
+  const b = parsed.body;
   const p = await queryOne<any>("SELECT * FROM local_prospects WHERE id=?", [id]);
   if (!p) return NextResponse.json({ error: "prospect introuvable" }, { status: 404 });
 
@@ -60,9 +65,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (b.status === "DO_NOT_CONTACT") {
       let domain: string | null = null;
       try { domain = p.website_url ? new URL(p.website_url).hostname.replace(/^www\./, "") : null; } catch { /* URL illisible */ }
-      await query("INSERT INTO local_do_not_contact (siret, siren, domain, email, reason) VALUES (?,?,?,?,?)",
-        [p.siret, p.siren, domain, p.email, String(b.reason ?? "demande de ne plus être contacté").slice(0, 255)]);
-      await query("UPDATE local_prospects SET do_not_contact=1, status='DO_NOT_CONTACT' WHERE id=?", [id]);
+      // Tout ou rien : l'opposition et le statut sont enregistrés ensemble (jamais d'état partiel).
+      await transaction(async (q) => {
+        await q("INSERT INTO local_do_not_contact (siret, siren, domain, email, reason) VALUES (?,?,?,?,?)",
+          [p.siret, p.siren, domain, p.email, String(b.reason ?? "demande de ne plus être contacté").slice(0, 255)]);
+        await q("UPDATE local_prospects SET do_not_contact=1, status='DO_NOT_CONTACT' WHERE id=?", [id]);
+      });
     } else {
       await query(`UPDATE local_prospects SET status=?,
                    followups = IF(? = 'CONTACTED' AND contacted_at IS NULL, 0, followups),
@@ -75,6 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await query("UPDATE local_prospects SET response_status=? WHERE id=?", [b.response_status || null, id]);
   }
   if (b.draft_message !== undefined || b.draft_subject !== undefined) {
+    if (p.do_not_contact && b.draft_message !== null) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
     if (b.draft_message === null) await query("UPDATE local_prospects SET draft_message=NULL, draft_subject=NULL, draft_created_at=NULL WHERE id=?", [id]);
     else await query("UPDATE local_prospects SET draft_subject=?, draft_message=? WHERE id=?", [String(b.draft_subject ?? "").slice(0, 200), String(b.draft_message ?? "").slice(0, 10000), id]);
   }

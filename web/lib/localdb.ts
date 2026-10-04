@@ -27,5 +27,6 @@ export async function getSetting<T>(key: string, fallback: T): Promise<T> {
 
 /** Une requête qui échoue (table absente avant migration…) ne doit pas faire tomber la page. */
 export async function safeRows<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-  try { return await query<T>(sql, params); } catch (e) { console.error("[local]", e); return []; }
+  // Journal minimal : code d'erreur seulement (le texte d'une erreur MySQL peut contenir des valeurs de la requête, donc des données personnelles).
+  try { return await query<T>(sql, params); } catch (e: any) { console.error("[local] requête en échec :", e?.code ?? "erreur", e?.errno ?? ""); return []; }
 }

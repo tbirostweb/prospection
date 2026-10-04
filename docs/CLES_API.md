@@ -90,8 +90,8 @@ fichier `.env` que les deux lisent).
    ```
 4. **Save**, puis **Deploy** (redéployer). Les variables ne sont lues qu'à la création des conteneurs : un simple redémarrage ne suffit pas.
 
-> **Le préfixe `LOCAL_` est obligatoire pour les clés de recherche.** Les tâches du worker tournent par cron et `worker/entrypoint.sh` ne leur
-> transmet que : `DATABASE_URL`, `SEARXNG_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `APP_URL`, `TZ`, `LOG_LEVEL`, `MIGRATIONS_DIR`,
+> **Le préfixe `LOCAL_` est obligatoire pour les clés de recherche.** Les tâches du worker sont lancées par le planificateur `worker/scheduler.py`, qui ne leur
+> transmet que : `DATABASE_URL`, `SEARXNG_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_ALLOWED_USER_IDS`, `APP_URL`, `TZ`, `LOG_LEVEL`, `MIGRATIONS_DIR`,
 > `PAGESPEED_API_KEY` et toutes les variables commençant par `LOCAL_`. Une variable nommée `SERPER_API_KEY` ou `BRAVE_API_KEY` serait
 > **ignorée sans aucun message**.
 

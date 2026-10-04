@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
+import { readJson } from "@/lib/api";
 
 // Remise à zéro des entreprises trouvées. L'application ne supprime rien elle-même : elle POSE une demande que le worker exécute
 // dans la minute, sous son verrou (jamais au milieu d'un passage de campagne). « Ne plus contacter », « mauvais sites »,
@@ -25,7 +26,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const parsed = await readJson(req);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.body;
   if (body?.confirm !== "EFFACER") return NextResponse.json({ error: "Confirmation manquante" }, { status: 400 });
   const user = await queryOne<any>("SELECT id FROM users ORDER BY id LIMIT 1");
   if (!user) return NextResponse.json({ error: "no user" }, { status: 404 });

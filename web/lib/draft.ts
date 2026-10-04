@@ -4,7 +4,21 @@
 
 import { siteSearched, verifiedSocials } from "./local";
 
-export interface Sender { name?: string; company?: string; role?: string; phone?: string; email?: string; website?: string; pitch?: string }
+export interface Sender { name?: string; company?: string; role?: string; phone?: string; email?: string; website?: string; pitch?: string; privacy_url?: string }
+
+/** Marqueurs laissés dans un brouillon quand une information OBLIGATOIRE manque : tant qu'ils sont présents, l'envoi (mailto) est désactivé. */
+export const MISSING_NOTICE = "[LIEN VERS VOTRE NOTICE D'INFORMATION À RENSEIGNER DANS RÉGLAGES]";
+export const MISSING_NAME = "[Votre prénom et nom]";
+export const draftIncomplete = (text: string | null | undefined) => !!text && (text.includes(MISSING_NOTICE) || text.includes(MISSING_NAME));
+
+/** Information des personnes dont les coordonnées n'ont pas été collectées auprès d'elles (art. 14 RGPD) : source + lien vers la notice. */
+export function informationNotice(p: any, sender: Sender = {}): string {
+  let source = "";
+  try { source = p.contact_source_url ? new URL(p.contact_source_url).hostname.replace(/^www\./, "") : ""; } catch { /* URL illisible */ }
+  const origin = source ? `de sources publiques (notamment ${source})` : "de sources publiques (annuaires officiels des entreprises, site internet)";
+  const url = sender.privacy_url?.trim() || MISSING_NOTICE;
+  return `Vos coordonnées professionnelles proviennent ${origin}. Pour savoir comment elles sont utilisées et exercer vos droits (accès, rectification, effacement, opposition) : ${url}`;
+}
 export interface Draft { subject: string; body: string; facts: string[]; kind: string }
 
 export const ISSUE_PHRASES: Record<string, string> = {
@@ -96,12 +110,12 @@ export function buildDraft(p: any, sender: Sender = {}): Draft | null {
         ? "Je peux vous aider à le remettre en ligne rapidement, et si besoin à le moderniser pour qu'il soit trouvé et consultable sur téléphone."
         : "Je peux corriger ces points, ou vous proposer une version plus moderne de votre site, selon ce qui a du sens pour vous.");
   const list = kind === "site_ameliorable" ? "\n" + facts.map((f) => `- ${f}`).join("\n") : "";
-  const signature = [sender.name || "[Votre prénom et nom]", sender.company, sender.phone, sender.email, sender.website].filter(Boolean).join("\n");
+  const signature = [sender.name || MISSING_NAME, sender.company, sender.phone, sender.email, sender.website].filter(Boolean).join("\n");
   const hello = p.manager_name ? `Bonjour ${p.manager_name},` : "Bonjour,";
   const body = `${hello}\n\n${first}${list}\n\nJe suis ${who || "développeur web indépendant"}. ${pitch}\n\n`
     + "Seriez-vous d'accord pour un échange de 10 minutes, sans engagement ? Je peux aussi vous envoyer quelques exemples de réalisations.\n\n"
     + "Si vous ne souhaitez pas être recontacté(e), dites-le-moi simplement et je ne vous écrirai plus.\n\n"
-    + `Bien cordialement,\n${signature}`;
+    + `Bien cordialement,\n${signature}\n\n--\n${informationNotice(p, sender)}`;
   const subject = kind === "sans_site" ? `${name} : votre présence en ligne${city ? ` à ${city}` : ""}`
     : kind === "site_inaccessible" ? `${name} : votre site semble inaccessible`
     : `${name} : quelques points à améliorer sur votre site`;

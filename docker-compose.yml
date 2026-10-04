@@ -12,7 +12,9 @@
 
 services:
   mysql:
-    image: mysql:8.0
+    # MySQL 8.0 : fin de support annoncée par Oracle (avril 2026) — montée vers 8.4 LTS à planifier AVEC sauvegarde/restauration testée
+    # (voir docs/SECURITE.md). Digest épinglé = version 8.0 la plus récente au 04/10/2026, pour des déploiements reproductibles.
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
     restart: unless-stopped
     # Plugin d'auth natif : évite d'ajouter une dépendance crypto côté drivers.
     command: --default-authentication-plugin=mysql_native_password
@@ -25,7 +27,8 @@ services:
       - mysql_data:/var/lib/mysql
       # Migrations jouées uniquement au premier démarrage (volume vierge)
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
-    networks: [internal]
+    # Réseau interne SANS accès Internet : la base n'est joignable que par web et worker.
+    networks: [db]
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
@@ -45,22 +48,34 @@ services:
       SEARXNG_BASE_URL: http://searxng:8080/
     volumes:
       - searxng_cache:/var/cache/searxng
-    networks: [internal]
+    # Accès Internet (moteurs de recherche) ; aucun accès à la base.
+    networks: [egress]
 
   web:
     build: ./web
     restart: unless-stopped
-    env_file: .env
+    # Moindre privilège : web ne reçoit QUE ses variables (pas le mot de passe root MySQL, ni le jeton Telegram, ni les clés d'API).
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      APP_USER: ${APP_USER}
+      APP_PASSWORD: ${APP_PASSWORD}
+      APP_URL: ${APP_URL:-}
+      AUTH_MAX_FAILURES: ${AUTH_MAX_FAILURES:-}
+      AUTH_BLOCK_MINUTES: ${AUTH_BLOCK_MINUTES:-}
+      LOCAL_ENGINE_DAILY_BUDGET: ${LOCAL_ENGINE_DAILY_BUDGET:-}
     depends_on:
       mysql:
         condition: service_healthy
-    networks: [internal, dokploy-network]
+    networks: [db, dokploy-network]
     expose:
       - "3000"
+    # Processus non root (USER node dans l'image), aucune capacité Linux, pas d'élévation de privilèges.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      # 127.0.0.1 (IPv4) et pas localhost : Next écoute en IPv4, localhost peut
-      # résoudre en IPv6 (::1) -> faux négatif.
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/robots.txt >/dev/null 2>&1 || exit 1"]
+      # Santé réelle : /api/health (base joignable), authentifié avec les identifiants de l'app (web/healthcheck.js).
+      test: ["CMD", "node", "healthcheck.js"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -80,6 +95,19 @@ services:
       - traefik.http.routers.prospection-secure.service=prospection-web
       - traefik.http.services.prospection-web.loadbalancer.server.port=3000
 
+  worker-init:
+    # Tâche ponctuelle : remet le volume des journaux au propriétaire du worker non root (UID 10001), puis s'arrête.
+    # Nécessaire une seule fois pour les volumes créés quand le worker tournait en root ; sans effet ensuite.
+    image: alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+    restart: "no"
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    command: ["sh", "-c", "chown -R 10001:10001 /app/logs && chmod 750 /app/logs"]
+    volumes:
+      - worker_logs:/app/logs
+
   worker:
     # Contexte = racine du dépôt pour embarquer db/updates dans l'image.
     build:
@@ -92,7 +120,14 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    networks: [internal]
+      worker-init:
+        condition: service_completed_successfully
+    # db : base (sans Internet) ; egress : sites, API publiques, SearXNG, Telegram.
+    networks: [db, egress]
+    # Processus non root (USER app, UID 10001), aucune capacité Linux, pas d'élévation de privilèges.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - worker_logs:/app/logs
       # Pas de bind mount pour db/ : les migrations sont embarquées dans l'image
@@ -107,7 +142,9 @@ services:
       start_period: 5m
 
 networks:
-  internal:
+  db:
+    internal: true
+  egress:
   dokploy-network:
     external: true
 

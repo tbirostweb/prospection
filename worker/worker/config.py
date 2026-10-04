@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import traceback
 from urllib.parse import urlparse
@@ -31,11 +32,17 @@ USER_AGENT = env(
 )
 
 
+# Variables dont la VALEUR ne doit jamais apparaître dans un journal (en plus du jeton Telegram et du mot de passe DB).
+SECRET_ENV = re.compile(r"(_API_KEY|_TOKEN|_SECRET|PASSWORD)$")
+
+
 def _secrets() -> list[str]:
-    """Valeurs à ne JAMAIS écrire dans un log (jeton Telegram, mot de passe DB)."""
+    """Valeurs à ne JAMAIS écrire dans un log : jeton Telegram, mot de passe DB, clés d'API (LOCAL_*_API_KEY, PAGESPEED_API_KEY…),
+    mots de passe et secrets présents dans l'environnement. Lu à chaque appel : une variable ajoutée après l'import est couverte."""
     values = [TELEGRAM_BOT_TOKEN, urlparse(DATABASE_URL or "").password]
-    # Seuil de longueur : ne pas masquer une valeur triviale partout dans le texte.
-    return [v for v in values if v and len(v) >= 8]
+    values += [v for k, v in os.environ.items() if SECRET_ENV.search(k)]
+    # Seuil de longueur : ne pas masquer une valeur triviale partout dans le texte. Les plus longues d'abord (sous-chaînes).
+    return sorted({v for v in values if v and len(v) >= 8}, key=len, reverse=True)
 
 
 def redact(text: str) -> str:

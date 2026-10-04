@@ -16,15 +16,18 @@ export default function CampaignPanel({ campaigns, home, presets }: { campaigns:
   const [naf, setNaf] = useState("");
   const [max, setMax] = useState(60);
   const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(campaigns.length === 0);
   const [custom, setCustom] = useState<Preset[]>(presets);
   const [watch, setWatch] = useState(false);
 
   async function create() {
-    setMsg(null);
+    if (busy) return;                                // anti double-clic : une seule campagne par clic
+    setMsg(null); setBusy(true);
     const activities = [...picked, ...naf.split(/[,\s]+/).filter(Boolean)];
     const res = await fetch("/api/local/campaigns", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ city, postal_code: postal, department: dep, radius_km: radius, activities, max_companies: max, watch }) });
+      body: JSON.stringify({ city, postal_code: postal, department: dep, radius_km: radius, activities, max_companies: max, watch }) })
+      .finally(() => setBusy(false));
     if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "Refusé"); return; }
     setPicked([]); setNaf(""); setOpen(false); router.refresh();
   }
@@ -73,7 +76,7 @@ export default function CampaignPanel({ campaigns, home, presets }: { campaigns:
           <label className="check"><input type="checkbox" checked={watch} onChange={(e) => setWatch(e.target.checked)} />
             Prévenir (Telegram) quand une nouvelle entreprise s'installe dans cette zone</label>
           <div className="flex flex-wrap items-center gap-3">
-            <button onClick={create} className="btn-primary btn-sm">Lancer la recherche</button>
+            <button onClick={create} disabled={busy} aria-busy={busy} className="btn-primary btn-sm">{busy ? "Création…" : "Lancer la recherche"}</button>
             {msg && <span className="text-sm text-red-600">{msg}</span>}
           </div>
         </div>

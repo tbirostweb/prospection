@@ -65,3 +65,4 @@ coverage/
 **/outputs/
 **/logs/
 **/backups/
+.test-dist/

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LocalRow, SITE_KIND_CLASS, formatPhone, simpleStatus, siteInfo, verifiedSocials } from "@/lib/local";
+import { safeHref } from "@/lib/security";
 
 const name = (p: LocalRow) => (p.trade_name || p.company_name).replace(/\s+/g, " ");
 /** Badge « a-t-il un site ? » avec le lien quand il y en a un. */
@@ -11,8 +12,8 @@ export function SiteBadge({ p }: { p: LocalRow }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <span className={`border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide ${SITE_KIND_CLASS[s.kind]}`}>{s.label}</span>
-      {s.url && <a href={s.url} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-xs font-medium text-accent underline underline-offset-2 hover:text-ink">
-        {s.url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")} ↗</a>}
+      {safeHref(s.url) && <a href={safeHref(s.url)!} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-xs font-medium text-accent underline underline-offset-2 hover:text-ink">
+        {String(s.url).replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")} ↗</a>}
     </span>
   );
 }
@@ -23,8 +24,8 @@ export function ContactLinks({ p }: { p: LocalRow }) {
   const items = [
     p.phone && <a key="tel" href={`tel:${p.phone}`} className="btn-ghost btn-sm">☎ {formatPhone(p.phone)}</a>,
     p.email && <a key="mail" href={`mailto:${p.email}`} className="btn-ghost btn-sm max-w-full break-all">✉ {p.email}</a>,
-    p.contact_page && <a key="form" href={p.contact_page} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">▤ {p.contact_form ? "Formulaire" : "Page contact"} ↗</a>,
-    ...socials.map((x) => <a key={x.url} href={x.url} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">{x.network} ↗</a>),
+    safeHref(p.contact_page) && <a key="form" href={safeHref(p.contact_page)!} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">▤ {p.contact_form ? "Formulaire" : "Page contact"} ↗</a>,
+    ...socials.filter((x) => safeHref(x.url)).map((x) => <a key={x.url} href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">{x.network} ↗</a>),
   ].filter(Boolean);
   if (!items.length) return <span className="font-mono text-xs uppercase tracking-wide text-muted">Aucun contact trouvé</span>;
   return <div className="flex flex-wrap gap-1.5">{items}</div>;

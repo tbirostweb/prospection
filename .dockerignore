@@ -1,9 +1,31 @@
 # Contexte de build racine (utilisé par le service worker, qui a besoin de
-# worker/ ET de db/updates). On exclut ce qui est lourd ou inutile.
+# worker/ ET de db/updates). On exclut ce qui est lourd, inutile ou sensible.
 .git
+.idea
+.claude
+.agents
 **/node_modules
 **/.next
+**/.test-dist
 **/__pycache__
 **/*.pyc
+**/.venv
+**/venv
+**/.pytest_cache
+# Secrets et données locales : jamais dans le contexte de build
 .env
-.env.local
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.p8
+**/*.sqlite*
+**/*.db
+**/*.dump
+**/*.bak
+**/*.backup
+**/*.sql.gz
+**/*.log
+**/logs/
+**/backups/

@@ -75,7 +75,7 @@ Onglet **Environment** du service (Dokploy écrit un `.env`). Reprends
 |---|---|---|
 | `DOMAIN` | Ton domaine | `prospection.mondomaine.fr` |
 | `APP_USER` | **Login d'accès à l'app** | `theo` |
-| `APP_PASSWORD` | **Mot de passe d'accès** (long) | `xK9…` |
+| `APP_PASSWORD` | **Mot de passe d'accès** (14 caractères minimum, sinon accès refusé) | `xK9…` |
 | `MYSQL_ROOT_PASSWORD` | Mot de passe root MySQL | `…` |
 | `MYSQL_DATABASE` | Nom de la base | `prospection` |
 | `MYSQL_USER` / `MYSQL_PASSWORD` | Compte applicatif MySQL | `prospection` / `…` |

@@ -1,8 +1,23 @@
 node_modules
 .next
+.test-dist
 .git
 npm-debug.log
 Dockerfile
 .dockerignore
+# Secrets et données locales : jamais dans le contexte de build
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.sqlite*
+*.db
+*.dump
+*.bak
+*.backup
+*.log
+**/backups/
+tsconfig.tsbuildinfo

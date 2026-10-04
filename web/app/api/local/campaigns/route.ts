@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { readJson } from "@/lib/api";
 import { LOCAL_ACTIVITIES } from "@/lib/local";
 
 const NAF = /^\d{2}\.\d{2}[A-Z]$/;
@@ -17,7 +18,9 @@ export async function GET() {
 
 /** Crée une campagne « en attente » : le worker la prend au prochain passage (toutes les 15 min). Rien n'est codé en dur. */
 export async function POST(req: NextRequest) {
-  const b = await req.json();
+  const parsed = await readJson(req);
+  if ("error" in parsed) return parsed.error;
+  const b = parsed.body;
   const city = String(b.city ?? "").trim().slice(0, 128);
   const postal = String(b.postal_code ?? "").trim().slice(0, 10);
   const dep = String(b.department ?? "").trim().toUpperCase();
@@ -25,7 +28,7 @@ export async function POST(req: NextRequest) {
   const radius = Number(b.radius_km);
   const max = Math.min(1000, Math.max(10, Number(b.max_companies) || 60));
   const known = new Set(LOCAL_ACTIVITIES.map(([k]) => k));
-  const activities = (Array.isArray(b.activities) ? b.activities : []).map((a: any) => String(a).trim())
+  const activities = (Array.isArray(b.activities) ? b.activities.slice(0, 200) : []).map((a: any) => String(a).trim())
     .filter((a: string) => known.has(a) || NAF.test(a.toUpperCase())).map((a: string) => (known.has(a) ? a : a.toUpperCase()));
   // Depuis la carte : un point (latitude / longitude) remplace la ville — pas de géocodage, pas d'ambiguïté de commune.
   const lat = Number(b.latitude), lon = Number(b.longitude);

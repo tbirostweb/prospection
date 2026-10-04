@@ -170,9 +170,37 @@ def status() -> None:
         conn.close()
 
 
+def pending() -> list[str]:
+    """Migrations présentes dans l'image mais pas encore appliquées en base."""
+    directory = pathlib.Path(MIGRATIONS_DIR)
+    files = sorted(p.name for p in directory.glob("*.sql")) if directory.is_dir() else []
+    conn = pymysql.connect(**_conn_params())
+    try:
+        done = _applied(conn)
+    finally:
+        conn.close()
+    return [f for f in files if f not in done]
+
+
+def check() -> int:
+    """0 si le schéma est à jour, 1 sinon : garde-fou avant de lancer les tâches (jamais de pipeline sur un schéma incomplet)."""
+    try:
+        missing = pending()
+    except Exception as exc:     # noqa: BLE001
+        log.error("[migrate] vérification du schéma impossible : %s", exc)
+        return 1
+    if missing:
+        log.error("[migrate] schéma incomplet : %d migration(s) non appliquée(s) : %s", len(missing), ", ".join(missing))
+        return 1
+    log.info("[migrate] schéma à jour.")
+    return 0
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "status":
         status()
+    elif len(sys.argv) > 1 and sys.argv[1] == "check":
+        sys.exit(check())
     else:
         run()

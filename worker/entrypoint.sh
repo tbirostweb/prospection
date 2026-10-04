@@ -1,42 +1,45 @@
 #!/bin/sh
-set -e
+# Démarrage du worker : migrations (BLOQUANTES), vérification du schéma, recalcul des scores, puis planificateur NON root.
+set -eu
 
-mkdir -p /app/logs
-cd /app
+APP_DIR="${APP_DIR:-/app}"
+LOG_DIR="${LOG_DIR:-$APP_DIR/logs}"
+RUN_AS="${RUN_AS:-app}"
+
+# 0) Lancé en root (cas Docker) : uniquement pour remettre le volume des journaux au bon propriétaire
+#    (volumes existants créés du temps où le worker tournait en root), puis abandon DÉFINITIF des privilèges.
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p "$LOG_DIR"
+  # Seulement si le dossier n'appartient pas encore à $RUN_AS (ancien volume root) : capacité requise CHOWN (puis SETUID/SETGID pour setpriv).
+  if [ "$(stat -c %u "$LOG_DIR")" != "$(id -u "$RUN_AS")" ]; then
+    chown -R "$RUN_AS:$RUN_AS" "$LOG_DIR"
+  fi
+  exec setpriv --reuid="$RUN_AS" --regid="$RUN_AS" --init-groups --no-new-privs "$0" "$@"
+fi
+
+umask 027
+mkdir -p "$LOG_DIR"
+chmod 750 "$LOG_DIR" 2>/dev/null || true     # propriétaire = utilisateur courant : aucune capacité nécessaire
+cd "$APP_DIR"
 
 # 1) Migrations DB incrémentales (db/updates/*.sql), jouées une seule fois chacune.
+#    Un échec ARRÊTE le conteneur (code non nul) : aucune tâche ne tourne sur un schéma incomplet.
 echo "[entrypoint] Migrations DB..."
-python -m worker.migrate >> /app/logs/worker.log 2>&1 || \
-    echo "[entrypoint] migrations en échec (voir logs)."
+if ! python -m worker.migrate >> "$LOG_DIR/worker.log" 2>&1; then
+  echo "[entrypoint] ÉCHEC des migrations : arrêt du worker. Détail (fin du journal) :" >&2
+  tail -n 20 "$LOG_DIR/worker.log" >&2 || true
+  exit 1
+fi
+if ! python -m worker.migrate check >> "$LOG_DIR/worker.log" 2>&1; then
+  echo "[entrypoint] Schéma incomplet après migration : arrêt du worker (voir $LOG_DIR/worker.log)." >&2
+  exit 1
+fi
 
-# Scores recalculés avec les réglages en vigueur (sans réseau, quelques secondes) :
-# après un changement de poids ou de seuils, l'application est à jour dès le redéploiement.
+# Scores recalculés avec les réglages en vigueur (sans réseau, quelques secondes) : non bloquant.
 echo "[entrypoint] Recalcul des scores..."
-python -m worker.local.rescore >> /app/logs/worker.log 2>&1 || \
+python -m worker.local.rescore >> "$LOG_DIR/worker.log" 2>&1 || \
     echo "[entrypoint] recalcul des scores en échec (voir logs)."
 
-# 2) Génère la crontab AVEC l'environnement courant.
-#    IMPORTANT : cron ne transmet pas les variables d'env du conteneur à ses
-#    tâches. On les inscrit en tête de crontab pour que le pipeline retrouve
-#    DATABASE_URL, SEARXNG_URL, etc. (sinon il plante sans pouvoir se connecter).
-{
-  printenv | grep -E '^(DATABASE_URL|SEARXNG_URL|TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|APP_URL|TZ|LOG_LEVEL|MIGRATIONS_DIR|PAGESPEED_API_KEY|LOCAL_[A-Z_]+)='
-  # Boutons Telegram (⭐ 📞 🚫 ❌) : relevé toutes les 5 min, 24h/24 — tu dois pouvoir
-  # classer depuis ton téléphone à tout moment.
-  echo "*/5 * * * * cd /app && /usr/local/bin/python -m worker.telegram_poll >> /app/logs/telegram.log 2>&1"
-  # Prospection locale : reprend les campagnes en attente, par étapes bornées. Sans campagne, sort aussitôt.
-  echo "*/15 6-22 * * * cd /app && /usr/local/bin/python -m worker.local.run >> /app/logs/local.log 2>&1"
-  # Veille des nouvelles entreprises (BODACC + SIRENE) pour les campagnes où elle est activée, chacune à son rythme (7 ou 30 jours).
-  echo "10 7 * * * cd /app && /usr/local/bin/python -m worker.local.watch >> /app/logs/local.log 2>&1"
-  # Surveillance des dégradations (moteurs, taux de sites trouvés, sources) : alerte Telegram throttlée.
-  echo "* * * * * cd /app && /usr/local/bin/python -m worker.reset --pending >> /app/logs/local.log 2>&1"
-  echo "5 * * * * cd /app && /usr/local/bin/python -m worker.local.monitor >> /app/logs/local.log 2>&1"
-  echo "15 7 * * * cd /app && /usr/local/bin/python -m worker.digest daily >> /app/logs/digest.log 2>&1"
-  echo "0 8 * * 1 cd /app && /usr/local/bin/python -m worker.digest weekly >> /app/logs/digest.log 2>&1"
-  echo "30 4 * * * cd /app && /usr/local/bin/python -m worker.local.retention >> /app/logs/local.log 2>&1"
-  echo "0 4 * * * for f in /app/logs/*.log; do tail -n 5000 \"\$f\" > \"\$f.tmp\" && mv \"\$f.tmp\" \"\$f\"; done"
-} | crontab -
-echo "[entrypoint] Crontab installée."
-
-echo "[entrypoint] Démarrage de cron."
-cron -f
+# 2) Planificateur (remplace cron, sans root, sans écrire l'environnement sur disque). Cf. worker/scheduler.py.
+echo "[entrypoint] Démarrage du planificateur."
+exec python -m worker.scheduler

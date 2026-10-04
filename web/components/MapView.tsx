@@ -7,6 +7,7 @@ import {
   CATEGORY_COLORS, CATEGORY_LABELS, LocalRow, PIPELINE_STAGES, Preset, RADII, SITE_COLORS, WEBSITE_LABELS, pipelineStage,
 } from "@/lib/local";
 import ActivityPicker from "./ActivityPicker";
+import { safeHref } from "@/lib/security";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LMap = any;
@@ -84,6 +85,7 @@ export default function MapView({ rows, campaigns, presets, defaultRadius }: { r
   const [max, setMax] = useState(200);
   const [watch, setWatch] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const [loadErr, setLoadErr] = useState<string | null>(null);
   useEffect(() => {
@@ -173,7 +175,7 @@ export default function MapView({ rows, campaigns, presets, defaultRadius }: { r
         <div style="font-weight:600;font-size:14px">${esc(p.trade_name || p.company_name)}</div>
         <div style="color:#6b7280">${esc([p.activity_label, p.city].filter(Boolean).join(" · "))}</div>
         <div style="margin-top:4px"><b>${p.prospect_score ?? "–"}/100</b>${p.category ? " · " + esc(CATEGORY_LABELS[p.category]) : ""}</div>
-        <div>${esc(p.website_status ? WEBSITE_LABELS[p.website_status] : "site pas encore recherché")}${p.website_url ? ` · <a href="${esc(p.website_url)}" target="_blank" rel="noopener">site ↗</a>` : ""}</div>
+        <div>${esc(p.website_status ? WEBSITE_LABELS[p.website_status] : "site pas encore recherché")}${safeHref(p.website_url) ? ` · <a href="${esc(safeHref(p.website_url))}" target="_blank" rel="noopener noreferrer">site ↗</a>` : ""}</div>
         <div><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${STAGE_COLOR[st]};margin-right:4px"></span>${esc(STAGE_LABEL[st])}${p.new_business_at ? " · 🆕 nouvelle entreprise" : ""}</div>
         ${phone || mail ? `<div style="margin-top:4px">${[phone, mail].filter(Boolean).join("<br>")}</div>` : "<div style='color:#6b7280;margin-top:4px'>aucune coordonnée trouvée</div>"}
         <div style="margin-top:6px">${actions}</div>
@@ -199,8 +201,11 @@ export default function MapView({ rows, campaigns, presets, defaultRadius }: { r
   }
   async function createCampaign() {
     if (!picked.length) { setMsg("Choisis au moins une activité ou une pré-recherche"); return; }
+    if (creating) return;                            // anti double-clic : une seule campagne par clic
+    setCreating(true);
     const res = await fetch("/api/local/campaigns", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ latitude: center[0], longitude: center[1], radius_km: radius, activities: picked, max_companies: max, watch, city: city.trim() || undefined }) });
+      body: JSON.stringify({ latitude: center[0], longitude: center[1], radius_km: radius, activities: picked, max_companies: max, watch, city: city.trim() || undefined }) })
+      .finally(() => setCreating(false));
     if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "Refusé"); return; }
     setMsg("Campagne créée : le worker la traite au prochain passage (≤ 15 min)."); setPicked([]); setPanel("list"); router.refresh();
   }
@@ -284,7 +289,7 @@ export default function MapView({ rows, campaigns, presets, defaultRadius }: { r
             <ActivityPicker picked={picked} setPicked={setPicked} custom={custom} onSaved={setCustom} />
             <label className="flex items-center gap-2">Entreprises max <input type="number" min={10} max={1000} value={max} onChange={(e) => setMax(Number(e.target.value))} className="field w-24" /></label>
             <label className="check"><input type="checkbox" checked={watch} onChange={(e) => setWatch(e.target.checked)} />🆕 Surveiller ensuite les nouvelles entreprises (tous les 30 jours)</label>
-            <button onClick={createCampaign} className="btn-primary btn-sm">Lancer la campagne</button>
+            <button onClick={createCampaign} disabled={creating} aria-busy={creating} className="btn-primary btn-sm">{creating ? "Création…" : "Lancer la campagne"}</button>
           </div>
         )}
       </aside>

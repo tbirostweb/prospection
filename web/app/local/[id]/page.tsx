@@ -7,6 +7,7 @@ import { salesBrief } from "@/lib/pitch";
 import { getSetting } from "@/lib/localdb";
 import type { Sender } from "@/lib/draft";
 import { dateFr } from "@/lib/format";
+import { parseId, safeHref } from "@/lib/security";
 import ProspectActions from "./actions";
 import DraftBox from "./draft";
 
@@ -21,7 +22,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 /** Fiche entreprise : a-t-elle un site, comment la contacter, où j'en suis. Les détails techniques sont repliés en bas. */
 export default async function ProspectPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const id = parseId((await params).id);
+  if (id === null) notFound();
   const p = await queryOne<any>("SELECT * FROM local_prospects WHERE id=?", [Number(id)]).catch(() => null);
   if (!p) notFound();
   const sources = await query<any>("SELECT source, source_ref, seen_at FROM local_prospect_sources WHERE prospect_id=? ORDER BY seen_at", [p.id]).catch(() => []);
@@ -69,10 +71,10 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
         <dl>
           <Row label="Site web">
             <span className={`border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide ${SITE_KIND_CLASS[site.kind]}`}>{site.label}</span>
-            {p.website_url && siteOk && <div className="mt-1"><a href={p.website_url} target="_blank" rel="noopener noreferrer" className="break-all font-medium text-accent hover:underline">{p.website_url} ↗</a></div>}
+            {safeHref(p.website_url) && siteOk && <div className="mt-1"><a href={safeHref(p.website_url)!} target="_blank" rel="noopener noreferrer" className="break-all font-medium text-accent hover:underline">{p.website_url} ↗</a></div>}
             {p.website_url && p.website_status === "UNREACHABLE" && <div className="mt-1 text-muted">{p.website_url} (ne répond pas)</div>}
             {p.website_status === "PROBABLE" && <div className="mt-1 text-xs text-muted">Très probablement le sien : vérifie d'un coup d'œil.</div>}
-            {candidate && <div className="mt-1 text-xs text-amber-900">Site possible, pas assez sûr pour être retenu : <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="underline">{candidate.url}</a></div>}
+            {candidate && safeHref(candidate.url) && <div className="mt-1 text-xs text-amber-900">Site possible, pas assez sûr pour être retenu : <a href={safeHref(candidate.url)!} target="_blank" rel="noopener noreferrer" className="underline">{candidate.url}</a></div>}
             {site.kind === "no" && <div className="mt-1 text-xs text-muted">Aucun site trouvé après recherche, ce n'est pas une certitude.</div>}
           </Row>
           <Row label="Contact">
@@ -80,8 +82,8 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
               <div className="flex flex-col">
                 {p.phone && <a href={`tel:${p.phone}`} className="inline-flex min-h-[44px] items-center font-medium text-accent hover:underline md:min-h-8">☎ {formatPhone(p.phone)}</a>}
                 {p.email && <span><a href={`mailto:${p.email}`} className="inline-flex min-h-[44px] items-center break-all font-medium text-accent hover:underline md:min-h-8">✉ {p.email}</a> <span className="text-xs text-muted">({EMAIL_KIND_LABELS[p.email_kind] ?? "adresse professionnelle"})</span></span>}
-                {p.contact_page && <a href={p.contact_page} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-accent hover:underline md:min-h-8">▤ {p.contact_form ? "Formulaire de contact" : "Page contact"} ↗</a>}
-                {socials.map((x) => <a key={x.url} href={x.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-accent hover:underline md:min-h-8">{x.network} ↗</a>)}
+                {safeHref(p.contact_page) && <a href={safeHref(p.contact_page)!} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-accent hover:underline md:min-h-8">▤ {p.contact_form ? "Formulaire de contact" : "Page contact"} ↗</a>}
+                {socials.filter((x) => safeHref(x.url)).map((x) => <a key={x.url} href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-accent hover:underline md:min-h-8">{x.network} ↗</a>)}
               </div>
             ) : <span className="text-muted">Aucun contact trouvé (passer sur place reste possible).</span>}
           </Row>

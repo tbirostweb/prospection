@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import { LOCAL_ACTIVITIES } from "@/lib/local";
+import { readJson } from "@/lib/api";
 
 export async function GET() {
   const rows = await query<any>("SELECT skey, value_json FROM settings");
@@ -66,7 +67,11 @@ function sanitize(key: string, value: any): any | null {
       // Ton identité pour signer les brouillons d'e-mail (jamais envoyés automatiquement).
       if (!value || typeof value !== "object") return null;
       const f = (k: string, n: number) => String(value[k] ?? "").trim().slice(0, n);
-      return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400) };
+      // privacy_url : notice d'information (art. 14 RGPD) citée dans chaque brouillon ; http(s) uniquement.
+      const privacy = f("privacy_url", 300);
+      const privacyOk = !privacy || /^https?:\/\/[^\s]+\.[^\s]+$/i.test(privacy);
+      if (!privacyOk) return null;
+      return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400), privacy_url: privacy };
     }
     case "local_banned_brands": {
       // Tes enseignes à bannir en plus de la liste intégrée (franchises, chaînes locales…) : 300 au plus, 3 caractères minimum.
@@ -85,7 +90,9 @@ function sanitize(key: string, value: any): any | null {
 }
 
 export async function PUT(req: NextRequest) {
-  const body = await req.json(); // { key: value_json, ... }
+  const parsed = await readJson(req);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.body; // { key: value_json, ... }
   const user = await queryOne<any>("SELECT id FROM users ORDER BY id LIMIT 1");
   if (!user) return NextResponse.json({ error: "no user" }, { status: 404 });
   const refused: string[] = [];

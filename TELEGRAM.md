@@ -120,11 +120,12 @@ Ces décisions servent à comprendre les erreurs du score (rapport `python -m wo
 
 Les taps sont relevés **toutes les 5 minutes**, 24h/24. Telegram ne permet de supprimer un message que pendant 48 h : au-delà, les boutons sont simplement retirés.
 
-> 🔒 Seul le chat configuré dans `TELEGRAM_CHAT_ID` peut agir : un inconnu qui
-> tomberait sur le bot ne peut rien modifier.
+> 🔒 Refus par défaut : un tap n'est appliqué que s'il vient du chat `TELEGRAM_CHAT_ID` **et** d'un
+> utilisateur autorisé — liste `TELEGRAM_ALLOWED_USER_IDS` (identifiants séparés par des virgules) si elle
+> est définie ; sinon toi seul en discussion directe ; sinon un **administrateur** du canal. Un abonné du
+> canal ou un inconnu qui tomberait sur le bot ne peut rien modifier. Un même tap n'est jamais appliqué deux fois.
 >
 > Technique : on utilise le *polling* (`getUpdates`), pas un webhook — aucun
 > port à ouvrir, aucune route à sortir de l'authentification de l'app.
 
-**Changer les horaires des résumés :** dans `worker/entrypoint.sh` (la crontab y
-est générée au démarrage) : `0 8 * * *` = 08:00 chaque jour ; `0 8 * * 1` = 08:00 le lundi.
+**Changer les horaires des résumés :** dans `worker/scheduler.py` (liste `JOBS`, syntaxe cron) : `0 8 * * *` = 08:00 chaque jour ; `0 8 * * 1` = 08:00 le lundi.

@@ -54,7 +54,8 @@ export default function SettingsPage() {
         <h2 className="section-title">Mon identité (signature des messages)</h2>
         <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           {([["name", "Prénom et nom", "Théo …"], ["company", "Entreprise / marque", "…"], ["role", "Activité", "développeur web indépendant"],
-             ["phone", "Téléphone", "06 …"], ["email", "E-mail", "contact@…"], ["website", "Site / portfolio", "https://…"]] as const).map(([k, label, ph]) => (
+             ["phone", "Téléphone", "06 …"], ["email", "E-mail", "contact@…"], ["website", "Site / portfolio", "https://…"],
+             ["privacy_url", "Lien de ta notice d'information (données personnelles)", "https://…/confidentialite"]] as const).map(([k, label, ph]) => (
             <label key={k} className="flex flex-col gap-1"><span className="mono">{label}</span>
               <input value={sender[k] ?? ""} placeholder={ph} onChange={(e) => setSender(k, e.target.value)} className="field" /></label>
           ))}
@@ -62,7 +63,8 @@ export default function SettingsPage() {
             <textarea value={sender.pitch ?? ""} rows={2} onChange={(e) => setSender("pitch", e.target.value)} className="field"
               placeholder="Laisse vide pour une phrase adaptée automatiquement à la situation (sans site, site à moderniser…)" /></label>
         </div>
-        <p className="mt-2 text-xs text-muted">Utilisé uniquement pour signer les brouillons que tu crées depuis une fiche. Rien n'est jamais envoyé par l'application.</p>
+        <p className="mt-2 text-xs text-muted">Utilisé uniquement pour signer les brouillons que tu crées depuis une fiche. Rien n'est jamais envoyé par l'application.
+          La notice d'information (source des données, finalité, droits, opposition) est citée dans chaque brouillon : sans elle, le bouton « Ouvrir dans ma messagerie » reste désactivé.</p>
       </section>
 
       <section className="panel mb-12">

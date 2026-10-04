@@ -23,6 +23,7 @@ class FakeTelegramAPI:
         self.requests: list[tuple[str, dict]] = []
         self.updates: list[dict] = []
         self.refuse_send = False
+        self.admins: list[int] = []
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -32,7 +33,9 @@ class FakeTelegramAPI:
                 method = self.path.rsplit("/", 1)[1]
                 outer.requests.append((method, body))
                 ok = not (outer.refuse_send and method == "sendMessage")
-                result = outer.updates if method == "getUpdates" else {"message_id": 1000 + len(outer.requests)}
+                result = (outer.updates if method == "getUpdates"
+                          else [{"user": {"id": a}, "status": "administrator"} for a in outer.admins] if method == "getChatAdministrators"
+                          else {"message_id": 1000 + len(outer.requests)})
                 data = json.dumps({"ok": ok, "result": result, **({} if ok else {"description": "Bad Request: chat not found"})}).encode()
                 self.send_response(200 if ok else 400)
                 self.send_header("content-type", "application/json")
@@ -132,8 +135,12 @@ def test_telegram_indisponible_rien_n_est_marque_notifie(conn, monkeypatch, tg_a
     assert local_notify.notify_qualified(conn)["sent"] >= 2                            # rien n'est perdu : tout part plus tard
 
 
-def _tap(api, pid, action, chat=CHAT, uid=1):
-    api.updates = [{"update_id": uid, "callback_query": {"id": f"cb{uid}", "data": f"p:{pid}:{action}", "message": {"message_id": 9, "chat": {"id": int(chat)}}}}]
+def _tap(api, pid, action, chat=CHAT, uid=1, user=None, message=True):
+    """Tap simulé ; par défaut l'auteur est le propriétaire du chat privé (identifiant = chat)."""
+    cq = {"id": f"cb{uid}", "data": f"p:{pid}:{action}", "from": {"id": int(user if user is not None else chat)}}
+    if message:
+        cq["message"] = {"message_id": 9, "chat": {"id": int(chat)}}
+    api.updates = [{"update_id": uid, "callback_query": cq}]
 
 
 def test_boutons_classent_reellement_le_prospect(conn, monkeypatch, tg_api):
@@ -183,6 +190,64 @@ def test_seul_le_chat_configure_peut_agir_et_le_ne_plus_contacter_est_intouchabl
         telegram_poll.poll()
     p = db.fetch_one(conn, "SELECT status, do_not_contact, website_status FROM local_prospects WHERE id=%s", (ids[0],))
     assert p["status"] == "DO_NOT_CONTACT" and p["do_not_contact"] == 1 and p["website_status"] is not None
+
+
+def _status(conn, pid):
+    return db.fetch_one(conn, "SELECT status FROM local_prospects WHERE id=%s", (pid,))["status"]
+
+
+def test_auteur_non_autorise_ou_message_absent_refuses(conn, monkeypatch, tg_api):
+    ids = _qualify(conn, monkeypatch)
+    _tap(tg_api, ids[0], "star", uid=1, user=777)                                     # bon chat privé, mauvais auteur
+    telegram_poll.poll()
+    _tap(tg_api, ids[0], "star", uid=2, message=False)                                # callback sans message (chat inconnu)
+    telegram_poll.poll()
+    assert _status(conn, ids[0]) != "TO_CONTACT"
+    assert all(c["text"] == "Non autorisé" for c in tg_api.calls("answerCallbackQuery"))
+
+
+def test_chat_id_vide_refuse_tout(conn, monkeypatch, tg_api):
+    ids = _qualify(conn, monkeypatch)
+    monkeypatch.setattr(telegram_poll, "TELEGRAM_CHAT_ID", "")
+    _tap(tg_api, ids[0], "star", uid=1)
+    ok, _ = telegram_poll.authorized(tg_api.updates[0]["callback_query"], lambda: set())
+    assert ok is False
+
+
+def test_canal_seuls_les_administrateurs_ou_la_liste_autorisee(conn, monkeypatch, tg_api):
+    ids = _qualify(conn, monkeypatch)
+    canal = "-1001234567890"
+    monkeypatch.setattr(telegram_poll, "TELEGRAM_CHAT_ID", canal)
+    tg_api.admins = [555]
+    _tap(tg_api, ids[0], "star", chat=canal, uid=1, user=666)                         # abonné non administrateur
+    telegram_poll.poll()
+    assert _status(conn, ids[0]) != "TO_CONTACT"
+    _tap(tg_api, ids[0], "star", chat=canal, uid=2, user=555)                         # administrateur
+    telegram_poll.poll()
+    assert _status(conn, ids[0]) == "TO_CONTACT"
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "888, 999")                       # liste explicite prioritaire
+    _tap(tg_api, ids[1], "star", chat=canal, uid=3, user=555)
+    telegram_poll.poll()
+    assert _status(conn, ids[1]) != "TO_CONTACT"
+    _tap(tg_api, ids[1], "star", chat=canal, uid=4, user=999)
+    telegram_poll.poll()
+    assert _status(conn, ids[1]) == "TO_CONTACT"
+
+
+def test_rejeu_d_un_meme_tap_applique_une_seule_fois(conn, monkeypatch, tg_api, tmp_path):
+    ids = _qualify(conn, monkeypatch)
+    _tap(tg_api, ids[0], "wrong", uid=50)
+    telegram_poll.poll()
+    telegram_poll.poll()                                                               # Telegram renvoie le même update (offset ignoré)
+    assert db.fetch_one(conn, "SELECT COUNT(*) AS n FROM local_site_feedback WHERE kind='wrong_site'")["n"] == 1
+
+
+def test_offset_non_enregistrable_aucune_action(conn, monkeypatch, tg_api, tmp_path):
+    ids = _qualify(conn, monkeypatch)
+    monkeypatch.setattr(telegram_poll, "OFFSET_FILE", str(tmp_path / "absent" / "offset.json"))
+    _tap(tg_api, ids[0], "star", uid=60)
+    telegram_poll.poll()
+    assert _status(conn, ids[0]) != "TO_CONTACT"
 
 
 def test_offset_enregistre_les_taps_ne_reviennent_pas(conn, monkeypatch, tg_api, tmp_path):
