@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  FailureLimiter, MIN_PASSWORD_LENGTH, authConfigured, checkBasicAuth, checkMutation, clientKey, parseId, parseJsonBody, safeEqual, safeHref, securityHeaders,
+  FailureLimiter, MIN_PASSWORD_LENGTH, SESSION_MAX_AGE_S, authConfigured, checkBasicAuth, checkCredentials, checkMutation, createSessionToken, safeNextPath, verifySessionToken, clientKey, parseId, parseJsonBody, safeEqual, safeHref, securityHeaders,
 } from "../lib/security";
 
 const H = (o: Record<string, string>) => ({ get: (k: string) => o[k.toLowerCase()] ?? null });
@@ -113,4 +113,51 @@ test("en-têtes de sécurité : CSP stricte, HSTS en production, identiques à n
   return cfg.headers().then((rules: any[]) => {
     assert.deepEqual(rules[0].headers, prod);
   });
+});
+
+test("formulaire : identifiants corrects acceptés, incorrects / absents / config faible refusés", () => {
+  assert.equal(checkCredentials(CFG.user, CFG.password, CFG), true);
+  assert.equal(checkCredentials(CFG.user, CFG.password + "x", CFG), false);
+  assert.equal(checkCredentials("autre", CFG.password, CFG), false);
+  assert.equal(checkCredentials(null, null, CFG), false);
+  assert.equal(checkCredentials("u", "court", { user: "u", password: "court" }), false);
+});
+
+test("session : jeton signé valide, falsifié, expiré, autre mot de passe refusés", async () => {
+  const now = 1_800_000_000_000;
+  const t = (await createSessionToken(CFG, now))!;
+  assert.match(t, /^v1\.\d+\.[A-Za-z0-9_-]{43}$/);
+  assert.equal(await verifySessionToken(t, CFG, now + 1000), true);
+  assert.equal(await verifySessionToken(t, CFG, now + (SESSION_MAX_AGE_S + 1) * 1000), false, "expiré");
+  const [v, exp, sig] = t.split(".");
+  assert.equal(await verifySessionToken(`${v}.${Number(exp) + 3600}.${sig}`, CFG, now), false, "expiration modifiée");
+  assert.equal(await verifySessionToken(`${v}.${exp}.${sig.slice(0, -1)}${sig.endsWith("A") ? "B" : "A"}`, CFG, now), false, "signature modifiée");
+  assert.equal(await verifySessionToken(t, { ...CFG, password: CFG.password + "-change" }, now), false, "mot de passe changé = révocation");
+  assert.equal(await verifySessionToken(t, { user: "u", password: "court" }, now), false, "fail-closed");
+  assert.equal(await verifySessionToken("", CFG, now), false);
+  assert.equal(await verifySessionToken(undefined, CFG, now), false);
+  const secret = "s".repeat(40);
+  const ts = (await createSessionToken(CFG, now, secret))!;
+  assert.equal(await verifySessionToken(ts, CFG, now, secret), true);
+  assert.equal(await verifySessionToken(ts, CFG, now), false, "APP_SESSION_SECRET pris en compte");
+});
+
+test("redirection après connexion : chemins internes uniquement", () => {
+  assert.equal(safeNextPath("/local/42?tab=a"), "/local/42?tab=a");
+  assert.equal(safeNextPath("/settings"), "/settings");
+  for (const bad of ["//evil.example", "https://evil.example", "/\\evil.example", "\\evil", "javascript:alert(1)", "/login", "/api/auth/login",
+    "/%0d%0aSet-Cookie:x", "/a\nb", "", null, 42, "/" + "a".repeat(600)]) {
+    const r = safeNextPath(bad);
+    assert.ok(r === "/" || (r.startsWith("/") && !r.startsWith("//")), String(bad));
+    assert.ok(!/evil|login|api/.test(r), String(bad));
+  }
+});
+
+test("CSRF : formulaire accepté seulement si autorisé (routes de connexion), origine toujours exigée", () => {
+  const form = { host: "app.test", origin: "https://app.test", "content-type": "application/x-www-form-urlencoded" };
+  assert.equal(checkMutation("POST", H(form), undefined, true), null);
+  assert.equal(checkMutation("POST", H(form))?.status, 415);
+  assert.equal(checkMutation("POST", H({ ...form, origin: "https://evil.example" }), undefined, true)?.status, 403);
+  assert.equal(checkMutation("POST", H({ host: "app.test", "content-type": "application/x-www-form-urlencoded" }), undefined, true)?.status, 403);
+  assert.equal(checkMutation("POST", H({ ...form, "content-type": "multipart/form-data; boundary=x" }), undefined, true)?.status, 415);
 });

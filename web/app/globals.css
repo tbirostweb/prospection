@@ -169,6 +169,37 @@
     outline-offset: 0;
   }
 
+  /* Page de connexion (bloc sombre) : champ à bordure épaisse, focus orange clair (5,7:1 sur fond sombre) */
+  .login-field {
+    border: var(--rule) solid rgb(var(--night-text));
+    @apply block min-h-[52px] w-full min-w-0 bg-white px-4 py-3 font-mono text-base text-ink outline-none;
+    border-radius: 0;
+  }
+  .login-field:focus-visible,
+  .login-field:focus {
+    outline: 3px solid rgb(var(--accent-light));
+    outline-offset: 3px;
+  }
+  .login-field[aria-invalid="true"] {
+    border-color: rgb(var(--accent-light));
+  }
+  .login-submit {
+    border: var(--rule) solid rgb(var(--accent));
+    @apply flex min-h-[56px] w-full items-center justify-between gap-3 bg-accent px-5 font-mono text-sm font-semibold uppercase
+           tracking-[0.12em] text-white transition-colors hover:border-surface hover:bg-surface hover:text-ink;
+  }
+  .login-submit::after {
+    content: "↗";
+    @apply inline-block text-xl leading-none transition-transform;
+  }
+  .login-submit:hover::after {
+    transform: translate(2px, -2px);
+  }
+  .login-submit:focus-visible {
+    outline: 3px solid rgb(var(--accent-light));
+    outline-offset: 3px;
+  }
+
   /* Libellé cliquable autour d'une case à cocher : cible tactile suffisante */
   .check {
     @apply flex min-h-[var(--tap)] items-center gap-2.5;

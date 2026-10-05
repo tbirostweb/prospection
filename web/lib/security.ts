@@ -29,6 +29,72 @@ export function checkBasicAuth(header: string | null, cfg: AuthConfig): boolean 
   return safeEqual(header ?? "", expected);
 }
 
+/** Vérifie un couple identifiant / mot de passe saisi dans le formulaire (temps constant, les deux comparaisons sont toujours faites). */
+export function checkCredentials(user: unknown, password: unknown, cfg: AuthConfig): boolean {
+  if (!authConfigured(cfg) || typeof user !== "string" || typeof password !== "string") return false;
+  const okUser = safeEqual(user, cfg.user!);
+  const okPass = safeEqual(password, cfg.password!);
+  return okUser && okPass;
+}
+
+// ─── Session par cookie signé (formulaire /login) ────────────────────────────────────────────────────────────────
+// Jeton « v1.<expiration en s>.<HMAC-SHA256 base64url> ». Clé dérivée par HMAC de APP_PASSWORD (+ APP_USER), ou de
+// APP_SESSION_SECRET facultatif ; le mot de passe entre TOUJOURS dans la dérivation : le changer révoque toutes les sessions.
+// Web Crypto uniquement : fonctionne dans le middleware (Edge) comme dans les routes (Node).
+
+export const SESSION_COOKIE = "prospection_session";
+export const SESSION_MAX_AGE_S = 30 * 24 * 3600;
+const SESSION_LABEL = "prospection-session-v1";
+
+function b64url(bytes: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function hmac(key: Uint8Array | string, msg: string): Promise<ArrayBuffer> {
+  const enc = new TextEncoder();
+  const raw = typeof key === "string" ? enc.encode(key) : key;
+  const k = await crypto.subtle.importKey("raw", raw as BufferSource, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return crypto.subtle.sign("HMAC", k, enc.encode(msg));
+}
+
+async function sessionKey(cfg: AuthConfig, secret?: string): Promise<Uint8Array> {
+  const base = secret && secret.length >= 32 ? secret : cfg.password!;
+  return new Uint8Array(await hmac(base, `${SESSION_LABEL}\0${cfg.user}\0${cfg.password}`));
+}
+
+/** Crée un jeton de session (null si l'authentification n'est pas configurée). */
+export async function createSessionToken(cfg: AuthConfig, nowMs = Date.now(), secret?: string): Promise<string | null> {
+  if (!authConfigured(cfg)) return null;
+  const exp = Math.floor(nowMs / 1000) + SESSION_MAX_AGE_S;
+  const sig = b64url(await hmac(await sessionKey(cfg, secret), `v1.${exp}`));
+  return `v1.${exp}.${sig}`;
+}
+
+/** Vérifie un jeton de session : format, signature (temps constant), expiration bornée. Fail-closed. */
+export async function verifySessionToken(token: string | undefined | null, cfg: AuthConfig, nowMs = Date.now(), secret?: string): Promise<boolean> {
+  if (!token || token.length > 200 || !authConfigured(cfg)) return false;
+  const m = /^v1\.(\d{1,12})\.([A-Za-z0-9_-]{43})$/.exec(token);
+  if (!m) return false;
+  const exp = Number(m[1]);
+  const now = Math.floor(nowMs / 1000);
+  if (!(exp > now) || exp > now + SESSION_MAX_AGE_S + 60) return false;
+  const expected = b64url(await hmac(await sessionKey(cfg, secret), `v1.${exp}`));
+  return safeEqual(m[2], expected);
+}
+
+/** Chemin de retour après connexion : chemin RELATIF interne uniquement (pas de redirection ouverte), sinon « / ». */
+export function safeNextPath(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length > 512) return "/";
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "/";
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return "/";
+  try {
+    const u = new URL(raw, "http://interne.invalid");
+    if (u.origin !== "http://interne.invalid") return "/";
+    if (u.pathname === "/login" || u.pathname.startsWith("/api/")) return "/";
+    return u.pathname + u.search;
+  } catch { return "/"; }
+}
+
 /** Limiteur d'échecs d'authentification par client, mémoire BORNÉE (instance unique ; derrière plusieurs instances, ajouter une limite au proxy). */
 export class FailureLimiter {
   private hits = new Map<string, { count: number; first: number; blockedUntil: number }>();
@@ -94,6 +160,7 @@ export function checkMutation(
   method: string,
   headers: { get(name: string): string | null },
   appUrl?: string,
+  allowForm = false,
 ): { status: 403 | 415; reason: string } | null {
   const m = method.toUpperCase();
   if (SAFE_METHODS.has(m)) return null;
@@ -110,7 +177,7 @@ export function checkMutation(
   if (!allowed.has(originHost)) return { status: 403, reason: "origin non autorisée" };
   if (BODY_METHODS.has(m)) {
     const ct = (headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-    if (ct !== "application/json") return { status: 415, reason: "content-type application/json requis" };
+    if (ct !== "application/json" && !(allowForm && ct === "application/x-www-form-urlencoded")) return { status: 415, reason: "content-type application/json requis" };
   }
   return null;
 }
@@ -168,7 +235,9 @@ export function securityHeaders(dev = false): { key: string; value: string }[] {
     { key: "Content-Security-Policy", value: csp },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "X-Frame-Options", value: "DENY" },
-    { key: "Referrer-Policy", value: "no-referrer" },
+    // same-origin (et non no-referrer) : aucun référent envoyé aux sites tiers, mais un formulaire HTML (/login, déconnexion)
+    // garde un en-tête Origin réel — avec no-referrer, le navigateur envoie « Origin: null » et la garde anti-CSRF le refuse.
+    { key: "Referrer-Policy", value: "same-origin" },
     { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
     { key: "X-Robots-Tag", value: "noindex, nofollow" },

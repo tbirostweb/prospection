@@ -53,6 +53,12 @@ export default function Sidebar() {
             );
           })}
         </nav>
+        <form action="/api/auth/logout" method="post" className="hidden xl:flex">
+          <button type="submit" title="Se déconnecter"
+            className="flex min-h-[56px] items-center gap-2 border-l-2 border-ink px-4 font-mono text-[12px] font-medium uppercase tracking-[0.12em] whitespace-nowrap text-ink transition-colors hover:bg-ink hover:text-surface">
+            Déconnexion <span aria-hidden className="text-base leading-none">⏻</span>
+          </button>
+        </form>
         <Link href={CTA.href}
           className="hidden items-center gap-3 bg-accent px-6 font-mono text-[12px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap text-white transition-colors hover:bg-ink xl:flex">
           {CTA.label} <span aria-hidden className="text-lg leading-none">↗</span>
@@ -84,6 +90,12 @@ export default function Sidebar() {
           <Link href={CTA.href} className="flex min-h-[52px] items-center justify-between bg-accent px-4 font-mono text-sm font-semibold uppercase tracking-wide text-white sm:px-6">
             {CTA.label} <span aria-hidden className="text-lg">↗</span>
           </Link>
+          <form action="/api/auth/logout" method="post">
+            <button type="submit"
+              className="flex min-h-[52px] w-full items-center justify-between border-b-2 border-ink bg-surface px-4 font-mono text-sm font-semibold uppercase tracking-wide text-ink hover:bg-ink hover:text-surface sm:px-6">
+              Se déconnecter <span aria-hidden>⏻</span>
+            </button>
+          </form>
         </nav>
       )}
     </header>
