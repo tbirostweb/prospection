@@ -5,21 +5,25 @@ Les mentions **[À FOURNIR]** sont des informations que le code ne peut pas inve
 
 ## 1. Accès à l'application
 
-- HTTP Basic sur toutes les pages et API (`web/middleware.ts`). Fail-closed si `APP_USER`/`APP_PASSWORD` absents
-  ou si `APP_PASSWORD` fait moins de **14 caractères**. Comparaison en temps constant.
-- Limitation des échecs par adresse IP : 10 échecs / 15 min → **429** pendant 15 min (`AUTH_MAX_FAILURES`, `AUTH_BLOCK_MINUTES`).
+- Toutes les pages et API sont protégées (`web/middleware.ts`). Navigateur : page `/login` (formulaire, identifiants
+  `APP_USER`/`APP_PASSWORD`) qui pose un cookie de session signé HMAC-SHA256 (`HttpOnly`, `Secure` en production, `SameSite=Lax`,
+  30 jours ; clé dérivée de `APP_PASSWORD`, ou de `APP_SESSION_SECRET` facultatif ≥ 32 caractères) ; déconnexion par le menu.
+  Repli : un en-tête `Authorization: Basic` valide reste accepté (healthcheck `web/healthcheck.js`, scripts `curl -u`).
+  Sans authentification : page → redirection `/login?next=…` (chemin interne uniquement), API → 401 JSON.
+  Fail-closed si `APP_USER`/`APP_PASSWORD` absents ou si `APP_PASSWORD` fait moins de **14 caractères**. Comparaison en temps constant.
+- Limitation des échecs par adresse IP (formulaire et Basic) : 10 échecs / 15 min → **429** pendant 15 min (`AUTH_MAX_FAILURES`, `AUTH_BLOCK_MINUTES`).
   Mémoire bornée, par instance : avec plusieurs instances web, ajouter une limite au proxy (Traefik `ratelimit`).
 - Anti-CSRF sur toutes les mutations : `Origin` obligatoire et identique à l'hôte (ou `APP_URL`), `Sec-Fetch-Site` cross-site refusé,
   `Content-Type: application/json` exigé pour POST/PUT/PATCH (403 / 415).
-- **Second facteur : [À DÉCIDER par l'exploitant]**. Basic Auth ne permet ni 2FA ni déconnexion. Placer devant le service `web`
+- **Second facteur : [À DÉCIDER par l'exploitant]**. La connexion par mot de passe seul ne permet pas de 2FA. Placer devant le service `web`
   un proxy d'authentification (Traefik `forwardAuth` + Authelia/Authentik, ou un accès de type Zero Trust) avec 2FA/passkey,
   puis tester : anonyme → refus, mauvais facteur → refus, session expirée → réauthentification.
-- Révocation : changer `APP_PASSWORD` dans Dokploy puis redéployer ; vérifier qu'un navigateur ayant mémorisé l'ancien secret reçoit 401.
+- Révocation : changer `APP_PASSWORD` dans Dokploy puis redéployer ; toutes les sessions sont alors invalidées (le mot de passe entre dans la clé de signature) : vérifier le retour à `/login`.
 
 ## 2. En-têtes HTTP
 
 `web/next.config.js` (source testée : `web/lib/security.ts`) : CSP (`frame-ancestors 'none'`, `object-src 'none'`,
-scripts `self` + cdnjs pour Leaflet avec SRI), HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
+scripts `self` + cdnjs pour Leaflet avec SRI), HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin` (aucun référent vers les sites tiers ; Origin réel sur les formulaires de connexion),
 `Permissions-Policy`. `'unsafe-inline'` reste nécessaire aux scripts d'hydratation Next (amélioration possible : nonce).
 Contrôle en production : `curl -I https://<DOMAINE>/` et `curl -I https://<DOMAINE>/page-inexistante`.
 

@@ -110,8 +110,8 @@ dig +short prospection.mondomaine.fr    # doit renvoyer l'IP du VPS
 
 ### 6. Se connecter
 
-Ouvre `https://ton-domaine` → le navigateur demande **login / mot de passe**
-(ceux de `APP_USER` / `APP_PASSWORD`). C'est bon, l'app est à toi.
+Ouvre `https://ton-domaine` → la page **Connexion** demande identifiant / mot de passe
+(ceux de `APP_USER` / `APP_PASSWORD`). La session dure 30 jours ; « Déconnexion » est dans le menu.
 
 ### 7. Configurer Telegram
 
@@ -186,7 +186,7 @@ Règles détaillées : `.claude/skills/local-prospecting/SKILL.md` · sources et
 
 | Symptôme | Cause probable / solution |
 |---|---|
-| Page 401 en boucle | `APP_USER`/`APP_PASSWORD` non définis ou mauvais identifiants. |
+| Retour en boucle sur `/login` | `APP_USER`/`APP_PASSWORD` non définis, `APP_PASSWORD` < 14 caractères, ou mauvais identifiants. |
 | Campagne « en attente » | Moteurs de recherche en cooldown ou budget du jour atteint : normal, elle reprend seule (`python -m worker.audit_system` donne la cause). Pour plus de débit : clés Brave / Tavily / Serper ([docs/GUIDE_CONNEXION.md](docs/GUIDE_CONNEXION.md)). |
 | Beaucoup de « site non trouvé » | Vérifie `python -m worker.local.engines` : seuls les moteurs web réellement actifs de ton SearXNG comptent. |
 | Pas de notif Telegram | Token/chat_id manquants, ou bot pas admin du canal : `python -m worker.telegram_check`. |
