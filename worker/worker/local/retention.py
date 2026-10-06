@@ -24,9 +24,9 @@ import sys
 from .. import db
 from ..config import log
 
-MONTHS = int(os.getenv("LOCAL_RETENTION_MONTHS", "18"))
-EXCLUDED_MONTHS = int(os.getenv("LOCAL_RETENTION_EXCLUDED_MONTHS", "6"))
-WORKED_MONTHS = int(os.getenv("LOCAL_RETENTION_WORKED_MONTHS", "36"))
+MONTHS = int(os.getenv("LOCAL_RETENTION_MONTHS") or "18")
+EXCLUDED_MONTHS = int(os.getenv("LOCAL_RETENTION_EXCLUDED_MONTHS") or "6")
+WORKED_MONTHS = int(os.getenv("LOCAL_RETENTION_WORKED_MONTHS") or "36")
 # Dernière activité connue d'un prospect (chaque date absente est remplacée par la découverte).
 # Une relance ou une note interne ne redémarre jamais la durée de prospection.
 LAST_ACTIVITY = "GREATEST(discovered_at, COALESCE(last_prospect_contact_at, discovered_at))"

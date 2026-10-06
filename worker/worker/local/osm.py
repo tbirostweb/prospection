@@ -23,7 +23,7 @@ from . import errors
 from .zone import haversine_km
 from .textmatch import distinctive_tokens, fold, name_tokens, token_fraction
 
-OVERPASS_URL = os.getenv("LOCAL_OSM_URL", "https://overpass-api.de/api/interpreter")
+OVERPASS_URL = os.getenv("LOCAL_OSM_URL") or "https://overpass-api.de/api/interpreter"
 ENABLED = os.getenv("LOCAL_OSM", "1") != "0"
 SITE_HINT = os.getenv("LOCAL_OSM_SITE_HINT", "1") != "0"      # 0 : le site OSM n'est PAS proposé au résolveur (sert de référence indépendante pour mesurer le rappel)
 CACHE_DAYS = 7

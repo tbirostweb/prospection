@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  FailureLimiter, SESSION_COOKIE, authConfigured, checkBasicAuth, checkMutation, clientKey, safeNextPath, verifySessionToken,
+  SESSION_COOKIE, authBlockedFor, authConfigured, authFail, authLimiters, checkBasicAuth, checkMutation, clientKey, safeNextPath, verifySessionToken,
 } from "./lib/security";
 
 // Protège TOUTES les pages et API (app perso mono-utilisateur). Identifiants : APP_USER / APP_PASSWORD (onglet Dokploy),
@@ -28,11 +28,8 @@ function localPreview(req: NextRequest): boolean {
   return process.env.NODE_ENV === "development" && process.env.DEV_NO_AUTH === "1" && ["localhost", "127.0.0.1"].includes(host);
 }
 
-const limiter = new FailureLimiter(
-  Number(process.env.AUTH_MAX_FAILURES) || 10,
-  15 * 60_000,
-  (Number(process.env.AUTH_BLOCK_MINUTES) || 15) * 60_000,
-);
+// Limiteurs partagés avec /api/auth/login (par client + plafond global tous clients confondus).
+const limiters = authLimiters(Number(process.env.AUTH_MAX_FAILURES) || 10, Number(process.env.AUTH_BLOCK_MINUTES) || 15);
 let warnedWeak = false;
 
 /** Les réponses produites ici (401/403/429/redirections) ne passent pas par les en-têtes de next.config.js : on pose l'essentiel. */
@@ -75,17 +72,17 @@ export async function middleware(req: NextRequest) {
       const authz = req.headers.get("authorization");
       if (authz) {
         const key = clientKey(req.headers);
-        const wait = limiter.blockedFor(key);
+        const wait = authBlockedFor(limiters, key);
         if (wait > 0) {
           return harden(new NextResponse("Trop de tentatives, réessayez plus tard", {
             status: 429, headers: { "Retry-After": String(Math.ceil(wait / 1000)) },
           }));
         }
         if (!checkBasicAuth(authz, cfg)) {
-          limiter.fail(key);
+          authFail(limiters, key);
           return harden(NextResponse.json({ error: "authentification requise" }, { status: 401 }));
         }
-        limiter.success(key);
+        limiters.perClient.success(key);
       } else if (wantsPage(req)) {
         const next = safeNextPath(path + req.nextUrl.search);
         return redirectTo(req, next === "/" ? "/login" : `/login?next=${encodeURIComponent(next)}`);

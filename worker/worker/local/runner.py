@@ -28,8 +28,8 @@ from . import (chains, contacts, engines, snippets, socials as socials_mod, erro
                sitefinder, store, zone)
 from .errors import SearchUnavailable
 
-TIME_BUDGET_S = int(os.getenv("LOCAL_TIME_BUDGET_S", "600"))
-LOOKUPS_PER_RUN = int(os.getenv("LOCAL_LOOKUPS_PER_RUN", "30"))
+TIME_BUDGET_S = int(os.getenv("LOCAL_TIME_BUDGET_S") or "600")
+LOOKUPS_PER_RUN = int(os.getenv("LOCAL_LOOKUPS_PER_RUN") or "30")
 AUDIT = os.getenv("LOCAL_AUDIT", "0") == "1"    # audit passif du site (SEO, technique, modernisation) : désactivé par défaut
 NAF_CHUNK = 10
 SITE_STATES = "('CONFIRMED','PROBABLE')"

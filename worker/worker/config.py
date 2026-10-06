@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 
 
 def env(key: str, default: str | None = None) -> str | None:
-    return os.environ.get(key, default)
+    """Variable d'environnement ; VIDE = absente (docker-compose transmet `${VAR:-}` vide quand elle n'est pas définie)."""
+    value = os.environ.get(key)
+    return default if value is None or value == "" else value
 
 
 DATABASE_URL = env("DATABASE_URL", "mysql://prospection:prospection@localhost:3306/prospection")

@@ -134,7 +134,36 @@ export class FailureLimiter {
   get size(): number { return this.hits.size; }
 }
 
-/** Adresse du client vue par le proxy (Traefik renseigne X-Real-Ip ; à défaut, dernière entrée de X-Forwarded-For). */
+/** Plafond GLOBAL d'échecs d'authentification (tous clients confondus) : X-Real-Ip est falsifiable par un conteneur du réseau
+ *  partagé, la limite par adresse ne suffit donc pas. 50 échecs en 15 min bloquent toute nouvelle tentative pendant 15 min. */
+export const GLOBAL_MAX_FAILURES = 50;
+export const GLOBAL_KEY = "*";
+
+export type AuthLimiters = { perClient: FailureLimiter; global: FailureLimiter };
+
+/** Limiteurs d'authentification PARTAGÉS (globalThis) entre le middleware (Basic) et /api/auth/login, créés une seule fois par processus. */
+export function authLimiters(maxFailures = 10, blockMinutes = 15): AuthLimiters {
+  const g = globalThis as unknown as { __authLimiters?: AuthLimiters };
+  return (g.__authLimiters ??= {
+    perClient: new FailureLimiter(maxFailures, 15 * 60_000, blockMinutes * 60_000),
+    global: new FailureLimiter(GLOBAL_MAX_FAILURES, 15 * 60_000, 15 * 60_000, 1),
+  });
+}
+
+/** Millisecondes de blocage restantes pour ce client (limite par adresse OU limite globale). */
+export function authBlockedFor(l: AuthLimiters, key: string, now = Date.now()): number {
+  return Math.max(l.perClient.blockedFor(key, now), l.global.blockedFor(GLOBAL_KEY, now));
+}
+
+/** Enregistre un échec dans les deux compteurs (par client et global). */
+export function authFail(l: AuthLimiters, key: string, now = Date.now()): void {
+  l.perClient.fail(key, now);
+  l.global.fail(GLOBAL_KEY, now);
+}
+
+/** Adresse du client vue par le proxy (Traefik renseigne X-Real-Ip ; à défaut, dernière entrée de X-Forwarded-For).
+ *  Next ne fournit pas l'adresse du pair TCP : impossible de vérifier ici que l'en-tête vient bien de Traefik. La limite
+ *  globale (authLimiters) et un ratelimit Traefik (README) couvrent la falsification de cet en-tête. */
 export function clientKey(headers: { get(name: string): string | null }): string {
   const real = headers.get("x-real-ip")?.trim();
   if (real) return real;
@@ -197,6 +226,11 @@ export function safeHref(raw: unknown): string | null {
     const u = new URL(raw.trim());
     return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
   } catch { return null; }
+}
+
+/** Échappe un texte destiné à du HTML brut (popups / tooltips Leaflet, qui interprètent le HTML). */
+export function escapeHtml(s: unknown): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 }
 
 export const MAX_JSON_BYTES = 64 * 1024;

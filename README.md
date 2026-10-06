@@ -180,6 +180,18 @@ Règles détaillées : `.claude/skills/local-prospecting/SKILL.md` · sources et
   ```
   👉 **Teste une restauration au moins une fois.**
 
+### Durcir le proxy (recommandé)
+
+L'app limite les échecs de connexion par adresse (en-tête `X-Real-Ip` posé par Traefik) **et** globalement (50 échecs / 15 min, tous clients confondus). Next ne voit pas l'adresse TCP réelle : un conteneur branché sur le réseau partagé `dokploy-network` peut joindre `web:3000` directement et falsifier `X-Real-Ip`. Deux mesures côté infrastructure, à appliquer à la main (non activées par défaut) :
+
+- **Limite Traefik** (labels du service `web`, à ajouter au routeur HTTPS) :
+  ```yaml
+  - traefik.http.middlewares.prospection-ratelimit.ratelimit.average=20
+  - traefik.http.middlewares.prospection-ratelimit.ratelimit.burst=40
+  - traefik.http.routers.prospection-secure.middlewares=prospection-ratelimit
+  ```
+- **Réseau dédié** : ne brancher sur le même réseau que `web` QUE Traefik (réseau externe propre au projet, par exemple `prospection-proxy`, auquel Traefik est rattaché ; `traefik.docker.network` mis à jour), plutôt que `dokploy-network` partagé avec les autres applications.
+
 ---
 
 ## Dépannage

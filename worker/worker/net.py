@@ -20,6 +20,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 import time
+import zlib
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
@@ -62,14 +63,85 @@ def _keep(headers) -> dict:
     return {k: headers.get(k, "")[:120] for k in ("content-encoding", "cache-control", "server", "x-powered-by", "expires") if headers.get(k)}
 
 
+_NAT64_WKP = ipaddress.ip_network("64:ff9b::/96")         # NAT64 « well-known prefix » : IPv4 dans les 32 bits de poids faible
+_NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")     # NAT64 à usage local : jamais public
+
+
 def _is_public(ip_str: str) -> bool:
     try:
         ip = ipaddress.ip_address(ip_str.split("%")[0])
     except ValueError:
         return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        elif ip in _NAT64_LOCAL:
+            return False
+        elif ip in _NAT64_WKP:                       # IPv4 embarquée (NAT64) : revalidée comme une IPv4
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        elif ip.sixtofour is not None:              # 2002::/16 (6to4) : IPv4 embarquée revalidée
+            ip = ip.sixtofour
     return ip.is_global and not ip.is_multicast
+
+
+_ZLIB_ENCODINGS = {"gzip", "x-gzip", "deflate"}
+
+
+class _BoundedInflater:
+    """Décompression gzip / deflate dont la SORTIE est bornée à chaque lecture (anti « bombe de décompression »)."""
+
+    def __init__(self, encoding: str):
+        self.deflate = encoding == "deflate"
+        self.first = True
+        self.pending = b""
+        self.d = zlib.decompressobj(zlib.MAX_WBITS if self.deflate else zlib.MAX_WBITS | 16)
+
+    def decode(self, data: bytes, max_out: int) -> bytes:
+        buf = self.pending + data
+        if not buf:
+            return b""
+        try:
+            out = self.d.decompress(buf, max(1, max_out))
+        except zlib.error as exc:
+            if self.deflate and self.first:          # deflate « brut » sans en-tête zlib (même repli que httpx)
+                self.first = False
+                self.d = zlib.decompressobj(-zlib.MAX_WBITS)
+                return self.decode(data, max_out)
+            raise httpx.DecodingError(str(exc)) from exc
+        self.first = False
+        self.pending = self.d.unconsumed_tail
+        return out
+
+
+def _read_body(resp: httpx.Response, max_bytes: int, t0: float, max_seconds: float) -> tuple[bytearray, bool]:
+    """Corps lu avec plafond de taille et de durée ; gzip / deflate décompressés avec une sortie bornée par lecture."""
+    buf, truncated = bytearray(), False
+    encodings = [e.strip().lower() for e in resp.headers.get("content-encoding", "").split(",") if e.strip()]
+    # Corps déjà chargé (réponse construite en mémoire, tests) ou encodage non géré ici : lecture httpx habituelle.
+    if resp.is_stream_consumed or not encodings or any(e not in _ZLIB_ENCODINGS | {"identity"} for e in encodings):
+        for chunk in resp.iter_bytes():
+            buf.extend(chunk)
+            if len(buf) >= max_bytes or time.monotonic() - t0 > max_seconds:      # serveur qui goutte-à-goutte : on garde ce qu'on a
+                return buf, True
+        return buf, truncated
+    decoders = [_BoundedInflater(e) for e in reversed(encodings) if e != "identity"]
+
+    def push(data: bytes) -> bool:
+        for dec in decoders:
+            data = dec.decode(data, max_bytes - len(buf) + 1)
+        buf.extend(data)
+        return len(buf) >= max_bytes
+
+    for raw in resp.iter_raw():
+        if push(raw) or time.monotonic() - t0 > max_seconds:
+            return buf, True
+    while len(decoders) > 1 and any(d.pending for d in decoders):  # empilement (gzip, gzip) : vide les restes bornés
+        before = (len(buf), tuple(len(d.pending) for d in decoders))
+        if push(b""):
+            return buf, True
+        if (len(buf), tuple(len(d.pending) for d in decoders)) == before:
+            break
+    return buf, truncated
 
 
 def resolve_public(host: str, port: int | None) -> list[str]:
@@ -147,14 +219,12 @@ def safe_get(url: str, timeout: float | httpx.Timeout = 8.0, max_bytes: int = MA
                 ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
                 if ctype and not ctype.startswith(TEXT_TYPES):
                     return Fetched(current, resp.status_code, "", ctype, redirects=hops, chain=tuple(chain), elapsed_ms=int((time.monotonic() - t0) * 1000), headers=_keep(resp.headers))
-                buf, truncated = bytearray(), False
-                for chunk in resp.iter_bytes():
-                    buf.extend(chunk)
-                    if len(buf) >= max_bytes or time.monotonic() - t0 > max_seconds:      # serveur qui goutte-à-goutte : on garde ce qu'on a
-                        truncated = True
-                        break
+                buf, truncated = _read_body(resp, max_bytes, t0, max_seconds)
                 enc = resp.encoding or "utf-8"
-                text = bytes(buf[:max_bytes]).decode(enc, errors="replace")
+                try:
+                    text = bytes(buf[:max_bytes]).decode(enc, errors="replace")
+                except LookupError:                  # charset inconnu ou non textuel (ex. rot13) : repli UTF-8
+                    text = bytes(buf[:max_bytes]).decode("utf-8", errors="replace")
                 return Fetched(current, resp.status_code, text, ctype, truncated, hops, tuple(chain), int((time.monotonic() - t0) * 1000), _keep(resp.headers))
 
 

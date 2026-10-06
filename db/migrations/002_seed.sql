@@ -3,16 +3,17 @@
 -- Modifiable ensuite via l'UI.
 -- ════════════════════════════════════════════════════════════════════
 
-INSERT IGNORE INTO users (email) VALUES ('[email protected]');
+-- Utilisateur unique FICTIF (adresse non routable .invalid) : l'application ne s'en sert que comme identifiant interne.
+INSERT IGNORE INTO users (email) VALUES ('utilisateur@exemple.invalid');
 
 INSERT INTO profiles (user_id, min_budget, max_budget, max_duration_days,
                       max_complexity, remote_only, countries, languages,
                       max_job_age_hours)
 SELECT id, 1000, 20000, 60, 4, 1,
        JSON_ARRAY('France','Remote'), JSON_ARRAY('fr','en'), 168
-FROM users WHERE email = '[email protected]';
+FROM users WHERE email = 'utilisateur@exemple.invalid';
 
--- Compétences fortes — stack réel (birostweb.fr) : Vue/PHP/WordPress/Tailwind.
+-- Compétences fortes — profil FICTIF d'exemple (Vue/PHP/WordPress/Tailwind), modifiable ensuite via l'UI.
 -- On liste des variantes de nommage car l'IA matche en minuscules exact.
 INSERT IGNORE INTO skills (profile_id, name, level) VALUES
 ((SELECT id FROM profiles LIMIT 1), 'HTML', 'strong'),
@@ -124,13 +125,13 @@ INSERT IGNORE INTO sources (name, connector, enabled, config_json, rate_limit) V
 INSERT IGNORE INTO settings (user_id, skey, value_json)
 SELECT id, 'verdict_thresholds',
        '{"PRIORITAIRE":85,"A_POSTULER":70,"A_EXAMINER":64}'
-FROM users WHERE email = '[email protected]';
+FROM users WHERE email = 'utilisateur@exemple.invalid';
 
 INSERT IGNORE INTO settings (user_id, skey, value_json)
 SELECT id, 'notify_min_score', '85'
-FROM users WHERE email = '[email protected]';
+FROM users WHERE email = 'utilisateur@exemple.invalid';
 
 INSERT IGNORE INTO settings (user_id, skey, value_json)
 SELECT id, 'score_weights',
        '{"stack_fit":25,"project_type":15,"budget":15,"freshness":15,"complexity_fit":10,"clarity":10,"client_quality":5,"risk_penalty":5}'
-FROM users WHERE email = '[email protected]';
+FROM users WHERE email = 'utilisateur@exemple.invalid';

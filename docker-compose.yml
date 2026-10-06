@@ -30,7 +30,8 @@ services:
     # Réseau interne SANS accès Internet : la base n'est joignable que par web et worker.
     networks: [db]
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      # Mot de passe passé par la variable MYSQL_PWD (lue par le client MySQL), jamais dans la ligne de commande (visible par ps / docker inspect).
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -u root --silent"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -115,9 +116,41 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     restart: unless-stopped
-    env_file: .env
+    # Moindre privilège : le worker ne reçoit QUE les variables qu'il lit (pas MYSQL_ROOT_PASSWORD, APP_PASSWORD, APP_USER ni SEARXNG_SECRET).
+    # Une variable absente arrive vide : le worker applique alors sa valeur par défaut (worker/config.py: env).
+    # Nouvelle variable LOCAL_* : l'ajouter ICI aussi, sinon elle n'atteint pas le conteneur.
     environment:
       TZ: Europe/Paris
+      DATABASE_URL: ${DATABASE_URL}
+      SEARXNG_URL: ${SEARXNG_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+      APP_URL: ${APP_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      RETENTION_ENABLED: ${RETENTION_ENABLED:-}
+      PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
+      LOCAL_LOOKUPS_PER_RUN: ${LOCAL_LOOKUPS_PER_RUN:-}
+      LOCAL_TIME_BUDGET_S: ${LOCAL_TIME_BUDGET_S:-}
+      LOCAL_AUDIT: ${LOCAL_AUDIT:-}
+      LOCAL_OSM: ${LOCAL_OSM:-}
+      LOCAL_OSM_URL: ${LOCAL_OSM_URL:-}
+      LOCAL_OSM_SITE_HINT: ${LOCAL_OSM_SITE_HINT:-}
+      LOCAL_SEARCH_ENGINES: ${LOCAL_SEARCH_ENGINES:-}
+      LOCAL_ENGINE_DAILY_BUDGET: ${LOCAL_ENGINE_DAILY_BUDGET:-}
+      LOCAL_ENGINE_INTERVAL_S: ${LOCAL_ENGINE_INTERVAL_S:-}
+      LOCAL_BRAVE_API_KEY: ${LOCAL_BRAVE_API_KEY:-}
+      LOCAL_BRAVE_DAILY_BUDGET: ${LOCAL_BRAVE_DAILY_BUDGET:-}
+      LOCAL_TAVILY_API_KEY: ${LOCAL_TAVILY_API_KEY:-}
+      LOCAL_TAVILY_DAILY_BUDGET: ${LOCAL_TAVILY_DAILY_BUDGET:-}
+      LOCAL_TAVILY_MONTHLY_BUDGET: ${LOCAL_TAVILY_MONTHLY_BUDGET:-}
+      LOCAL_SERPER_API_KEY: ${LOCAL_SERPER_API_KEY:-}
+      LOCAL_SERPER_DAILY_BUDGET: ${LOCAL_SERPER_DAILY_BUDGET:-}
+      LOCAL_PAID_MONTHLY_BUDGET: ${LOCAL_PAID_MONTHLY_BUDGET:-}
+      LOCAL_PAID_ON_EMPTY: ${LOCAL_PAID_ON_EMPTY:-}
+      LOCAL_RETENTION_MONTHS: ${LOCAL_RETENTION_MONTHS:-}
+      LOCAL_RETENTION_EXCLUDED_MONTHS: ${LOCAL_RETENTION_EXCLUDED_MONTHS:-}
+      LOCAL_RETENTION_WORKED_MONTHS: ${LOCAL_RETENTION_WORKED_MONTHS:-}
     depends_on:
       mysql:
         condition: service_healthy

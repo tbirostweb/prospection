@@ -13,6 +13,7 @@ Les mentions **[À FOURNIR]** sont des informations que le code ne peut pas inve
   Fail-closed si `APP_USER`/`APP_PASSWORD` absents ou si `APP_PASSWORD` fait moins de **14 caractères**. Comparaison en temps constant.
 - Limitation des échecs par adresse IP (formulaire et Basic) : 10 échecs / 15 min → **429** pendant 15 min (`AUTH_MAX_FAILURES`, `AUTH_BLOCK_MINUTES`).
   Mémoire bornée, par instance : avec plusieurs instances web, ajouter une limite au proxy (Traefik `ratelimit`).
+- Plafond GLOBAL, tous clients confondus : 50 échecs / 15 min → **429** pour tout le monde pendant 15 min (X-Real-Ip est falsifiable depuis un conteneur du réseau partagé `dokploy-network`). Voir README → « Durcir le proxy ».
 - Anti-CSRF sur toutes les mutations : `Origin` obligatoire et identique à l'hôte (ou `APP_URL`), `Sec-Fetch-Site` cross-site refusé,
   `Content-Type: application/json` exigé pour POST/PUT/PATCH (403 / 415).
 - **Second facteur : [À DÉCIDER par l'exploitant]**. La connexion par mot de passe seul ne permet pas de 2FA. Placer devant le service `web`

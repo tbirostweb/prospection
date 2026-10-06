@@ -24,8 +24,8 @@ from . import errors
 from .errors import SearchUnavailable
 
 DEFAULT_ENGINES = "brave,startpage,mojeek,google,bing,qwant"      # ordre de départ (mesuré depuis une IP résidentielle) ; ensuite trié par santé mesurée
-INTERVAL_S = float(os.getenv("LOCAL_ENGINE_INTERVAL_S", "3"))      # par moteur : un rythme humain, pas une rafale (constaté en réel : à 1,5 s, mojeek et startpage se sont mis à répondre 0 en silence)
-DAILY_BUDGET = int(os.getenv("LOCAL_ENGINE_DAILY_BUDGET", "300"))    # requêtes par moteur et par fenêtre de 24 h : on ménage les moteurs plutôt que de les brûler
+INTERVAL_S = float(os.getenv("LOCAL_ENGINE_INTERVAL_S") or "3")      # par moteur : un rythme humain, pas une rafale (constaté en réel : à 1,5 s, mojeek et startpage se sont mis à répondre 0 en silence)
+DAILY_BUDGET = int(os.getenv("LOCAL_ENGINE_DAILY_BUDGET") or "300")    # requêtes par moteur et par fenêtre de 24 h : on ménage les moteurs plutôt que de les brûler
 CANARY_QUERY = "restaurant pizza Lyon"                                  # requête banale : un moteur non bloqué y répond toujours
 EMPTY_STREAK_LIMIT = 8                                                # N réponses vides d'affilée = blocage silencieux probable
 QUERY_ENGINES = 2                 # au plus 2 moteurs SearXNG qui RÉPONDENT par requête : le 2e seulement si le 1er n'a rendu aucun résultat

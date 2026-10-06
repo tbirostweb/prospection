@@ -7,7 +7,7 @@ import {
   CATEGORY_COLORS, CATEGORY_LABELS, LocalRow, PIPELINE_STAGES, Preset, RADII, SITE_COLORS, WEBSITE_LABELS, pipelineStage,
 } from "@/lib/local";
 import ActivityPicker from "./ActivityPicker";
-import { safeHref } from "@/lib/security";
+import { escapeHtml, safeHref } from "@/lib/security";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LMap = any;
@@ -23,7 +23,7 @@ function km(a: [number, number], b: [number, number]): number {
   const x = Math.sin(dLat / 2) ** 2 + Math.cos((a[0] * Math.PI) / 180) * Math.cos((b[0] * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(x));
 }
-const esc = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+const esc = escapeHtml;
 const stageOf = (p: LocalRow) => pipelineStage(p as any);
 const STAGE_COLOR = Object.fromEntries(PIPELINE_STAGES.map((s) => [s.key, s.color]));
 const STAGE_LABEL = Object.fromEntries(PIPELINE_STAGES.map((s) => [s.key, s.label]));
@@ -148,7 +148,7 @@ export default function MapView({ rows, campaigns, presets, defaultRadius }: { r
     for (const c of campaigns) {
       if (c.latitude == null) continue;
       L.circle([Number(c.latitude), Number(c.longitude)], { radius: Number(c.radius_km) * 1000, color: "#6b7280", weight: 1, dashArray: "4 4", fill: false, interactive: false })
-        .bindTooltip(c.name).addTo(campLayer.current!);
+        .bindTooltip(esc(c.name)).addTo(campLayer.current!);
     }
   }, [campaigns, showCamps, ready]);
 

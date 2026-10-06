@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  FailureLimiter, SESSION_COOKIE, SESSION_MAX_AGE_S, checkCredentials, checkMutation, clientKey, createSessionToken, safeNextPath,
+  SESSION_COOKIE, SESSION_MAX_AGE_S, authBlockedFor, authFail, authLimiters, checkCredentials, checkMutation, clientKey, createSessionToken, safeNextPath,
 } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -8,12 +8,8 @@ export const dynamic = "force-dynamic";
 // Connexion par formulaire (/login) avec les identifiants APP_USER / APP_PASSWORD.
 // Origin vérifiée (anti-CSRF), échecs limités par adresse IP, message d'erreur générique, rien n'est journalisé.
 // Le mot de passe ne transite que dans le corps POST ; aucune redirection ne le reprend.
-const g = globalThis as unknown as { __loginLimiter?: FailureLimiter };
-const limiter = (g.__loginLimiter ??= new FailureLimiter(
-  Number(process.env.AUTH_MAX_FAILURES) || 10,
-  15 * 60_000,
-  (Number(process.env.AUTH_BLOCK_MINUTES) || 15) * 60_000,
-));
+// Limiteurs partagés avec le middleware (par client + plafond global tous clients confondus).
+const limiters = authLimiters(Number(process.env.AUTH_MAX_FAILURES) || 10, Number(process.env.AUTH_BLOCK_MINUTES) || 15);
 
 function seeOther(path: string): NextResponse {
   const res = new NextResponse(null, { status: 303, headers: { Location: path } });
@@ -36,14 +32,14 @@ export async function POST(req: NextRequest) {
   try { form = await req.formData(); } catch { return seeOther("/login?error=1"); }
   const next = safeNextPath(form.get("next"));
   const key = clientKey(req.headers);
-  if (limiter.blockedFor(key) > 0) return back("blocked", next);
+  if (authBlockedFor(limiters, key) > 0) return back("blocked", next);
 
   const cfg = { user: process.env.APP_USER, password: process.env.APP_PASSWORD };
   if (!checkCredentials(form.get("username"), form.get("password"), cfg)) {
-    limiter.fail(key);
-    return back(limiter.blockedFor(key) > 0 ? "blocked" : "1", next);
+    authFail(limiters, key);
+    return back(authBlockedFor(limiters, key) > 0 ? "blocked" : "1", next);
   }
-  limiter.success(key);
+  limiters.perClient.success(key);
   const token = await createSessionToken(cfg, Date.now(), process.env.APP_SESSION_SECRET);
   if (!token) return back("1", next);
   const res = seeOther(next);
