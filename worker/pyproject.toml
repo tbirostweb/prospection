@@ -4,12 +4,9 @@ version = "0.1.0"
 description = "Prospection locale : découverte d'entreprises, site officiel, audit passif, scoring explicable"
 requires-python = ">=3.11"
 dependencies = [
-    # Bornes hautes : une version majeure non testée ne s'installe jamais en silence
-    # (selectolax 1.0 a supprimé `selectolax.parser`, utilisé par worker/local/htmlinfo.py).
-    # Versions exactes + empreintes : requirements.lock (utilisé par le Dockerfile).
-    "PyMySQL>=1.1,<2",
-    "httpx>=0.27,<0.29",
-    "selectolax>=0.3.21,<1.0",   # parsing HTML rapide (nettoyage)
+    "PyMySQL>=1.1",
+    "httpx>=0.27",
+    "selectolax>=0.3.21",   # parsing HTML rapide (nettoyage)
 ]
 
 [project.optional-dependencies]

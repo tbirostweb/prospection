@@ -14,8 +14,8 @@ export default function FollowupButtons({ id, kind }: { id: number; kind: "follo
   }
   return (
     <div className="flex flex-wrap gap-2">
-      {kind === "followup" && <button disabled={busy} onClick={() => patch({ action: "followed_up" })} className="btn-primary btn-sm no-arrow">✓ Relancé</button>}
-      <button disabled={busy} onClick={() => patch({ status: "REPLIED", response_status: "REPLIED" })} className="btn-ghost btn-sm">Réponse reçue</button>
+      {kind === "followup" && <button disabled={busy} onClick={() => patch({ action: "followed_up" })} className="btn-primary btn-sm">✓ Relancé</button>}
+      <button disabled={busy} onClick={() => patch({ status: "REPLIED", response_status: "REPLIED" })} className="btn-ghost btn-sm">💬 Réponse reçue</button>
       <button disabled={busy} onClick={() => patch({ action: "no_answer" })} className="btn-ghost btn-sm">Sans réponse</button>
     </div>
   );

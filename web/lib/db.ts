@@ -31,19 +31,3 @@ export async function queryOne<T = any>(sql: string, params: any[] = []): Promis
   const rows = await query<T>(sql, params);
   return rows[0] ?? null;
 }
-
-/** Exécute `fn` dans une transaction (tout ou rien) : COMMIT si `fn` réussit, ROLLBACK sinon. */
-export async function transaction<T>(fn: (q: (sql: string, params?: any[]) => Promise<any[]>) => Promise<T>): Promise<T> {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const out = await fn(async (sql, params = []) => { const [rows] = await conn.query(sql, params); return rows as any[]; });
-    await conn.commit();
-    return out;
-  } catch (e) {
-    await conn.rollback().catch(() => {});
-    throw e;
-  } finally {
-    conn.release();
-  }
-}

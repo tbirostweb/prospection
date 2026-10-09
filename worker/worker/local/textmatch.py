@@ -56,10 +56,10 @@ def token_fraction(needed: list[str], haystack: str) -> float:
 
 def domain_tokens(domain: str) -> str:
     """Nom de domaine sans extension ni « www », découpé en mots quand c'est possible (`boulangerie-martin.fr` → « boulangerie martin »)."""
-    host, _, path = (domain or "").lower().removeprefix("www.").partition("/")     # « compte.wixsite.com/salon-lea » : le nom est dans le chemin
+    host = (domain or "").lower().removeprefix("www.")
     parts = host.split(".")
     core = ".".join(parts[:-1]) if len(parts) > 1 else host
-    return fold(f"{core} {path}".replace("-", " "))
+    return fold(core.replace("-", " "))
 
 
 def normalize_address(addr: str | None) -> str:

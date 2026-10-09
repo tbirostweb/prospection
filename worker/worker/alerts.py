@@ -1,4 +1,4 @@
-"""Alertes Telegram sur incidents (moteurs de recherche en panne, sites trouvés qui s'effondrent, source indisponible).
+"""Alertes Telegram sur incidents (source en panne, Ollama down, crash).
 
 Throttle : une même alerte (même `signature`) n'est renvoyée qu'une fois
 toutes les 3 heures, pour ne pas te spammer quand un problème persiste.
@@ -10,7 +10,7 @@ import os
 import time
 
 from .config import log
-from . import notify
+from .pipeline import notify
 
 STATE_FILE = os.environ.get("ALERT_STATE", "/app/logs/alert_state.json")
 THROTTLE_SECONDS = 3 * 3600

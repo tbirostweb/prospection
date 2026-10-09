@@ -28,7 +28,6 @@ def test_rescore_applique_les_nouveaux_poids_sans_reseau(env, conn, monkeypatch)
 
 
 def test_resume_quotidien_et_hebdomadaire(env, conn, monkeypatch, telegram):
-    db.execute(conn, "DELETE FROM settings WHERE skey='local_weights'")       # poids laissés par un test précédent (non vidés entre deux tests)
     _run(conn, monkeypatch)
     monkeypatch.setattr("worker.db.connect", lambda: __import__("contextlib").nullcontext(conn))
     digest.daily()
@@ -96,8 +95,7 @@ def test_resume_du_matin_relances_dues_meilleurs_et_tournee(env, conn, monkeypat
     monkeypatch.setattr(today, "followups", lambda c: due)
     digest.daily()
     text = telegram.texts[-1]
-    assert "Relances du jour (2)" in text and "☎ appeler · tôt (7 h 30" in text and "Couverture D" in text
-    assert "0325000000" not in text and "03 25 00 00 00" not in text and "0325111111" not in text and "03 25 11 11 11" not in text   # jamais le numéro
+    assert "Relances du jour (2)" in text and "☎ 03 25 00 00 00 · tôt (7 h 30" in text and "Couverture D" in text
     assert "Chaine E" not in text and "Pas Bon F" not in text and "Incomplet G" not in text
 
 

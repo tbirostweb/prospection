@@ -27,7 +27,6 @@ engines:
     disabled: false
   - name: bing
     disabled: false
-    paging: true   # le bing.py récent ne déclare plus `paging` → /config dit paging:false et le worker (discover_enabled) l'écarte
   - name: qwant
     disabled: false
   - name: yahoo

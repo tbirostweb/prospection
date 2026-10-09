@@ -30,10 +30,6 @@ DEFAULT_TIME = "mardi à jeudi, 9 h 30 – 11 h 30 ou 14 h – 16 h 30"
 OPEN_STATUSES = "('DISCOVERED','ENRICHED','AUDITED','QUALIFIED','TO_CONTACT')"
 GOOD = "('TRES_BON','A_CONTACTER')"
 CLEAN = "do_not_contact=0 AND excluded_reason IS NULL AND is_chain=0"
-# FICHE PRÊTE (miroir de web/lib/local.ts READY_SQL) : traitement terminé sans erreur, enrichissement fait, site tranché (trouvé, en panne, ou absent
-# après une VRAIE recherche) et au moins un moyen de contact. Seules ces fiches sont proposées : moins de prospects, mais exploitables tels quels.
-READY = ("p.pipeline_stage='DONE' AND p.deep_enriched_at IS NOT NULL AND (p.phone IS NOT NULL OR p.email IS NOT NULL OR p.contact_form=1) "
-         "AND (p.website_status IN ('CONFIRMED','PROBABLE','UNREACHABLE') OR (p.website_status='NOT_FOUND' AND p.website_absence_confidence >= 0.6))")
 
 
 def best_time(activity_key: str | None) -> str:
@@ -63,7 +59,7 @@ def followups(conn, now: datetime | None = None) -> list[dict]:
 def top_prospects(conn, n: int = 3) -> list[dict]:
     """Les meilleurs pas encore contactés : les plus récents d'abord à score égal (la nouveauté est un signal)."""
     rows = db.fetch_all(conn, f"""SELECT id, company_name, trade_name, city, phone, email, activity_key, prospect_score, buy_signals, category
-                                  FROM local_prospects p WHERE category IN {GOOD} AND status IN {OPEN_STATUSES} AND {CLEAN} AND {READY}
+                                  FROM local_prospects WHERE category IN {GOOD} AND status IN {OPEN_STATUSES} AND {CLEAN}
                                   ORDER BY prospect_score DESC, discovered_at DESC LIMIT %s""", (n,))
     for r in rows:
         sigs = json.loads(r["buy_signals"]) if isinstance(r.get("buy_signals"), (str, bytes)) else (r.get("buy_signals") or [])
@@ -79,7 +75,7 @@ def tour(conn, stops: int = 6) -> dict | None:
     origin = (float(camp["latitude"]), float(camp["longitude"]))
     pool = db.fetch_all(conn, f"""SELECT p.id, p.company_name, p.trade_name, p.address, p.city, p.latitude, p.longitude, p.activity_key, p.prospect_score
                                   FROM local_prospects p JOIN local_prospect_campaigns c ON c.prospect_id=p.id AND c.campaign_id=%s
-                                  WHERE p.category IN {GOOD} AND p.status IN {OPEN_STATUSES} AND p.do_not_contact=0 AND p.excluded_reason IS NULL AND p.is_chain=0 AND p.latitude IS NOT NULL AND {READY}
+                                  WHERE p.category IN {GOOD} AND p.status IN {OPEN_STATUSES} AND p.do_not_contact=0 AND p.excluded_reason IS NULL AND p.is_chain=0 AND p.latitude IS NOT NULL
                                   ORDER BY p.status='TO_CONTACT' DESC, p.prospect_score DESC LIMIT %s""", (camp["id"], stops * 4))
     out, here, km = [], origin, 0.0
     while pool and len(out) < stops:

@@ -12,9 +12,7 @@
 
 services:
   mysql:
-    # MySQL 8.0 : fin de support annoncée par Oracle (avril 2026) — montée vers 8.4 LTS à planifier AVEC sauvegarde/restauration testée
-    # (voir docs/SECURITE.md). Digest épinglé = version 8.0 la plus récente au 04/10/2026, pour des déploiements reproductibles.
-    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    image: mysql:8.0
     restart: unless-stopped
     # Plugin d'auth natif : évite d'ajouter une dépendance crypto côté drivers.
     command: --default-authentication-plugin=mysql_native_password
@@ -27,8 +25,7 @@ services:
       - mysql_data:/var/lib/mysql
       # Migrations jouées uniquement au premier démarrage (volume vierge)
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
-    # Réseau interne SANS accès Internet : la base n'est joignable que par web et worker.
-    networks: [db]
+    networks: [internal]
     healthcheck:
       # Mot de passe passé par la variable MYSQL_PWD (lue par le client MySQL), jamais dans la ligne de commande (visible par ps / docker inspect).
       test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -u root --silent"]
@@ -49,35 +46,22 @@ services:
       SEARXNG_BASE_URL: http://searxng:8080/
     volumes:
       - searxng_cache:/var/cache/searxng
-    # Accès Internet (moteurs de recherche) ; aucun accès à la base.
-    networks: [egress]
+    networks: [internal]
 
   web:
     build: ./web
     restart: unless-stopped
-    # Moindre privilège : web ne reçoit QUE ses variables (pas le mot de passe root MySQL, ni le jeton Telegram, ni les clés d'API).
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      APP_USER: ${APP_USER}
-      APP_PASSWORD: ${APP_PASSWORD}
-      APP_SESSION_SECRET: ${APP_SESSION_SECRET:-}
-      APP_URL: ${APP_URL:-}
-      AUTH_MAX_FAILURES: ${AUTH_MAX_FAILURES:-}
-      AUTH_BLOCK_MINUTES: ${AUTH_BLOCK_MINUTES:-}
-      LOCAL_ENGINE_DAILY_BUDGET: ${LOCAL_ENGINE_DAILY_BUDGET:-}
+    env_file: .env
     depends_on:
       mysql:
         condition: service_healthy
-    networks: [db, dokploy-network]
+    networks: [internal, dokploy-network]
     expose:
       - "3000"
-    # Processus non root (USER node dans l'image), aucune capacité Linux, pas d'élévation de privilèges.
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
-      # Santé réelle : /api/health (base joignable), authentifié avec les identifiants de l'app (web/healthcheck.js).
-      test: ["CMD", "node", "healthcheck.js"]
+      # 127.0.0.1 (IPv4) et pas localhost : Next écoute en IPv4, localhost peut
+      # résoudre en IPv6 (::1) -> faux négatif.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/robots.txt >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -96,19 +80,6 @@ services:
       - traefik.http.routers.prospection-secure.tls.certresolver=letsencrypt
       - traefik.http.routers.prospection-secure.service=prospection-web
       - traefik.http.services.prospection-web.loadbalancer.server.port=3000
-
-  worker-init:
-    # Tâche ponctuelle : remet le volume des journaux au propriétaire du worker non root (UID 10001), puis s'arrête.
-    # Nécessaire une seule fois pour les volumes créés quand le worker tournait en root ; sans effet ensuite.
-    image: alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
-    restart: "no"
-    network_mode: none
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    command: ["sh", "-c", "chown -R 10001:10001 /app/logs && chmod 750 /app/logs"]
-    volumes:
-      - worker_logs:/app/logs
 
   worker:
     # Contexte = racine du dépôt pour embarquer db/updates dans l'image.
@@ -154,14 +125,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      worker-init:
-        condition: service_completed_successfully
-    # db : base (sans Internet) ; egress : sites, API publiques, SearXNG, Telegram.
-    networks: [db, egress]
-    # Processus non root (USER app, UID 10001), aucune capacité Linux, pas d'élévation de privilèges.
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
+    networks: [internal]
     volumes:
       - worker_logs:/app/logs
       # Pas de bind mount pour db/ : les migrations sont embarquées dans l'image
@@ -176,9 +140,7 @@ services:
       start_period: 5m
 
 networks:
-  db:
-    internal: true
-  egress:
+  internal:
   dokploy-network:
     external: true
 

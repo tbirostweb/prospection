@@ -32,7 +32,7 @@ export default function ActivityPicker({ picked, setPicked, custom, onSaved }: {
         <div className="flex flex-wrap gap-2">
           {all.map((p) => (
             <button key={p.key} type="button" onClick={() => applyPreset(p)} title={p.activities.map((a) => LABEL[a] ?? a).join(", ")}
-              aria-pressed={isOn(p)} className={`pill ${isOn(p) ? "!border-accent !bg-accent !text-white" : ""}`}>
+              className={`rounded-full border px-3 py-1 text-sm ${isOn(p) ? "border-accent bg-accent text-white" : "border-line hover:border-ink"}`}>
               {p.icon} {p.label} <span className="opacity-60">({p.activities.length})</span>
             </button>
           ))}
@@ -46,7 +46,7 @@ export default function ActivityPicker({ picked, setPicked, custom, onSaved }: {
             <button key={k} onClick={() => toggle(k)} type="button"
               title={NOISY_ACTIVITIES.includes(k) ? "Activité très concurrentielle : seuls les établissements avec un vrai signal (pas de site, site en panne ou à moderniser, ouverture ou reprise récente) sont gardés"
                 : FAVORED_ACTIVITIES.includes(k) ? "Métier favorisé : quelques nouveaux clients remboursent un site" : undefined}
-              aria-pressed={picked.includes(k)} className={`pill !px-3 !text-xs md:!min-h-8 ${picked.includes(k) ? "pill-on" : ""} ${NOISY_ACTIVITIES.includes(k) && !picked.includes(k) ? "text-muted" : ""}`}>
+              className={`rounded border px-2.5 py-0.5 text-xs ${picked.includes(k) ? "border-ink bg-ink text-surface" : "border-line hover:border-ink"} ${NOISY_ACTIVITIES.includes(k) && !picked.includes(k) ? "text-muted" : ""}`}>
               {FAVORED_ACTIVITIES.includes(k) ? "⭐ " : ""}{label}{NOISY_ACTIVITIES.includes(k) ? " · signal requis" : ""}</button>
           ))}
         </div>
@@ -55,7 +55,7 @@ export default function ActivityPicker({ picked, setPicked, custom, onSaved }: {
         {picked.length > 0 && <button type="button" onClick={() => setPicked([])} className="btn-ghost btn-sm">Tout désélectionner</button>}
         {picked.length > 0 && !saving && <button type="button" onClick={() => setSaving(true)} className="btn-ghost btn-sm">Enregistrer comme pré-recherche</button>}
         {saving && <>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom (ex. Coiffeurs + barbiers)" className="field w-full sm:w-auto" aria-label="Nom de la pré-recherche" />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom (ex. Coiffeurs + barbiers)" className="field !py-1" aria-label="Nom de la pré-recherche" />
           <button type="button" onClick={save} className="btn-primary btn-sm">Enregistrer</button>
           <button type="button" onClick={() => setSaving(false)} className="btn-ghost btn-sm">Annuler</button>
         </>}

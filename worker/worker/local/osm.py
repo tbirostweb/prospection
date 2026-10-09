@@ -118,24 +118,3 @@ def match(company: dict, places: list[OsmPlace]) -> dict | None:
     _s, pl, d, sim = best
     return {"osm_id": pl.osm_id, "name": pl.name, "distance_m": int(d), "name_match": round(sim, 2), "website": pl.website, "phone": pl.phone,
             "email": pl.email, "kind": pl.kind, "opening_hours": pl.opening_hours, "confidence": round(min(0.8, 0.4 + 0.4 * sim - d / 1000), 2)}
-
-
-BRAND_RADIUS_M = 12        # même adresse (même bâtiment, même numéro) : au-delà, ce n'est qu'un voisin
-
-
-def brand_at_address(company: dict, places: list[OsmPlace]) -> dict | None:
-    """Enseigne de chaîne (liste bannie) du MÊME MÉTIER à la même adresse que l'établissement : {'brand','evidence'} ou None.
-    Sert à reconnaître un franchisé qui s'appelle autrement que son enseigne. Un voisin d'un autre métier ne compte jamais."""
-    from .naf import brand_of
-    from .franchises import sector_matches
-    lat, lon = company.get("latitude"), company.get("longitude")
-    if lat is None or lon is None:
-        return None
-    for pl in places:
-        d = haversine_km(float(lat), float(lon), pl.lat, pl.lon) * 1000
-        if d > BRAND_RADIUS_M:
-            continue
-        b = brand_of(pl.name, company.get("naf_code"))
-        if b and sector_matches(b, company.get("naf_code")):
-            return {"brand": b, "evidence": f"à {int(d)} m d'un établissement « {pl.name} » (OpenStreetMap), enseigne de chaîne du même métier : franchisé probable"}
-    return None

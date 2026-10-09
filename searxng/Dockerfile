@@ -9,7 +9,7 @@
 #
 # Le secret n'est pas dans le dépôt : il vient de la variable d'environnement SEARXNG_SECRET
 # (lue par SearXNG, prioritaire sur server.secret_key).
-FROM searxng/searxng:latest@sha256:76b0bf285aca014c7191fc4d9234c4bfb358624ac33d8883833d496c059ec072
+FROM searxng/searxng:latest
 
 COPY --chown=977:977 settings.yml /usr/local/searxng/prospection/settings.yml
 

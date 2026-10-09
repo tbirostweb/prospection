@@ -28,7 +28,7 @@ export default function ResetPanel() {
   const fmt = (d: string) => new Date(d).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
 
   return (
-    <section className="mb-6 border-t border-red-700/60 pt-5">
+    <section className="mb-6 rounded border border-red-200 bg-white p-5">
       <h2 className="section-title">Remise à zéro des entreprises</h2>
       <p className="mb-3 text-sm text-muted">
         Efface toutes les entreprises trouvées ({info.prospects}) pour repartir de zéro avec le nouveau barème. Tes campagnes sont
@@ -40,22 +40,22 @@ export default function ResetPanel() {
       </p>
 
       {info.pending ? (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-amber-50 p-4 text-sm">
+        <div className="flex flex-wrap items-center gap-3 rounded bg-amber-50 p-3 text-sm">
           <span>⏳ Remise à zéro demandée le {fmt(info.pending.requested_at)} : exécution dans la minute.</span>
           <button onClick={cancel} className="btn-ghost btn-sm">Annuler</button>
         </div>
       ) : !open ? (
         <button onClick={() => setOpen(true)} disabled={!info.prospects} className="btn-ghost !border-red-300 !text-red-700">🧹 Tout effacer et repartir de zéro</button>
       ) : (
-        <div className="space-y-3 rounded-lg bg-red-50 p-4 text-sm">
+        <div className="space-y-3 rounded bg-red-50 p-3 text-sm">
           {info.worked > 0 && (
             <p className="font-medium text-red-800">⚠️ {info.worked} entreprise(s) ont un suivi (contactée, réponse, client…) : ce suivi sera perdu aussi.</p>
           )}
-          <label className="check"><input type="checkbox" checked={relaunch} onChange={(e) => setRelaunch(e.target.checked)} /> Relancer toutes mes campagnes ensuite</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={relaunch} onChange={(e) => setRelaunch(e.target.checked)} /> Relancer toutes mes campagnes ensuite</label>
           <label className="block">Tape <b>EFFACER</b> pour confirmer :
             <input value={confirm} onChange={(e) => setConfirm(e.target.value)} className="field mt-1 w-40" autoFocus /></label>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={submit} disabled={confirm !== "EFFACER" || busy} className="btn-primary no-arrow !bg-red-700 disabled:opacity-40">Effacer {info.prospects} entreprise(s)</button>
+          <div className="flex gap-2">
+            <button onClick={submit} disabled={confirm !== "EFFACER" || busy} className="btn-primary !bg-red-600 disabled:opacity-40">Effacer {info.prospects} entreprise(s)</button>
             <button onClick={() => { setOpen(false); setConfirm(""); }} className="btn-ghost">Annuler</button>
           </div>
         </div>

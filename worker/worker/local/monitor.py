@@ -13,13 +13,11 @@ import sys
 
 from .. import alerts, db
 from ..config import log
-from . import engines, health
+from . import health
 
 
 def main() -> int:
     with db.connect() as conn:
-        # fournisseurs d'API (configurés ou non) déclarés chaque heure : visibles dans Statistiques même sans campagne en cours
-        engines.declare_providers(conn)
         problems = health.degradations(conn)
         prev = db.fetch_one(conn, "SELECT problems FROM local_health_report WHERE id=1")
         prev_codes = {p["code"] for p in (json.loads(prev["problems"]) if prev and prev["problems"] else [])}

@@ -96,7 +96,7 @@ répondre : ne compte pas dessus à long terme. Serper fournit des résultats Go
    ```
 4. **Enregistre**, puis **redéploie** (bouton Deploy) : les variables ne sont lues qu'au démarrage des conteneurs.
 
-> **Le préfixe `LOCAL_` est obligatoire.** Les tâches du worker sont lancées par `worker/scheduler.py`, qui ne leur transmet que les variables
+> **Le préfixe `LOCAL_` est obligatoire.** Les tâches du worker tournent par cron, et `worker/entrypoint.sh` ne leur transmet que les variables
 > dont le nom commence par `LOCAL_` (plus quelques variables système). Une variable nommée `SERPER_API_KEY` ou `BRAVE_API_KEY` serait
 > **ignorée sans message d'erreur**.
 
