@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Identifiants dans les variables d'env APP_USER / APP_PASSWORD (onglet Dokploy).
 // Fail-closed : si non configuré, l'accès est refusé.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon\\.svg|apple-icon\\.png|robots.txt).*)"],
 };
 
 // Aperçu LOCAL sans mot de passe (vérification visuelle automatique) : les TROIS conditions sont exigées — serveur de développement
