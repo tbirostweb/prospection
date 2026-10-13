@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "rm -rf .test-dist && tsc -p tsconfig.test.json && node --test \".test-dist/tests/*.test.js\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "mysql2": "^3.11.5",
-    "next": "^16.3.5",
+    "next": "^16.3.8",
     "react": "19.0.0",
     "react-dom": "19.0.0"
   },
@@ -20,5 +22,8 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

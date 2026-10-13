@@ -20,9 +20,10 @@ function isActive(pathname: string, n: (typeof NAV)[number]) {
 
 function Logo() {
   return (
-    <Link href="/local/contact" className="inline-flex min-h-[44px] items-center gap-2 text-ink">
-      <span className="font-display text-2xl font-bold uppercase leading-none tracking-[-0.02em]">Prospection</span>
-      <span className="h-2.5 w-2.5 bg-signal" aria-hidden />
+    <Link href="/local/contact" className="inline-flex min-h-[44px] min-w-0 items-center gap-2 text-ink">
+      {/* text-xl sous 640 px : avec la police actuelle (Inter, plus large que l'ancienne condensée), text-2xl débordait à 375 px. */}
+      <span className="truncate font-display text-xl font-bold uppercase leading-none tracking-[-0.02em] sm:text-2xl">Prospection</span>
+      <span className="h-2.5 w-2.5 shrink-0 bg-signal" aria-hidden />
     </Link>
   );
 }
@@ -37,7 +38,7 @@ export default function Sidebar() {
   return (
     <header className="sticky top-0 z-[1000] border-b-[3px] border-ink bg-surface">
       <div className="flex items-stretch justify-between">
-        <div className="flex items-center px-4 sm:px-6 md:px-10 xl:border-r-2 xl:border-ink"><Logo /></div>
+        <div className="flex min-w-0 items-center px-4 sm:px-6 md:px-10 xl:border-r-2 xl:border-ink"><Logo /></div>
 
         {/* Desktop : liens en ligne */}
         <nav className="hidden min-w-0 flex-1 items-stretch overflow-hidden xl:flex" aria-label="Navigation principale">
@@ -65,7 +66,7 @@ export default function Sidebar() {
         </Link>
 
         {/* Mobile, tablette et petit portable : bouton Menu (aucun défilement horizontal) */}
-        <div className="flex items-center px-4 py-1.5 sm:px-6 xl:hidden">
+        <div className="flex shrink-0 items-center px-4 py-1.5 sm:px-6 xl:hidden">
           <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="mobile-nav"
             className="inline-flex min-h-[44px] items-center gap-2 border-2 border-ink px-4 font-mono text-xs font-semibold uppercase tracking-wide hover:bg-ink hover:text-surface">
             <span className="max-w-[9rem] truncate">{open ? "Fermer" : current?.label ?? "Menu"}</span>

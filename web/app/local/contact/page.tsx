@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CompanyRow, PageHeader, RowList } from "@/components/LocalUI";
-import { LIST_COLUMNS, safeRows } from "@/lib/localdb";
+import { CONTACT_QUEUE_SQL, LIST_COLUMNS, safeRows } from "@/lib/localdb";
+import ExportButton from "@/components/ExportButton";
 import { LocalRow, READY_SQL, bestTime, followupDue, formatPhone } from "@/lib/local";
 import FollowupButtons from "@/components/FollowupButtons";
 
@@ -8,12 +9,7 @@ export const dynamic = "force-dynamic";
 
 /** Écran principal : les entreprises prêtes à être contactées (site tranché + au moins un contact). Rien n'est jamais envoyé automatiquement. */
 export default async function ContactQueue() {
-  const rows = await safeRows<LocalRow>(`
-    SELECT ${LIST_COLUMNS} FROM local_prospects p
-    WHERE p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.status <> 'DO_NOT_CONTACT'
-      AND (p.status = 'TO_CONTACT' OR (p.status IN ('QUALIFIED','AUDITED','ENRICHED') AND p.category IN ('TRES_BON','A_CONTACTER')))
-      AND (p.status = 'TO_CONTACT' OR (${READY_SQL}))
-    ORDER BY p.status = 'TO_CONTACT' DESC, p.prospect_score DESC LIMIT 300`);
+  const rows = await safeRows<LocalRow>(`SELECT ${LIST_COLUMNS} ${CONTACT_QUEUE_SQL}`);
   const [pending] = await safeRows<any>(`SELECT COUNT(*) AS n FROM local_prospects p WHERE p.category IN ('TRES_BON','A_CONTACTER') AND p.do_not_contact = 0
     AND p.excluded_reason IS NULL AND p.status IN ('QUALIFIED','AUDITED','ENRICHED','DISCOVERED') AND NOT (${READY_SQL})`);
   const contacted = await safeRows<LocalRow>(`SELECT ${LIST_COLUMNS} FROM local_prospects p
@@ -26,6 +22,7 @@ export default async function ContactQueue() {
         intro={<>Les entreprises dont on sait si elles ont un site et qui ont au moins un moyen de contact. Tu contactes toi-même, puis tu cliques « Marquer contacté ».</>}>
         <Link href="/local/tournee" className="btn-ghost btn-sm">Préparer une tournée ↗</Link>
       </PageHeader>
+      {rows.length > 0 && <ExportButton params={{ list: "contact" }} />}
       {due.length > 0 && (
         <section className="mb-12">
           <h2 className="section-title">À relancer aujourd'hui · {due.length}</h2>

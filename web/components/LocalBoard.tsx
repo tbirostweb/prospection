@@ -1,25 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { LocalRow, simpleStatus, siteInfo } from "@/lib/local";
+import { LocalRow } from "@/lib/local";
+import { BOARD_SORTS as SORTS, BOARD_VIEWS as VIEWS, boardBase, filterBoard } from "@/lib/board";
 import { CompanyRow, RowList } from "./LocalUI";
+import ExportButton from "./ExportButton";
 
-const km = (p: LocalRow) => (p.distance_km == null ? 999 : Number(p.distance_km));
-const hasContact = (p: LocalRow) => !!(p.email || p.phone || p.contact_form || p.contact_page);
 const PAGE = 40;
-
-const VIEWS: { id: string; label: string; test: (p: LocalRow) => boolean }[] = [
-  { id: "all", label: "Toutes", test: () => true },
-  { id: "tocontact", label: "À contacter", test: (p) => simpleStatus(p) === "À contacter" },
-  { id: "nosite", label: "Pas de site trouvé", test: (p) => siteInfo(p).kind === "no" },
-  { id: "down", label: "Site en panne", test: (p) => siteInfo(p).kind === "down" },
-  { id: "site", label: "A un site", test: (p) => siteInfo(p).kind === "yes" },
-  { id: "worked", label: "Déjà contactées", test: (p) => ["CONTACTED", "REPLIED", "INTERESTED", "WON", "LOST"].includes(p.status) },
-];
-const SORTS: [string, string, (a: LocalRow, b: LocalRow) => number][] = [
-  ["score", "Les plus intéressantes d'abord", (a, b) => (b.prospect_score ?? -1) - (a.prospect_score ?? -1)],
-  ["distance", "Les plus proches d'abord", (a, b) => km(a) - km(b)],
-  ["name", "Par nom", (a, b) => (a.trade_name || a.company_name).localeCompare(b.trade_name || b.company_name, "fr")],
-];
 
 export default function LocalBoard({ rows }: { rows: LocalRow[] }) {
   const [view, setView] = useState("all");
@@ -31,17 +17,9 @@ export default function LocalBoard({ rows }: { rows: LocalRow[] }) {
   const [page, setPage] = useState(0);
   const activities = useMemo(() => [...new Set(rows.map((r) => r.activity_label).filter(Boolean) as string[])].sort(), [rows]);
 
-  const base = useMemo(() => rows.filter((p) => showIgnored || (p.category !== "IGNORER" && !p.do_not_contact && !p.excluded_reason && !p.is_chain)), [rows, showIgnored]);
+  const base = useMemo(() => boardBase(rows, showIgnored), [rows, showIgnored]);
   const counts = useMemo(() => Object.fromEntries(VIEWS.map((v) => [v.id, base.filter(v.test).length])), [base]);
-  const list = useMemo(() => {
-    const v = VIEWS.find((x) => x.id === view) ?? VIEWS[0];
-    const needle = q.trim().toLowerCase();
-    const cmp = (SORTS.find((s) => s[0] === sort) ?? SORTS[0])[2];
-    return base.filter(v.test)
-      .filter((p) => !activity || p.activity_label === activity)
-      .filter((p) => !contactOnly || hasContact(p))
-      .filter((p) => !needle || `${p.company_name} ${p.trade_name ?? ""} ${p.city ?? ""} ${p.activity_label ?? ""}`.toLowerCase().includes(needle)).sort(cmp);
-  }, [base, view, q, sort, activity, contactOnly]);
+  const list = useMemo(() => filterBoard(rows, { view, q, sort, activity, contactOnly, showIgnored }), [rows, view, q, sort, activity, contactOnly, showIgnored]);
   useEffect(() => setPage(0), [view, q, sort, activity, contactOnly, showIgnored]);
   const pages = Math.max(1, Math.ceil(list.length / PAGE));
   const shown = list.slice(page * PAGE, (page + 1) * PAGE);
@@ -69,6 +47,7 @@ export default function LocalBoard({ rows }: { rows: LocalRow[] }) {
         <label className="check"><input type="checkbox" checked={showIgnored} onChange={(e) => setShowIgnored(e.target.checked)} />
           Afficher aussi les entreprises écartées (chaînes, exclues, sans intérêt)</label>
       </div>
+      {list.length > 0 && <ExportButton params={{ list: "all", view, q, sort, activity, ...(contactOnly ? { contact: "1" } : {}), ...(showIgnored ? { ignored: "1" } : {}) }} />}
       <div className="mono mb-3">{list.length} entreprise{list.length > 1 ? "s" : ""}{pages > 1 ? ` · page ${page + 1}/${pages}` : ""}</div>
       <RowList>
         {shown.map((p) => <CompanyRow key={p.id} p={p} />)}

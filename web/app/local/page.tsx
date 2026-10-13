@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
 import LocalBoard from "@/components/LocalBoard";
-import { LIST_COLUMNS, safeRows } from "@/lib/localdb";
+import { BOARD_SQL, LIST_COLUMNS, safeRows } from "@/lib/localdb";
 import { LocalRow } from "@/lib/local";
 
 export const dynamic = "force-dynamic";
 
 /** Toutes les entreprises trouvées par les campagnes, avec recherche et quelques filtres simples. */
 export default async function LocalPage() {
-  const rows = await safeRows<LocalRow>(`SELECT ${LIST_COLUMNS} FROM local_prospects p ORDER BY p.prospect_score DESC, p.id LIMIT 3000`);
+  const rows = await safeRows<LocalRow>(`SELECT ${LIST_COLUMNS} ${BOARD_SQL}`);
   return (
     <div className="max-w-3xl">
       <PageHeader title="Entreprises" kicker="03 — Toutes les fiches"
