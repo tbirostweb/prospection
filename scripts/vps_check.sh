@@ -33,7 +33,7 @@ M=$(docker ps --format '{{.Names}}' | grep -i mysql | head -1)
 docker stats --no-stream --format '{{.Name}}  CPU {{.CPUPerc}}  RAM {{.MemUsage}}' | head -12
 
 sec "Réseau Docker / DNS depuis le worker"
-docker exec "$W" python - <<'PY' || true
+docker exec -u app "$W" python - <<'PY' || true
 import socket, httpx
 for h in ("mysql", "searxng"):
     try: print("✅ DNS interne", h, socket.gethostbyname(h))
@@ -44,7 +44,7 @@ for u in ("https://recherche-entreprises.api.gouv.fr/", "https://geo.api.gouv.fr
 PY
 
 sec "SearXNG depuis l'IP du VPS (moteurs réellement utilisables)"
-docker exec "$W" python - <<'PY' || true
+docker exec -u app "$W" python - <<'PY' || true
 import os, httpx, time
 url = os.getenv("SEARXNG_URL", "http://searxng:8080")
 for eng in ("google", "bing", "brave", "qwant", "yahoo", "duckduckgo"):
@@ -62,14 +62,15 @@ if [ -n "$M" ]; then
   docker exec "$M" sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e "select filename from schema_migrations order by filename desc limit 3; select count(*) as prospects_locaux from local_prospects; select engine, health, cooldown_until from local_engine_health;" 2>&1' | head -20
 else warn "conteneur MySQL introuvable"; fi
 
-sec "Cron réel dans le worker"
-docker exec "$W" crontab -l 2>&1 | grep -v '^[A-Z_]*=' | head -12
-docker exec "$W" sh -c 'grep -c . /app/logs/local.log 2>/dev/null && tail -n 8 /app/logs/local.log' || warn "pas encore de /app/logs/local.log (aucun passage du cron local ?)"
+sec "Planificateur réel dans le worker (non root)"
+docker exec -u app "$W" python -m worker.scheduler --list 2>&1 | head -12
+docker exec -u app "$W" sh -c 'grep -E "^Uid" /proc/1/status'
+docker exec -u app "$W" sh -c 'grep -c . /app/logs/local.log 2>/dev/null && tail -n 8 /app/logs/local.log' || warn "pas encore de /app/logs/local.log (aucun passage de la tâche locale ?)"
 
 sec "Auto-audit applicatif (lecture seule)"
-docker exec "$W" python -m worker.audit_system || true
-docker exec "$W" python -m worker.healthcheck --quiet && ok "healthcheck worker" || ko "healthcheck worker"
-docker exec "$W" python -m worker.reset 2>&1 | head -20   # aperçu : ne modifie RIEN sans --yes
+docker exec -u app "$W" python -m worker.audit_system || true
+docker exec -u app "$W" python -m worker.healthcheck --quiet && ok "healthcheck worker" || ko "healthcheck worker"
+docker exec -u app "$W" python -m worker.reset 2>&1 | head -20   # aperçu : ne modifie RIEN sans --yes
 
 sec "Temps de traitement (dernières campagnes)"
 [ -n "$M" ] && docker exec "$M" sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e "select started_at, campaign_id, duration_ms, processed, confirmed, probable, not_found, errors from local_run_metrics order by id desc limit 8;" 2>&1'
