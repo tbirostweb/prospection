@@ -28,7 +28,7 @@ def html(title="Boulangerie Martin - Troyes", h1="Boulangerie Martin", desc="Pai
     ld = f'<script type="application/ld+json">{jsonld}</script>' if jsonld else ""
     h = f"<h1>{h1}</h1>" if h1 else ""
     t = f"<title>{title}</title>" if title is not None else ""
-    return f'{doctype}<html lang="{lang}"><head>{t}{meta}{ld}{head_extra}</head><body>{h}{body}<footer>© 2026</footer></body></html>'
+    return f'{doctype}<html lang="{lang}"><head>{t}{meta}{ld}{head_extra}</head><body>{h}{body}<footer>© 2019</footer></body></html>'
 
 
 ROBOTS_OK = "User-agent: *\nDisallow: /admin"

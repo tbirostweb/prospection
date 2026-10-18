@@ -198,6 +198,29 @@ def audit_site(url: str, fetch, home: htmlinfo.Page | None = None, now: date | N
     return a
 
 
+COPYRIGHT = re.compile(r"(?:©|&copy;|&#169;|copyright)\s*(?:(19\d{2}|20\d{2})\s*(?:-|–|—|&ndash;|&mdash;|à)\s*)?(19\d{2}|20\d{2})", re.I)
+
+
+def site_year(raw: str, now: date | None = None) -> int | None:
+    """Année du site d'après la mention « © » (None = aucune mention exploitable). « © 2012-2026 » → 2012 (le site existe depuis 2012 : le
+    pied de page met souvent l'année en cours tout seul) ; « © 2025 » → 2025. Les années futures sont ignorées.
+    GARDE-FOU : beaucoup de sites anciens affichent l'année EN COURS automatiquement. Une page qui montre un signe technique d'ancienneté
+    (balises obsolètes, Flash, frames, jQuery 1.x, doctype HTML 4, pas de « viewport » mobile) n'est donc jamais datée d'après « © » : None."""
+    raw = raw or ""
+    year_max = (now or date.today()).year
+    found = []
+    for start, end in COPYRIGHT.findall(raw):
+        y = int(start) if start else int(end)
+        if 1995 <= y <= year_max:
+            found.append(y)
+    if not found:
+        return None
+    low = raw.lower()
+    if any(re.search(rx, low) for _w, _label, rx in OLD_TECH) or 'name="viewport"' not in low.replace("'", '"'):
+        return None                                   # « © » récent démenti par la technique du site : année non retenue
+    return max(found)
+
+
 def _issues_and_scores(a: Audit, now: date) -> None:
     add = lambda code, label, sev, cat, ev="": a.issues.append(Issue(code, label, sev, cat, ev))       # noqa: E731
     if a.js_shell:

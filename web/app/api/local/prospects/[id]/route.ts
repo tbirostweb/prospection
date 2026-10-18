@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, transaction } from "@/lib/db";
 import { readJson, routeId } from "@/lib/api";
-import { DISLIKE_REASONS, MANUAL_STATUSES } from "@/lib/local";
+import { DISLIKE_REASONS, MANUAL_STATUSES, isImported } from "@/lib/local";
 
 const RESPONSES = ["", "REPLIED", "INTERESTED", "NOT_INTERESTED", "NO_ANSWER", "NOT_A_FIT", "WON"];
 
@@ -15,6 +15,40 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const b = parsed.body;
   const p = await queryOne<any>("SELECT * FROM local_prospects WHERE id=?", [id]);
   if (!p) return NextResponse.json({ error: "prospect introuvable" }, { status: 404 });
+
+  const imported = isImported(p);
+  const reviewEvidence = () => {
+    const ev = typeof p.website_evidence === "string" ? (() => { try { return JSON.parse(p.website_evidence); } catch { return null; } })() : p.website_evidence;
+    return JSON.stringify((ev?.evidence ?? []).map((e: any) => e?.code).filter(Boolean));
+  };
+  // « C'est bien son site » : ta décision confirme le site et sert à ajuster le seuil des prochains (local_site_reviews).
+  if (b.action === "confirm_site") {
+    if (p.do_not_contact) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
+    if (!p.website_url) return NextResponse.json({ error: "aucun site à confirmer" }, { status: 400 });
+    await transaction(async (q) => {
+      await q("INSERT INTO local_site_reviews (prospect_id, url, verdict, confidence, evidence) VALUES (?,?, 'CONFIRMED', ?, ?)",
+        [p.id, p.website_url, p.website_confidence, reviewEvidence()]);
+      // le worker relit le site (âge, contacts manquants) puis recalcule le score
+      await q(`UPDATE local_prospects SET website_status='CONFIRMED', site_review='CONFIRMED', site_reviewed_at=UTC_TIMESTAMP(),
+        pipeline_stage=IF(?, 'IMPORTED', pipeline_stage), provenance=IF(?, provenance, JSON_REMOVE(COALESCE(provenance, JSON_OBJECT()), '$.contacts')) WHERE id=?`,
+        [imported ? 1 : 0, imported ? 1 : 0, id]);
+      if (!imported) await q(`UPDATE local_campaigns SET status='queued', enabled=1 WHERE id IN (SELECT campaign_id FROM local_prospect_campaigns WHERE prospect_id=?)`, [id]);
+    });
+    return NextResponse.json({ ok: true });
+  }
+  // Fiche importée : « Ce n'est pas son site » retire le site SEUL (e-mail et téléphone viennent du fichier, pas du site) ; aucune recherche relancée.
+  if (b.action === "wrong_site" && imported) {
+    const domain = p.canonical_domain || (() => { try { return new URL(p.website_url).hostname.replace(/^www\./, ""); } catch { return null; } })();
+    if (!domain) return NextResponse.json({ error: "aucun site associé à dissocier" }, { status: 400 });
+    await transaction(async (q) => {
+      await q("INSERT IGNORE INTO local_bad_sites (siret, fingerprint, domain, reason) VALUES (?,?,?,?)", [p.siret, p.fingerprint, domain, "mauvais site (retour utilisateur)"]);
+      await q("INSERT INTO local_site_reviews (prospect_id, url, verdict, confidence, evidence) VALUES (?,?, 'REJECTED', ?, ?)",
+        [p.id, p.website_url, p.website_confidence, reviewEvidence()]);
+      await q(`UPDATE local_prospects SET website_status=NULL, website_url=NULL, website_confidence=NULL, website_evidence=NULL, canonical_domain=NULL,
+        site_year=NULL, site_review='REJECTED', site_reviewed_at=UTC_TIMESTAMP(), pipeline_stage='IMPORTED' WHERE id=?`, [id]);
+    });
+    return NextResponse.json({ ok: true });
+  }
 
   // « Mauvais site » / « J'ai trouvé le site » : retours ciblés sur CE prospect (jamais d'apprentissage global).
   if (b.action === "wrong_site" || b.action === "found_site") {

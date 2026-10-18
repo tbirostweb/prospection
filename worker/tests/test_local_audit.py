@@ -66,7 +66,7 @@ def test_modernisation_uniquement_sur_indices_objectifs():
 
 
 def test_copyright_ancien_seul_est_un_signal_faible_jamais_suffisant():
-    a, _ = run(html(body="").replace("© 2026", "© 2009"))
+    a, _ = run(html(body="").replace("© 2019", "© 2009"))
     assert a.copyright_year == 2009 and a.modernization == "LOW"
     assert any("FAIBLE" in e for e in a.modernization_evidence)
 

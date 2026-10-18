@@ -72,6 +72,10 @@ test("Export : colonnes, pas de données internes, filtre e-mail, plafond", () =
   assert.equal(get("Facebook"), "https://facebook.com/exemple");
   assert.equal(get("Distance (km)"), "2,4");
   assert.equal(get("SIREN"), "000000000");
+  assert.equal(get("SIRET"), "00000000000018");
+  assert.equal(EXPORT_HEADERS[EXPORT_HEADERS.length - 1], "SIRET", "SIRET ajouté en FIN de liste : l'ordre historique des colonnes est conservé");
+  assert.equal(EXPORT_HEADERS.indexOf("SIREN"), 19);
+  assert.equal(exportLine(row({ siret: null, siren: "000000000" }))[EXPORT_HEADERS.indexOf("SIRET")], "", "pas de SIRET : cellule vide");
   assert.equal(get("Date d'ajout"), "2026-01-15");
   assert.equal(get("Statut de suivi"), "À contacter");
   assert.ok(!line.includes("77") && !EXPORT_HEADERS.some((h) => /score/i.test(h)), "aucun score exporté");

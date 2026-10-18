@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { queryOne, query } from "@/lib/db";
-import { CHAIN_KIND_LABELS, EMAIL_KIND_LABELS, ERROR_LABELS, ISSUE_SEVERITY_CLASS, SITE_KIND_CLASS, SITE_OK, WEBSITE_LABELS, bestTime, distanceLabel, followupDue, formatPhone, simpleStatus, siteInfo, verifiedSocials } from "@/lib/local";
+import { CHAIN_KIND_LABELS, EMAIL_KIND_LABELS, ERROR_LABELS, ISSUE_SEVERITY_CLASS, SITE_KIND_CLASS, SITE_OK, WEBSITE_LABELS, bestTime, distanceLabel, followupDue, formatPhone, recentSite, simpleStatus, siteInfo, verifiedSocials } from "@/lib/local";
 import FollowupButtons from "@/components/FollowupButtons";
 import { salesBrief } from "@/lib/pitch";
 import { getSetting } from "@/lib/localdb";
@@ -9,6 +9,7 @@ import type { Sender } from "@/lib/draft";
 import { dateFr } from "@/lib/format";
 import { parseId, safeHref } from "@/lib/security";
 import ProspectActions from "./actions";
+import SiteReview from "./site-review";
 import DraftBox from "./draft";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,11 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
             {safeHref(p.website_url) && siteOk && <div className="mt-1"><a href={safeHref(p.website_url)!} target="_blank" rel="noopener noreferrer" className="break-all font-medium text-accent hover:underline">{p.website_url} ↗</a></div>}
             {p.website_url && p.website_status === "UNREACHABLE" && <div className="mt-1 text-muted">{p.website_url} (ne répond pas)</div>}
             {p.website_status === "PROBABLE" && <div className="mt-1 text-xs text-muted">Très probablement le sien : vérifie d'un coup d'œil.</div>}
+            {p.site_review === "PENDING" && safeHref(p.website_url) && (
+              <SiteReview id={p.id} url={safeHref(p.website_url)!} confidence={p.website_confidence != null ? Number(p.website_confidence) : null}
+                evidence={(ev.evidence ?? []).filter((e: any) => e?.weight > 0).map((e: any) => String(e.label)).slice(0, 5)} />
+            )}
+            {recentSite(p) && <div className="mt-1 text-xs text-muted">Site récent (mention © {recentSite(p)}) : une refonte n'a pas d'intérêt, entreprise écartée.</div>}
             {candidate && safeHref(candidate.url) && <div className="mt-1 text-xs text-amber-900">Site possible, pas assez sûr pour être retenu : <a href={safeHref(candidate.url)!} target="_blank" rel="noopener noreferrer" className="underline">{candidate.url}</a></div>}
             {site.kind === "no" && <div className="mt-1 text-xs text-muted">Aucun site trouvé après recherche, ce n'est pas une certitude.</div>}
           </Row>

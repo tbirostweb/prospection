@@ -244,6 +244,8 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch) -> N
             db.execute(conn, "UPDATE local_prospects SET do_not_contact=1, status='DO_NOT_CONTACT' WHERE id=%s", (pid,))
         if pages and not row.get("excluded_reason") and (reason := naf_mod.excluded_reason(None, None, _self_description(pages[0]))):
             db.execute(conn, "UPDATE local_prospects SET excluded_reason=%s WHERE id=%s", (reason, pid))
+        if pages and (year := audit_mod.site_year(" ".join(p.raw for p in pages))) and year != row.get("site_year"):
+            db.execute(conn, "UPDATE local_prospects SET site_year=%s WHERE id=%s", (year, pid))     # site récent : écarté par le score
         if AUDIT and row.get("audited_at") is None:            # désactivé par défaut : todo_sql() n'exige alors pas `audited_at`
             store.set_stage(conn, pid, "AUDIT")
             a = audit_mod.audit_site(url, fetch, home=pages[0] if pages else None)
@@ -519,6 +521,14 @@ def run_pending() -> int:
             if time.monotonic() > deadline:
                 break
             run_campaign(conn, camp, deadline=deadline)
+        try:
+            from . import imported                              # fiches importées (CSV) : site déclaré vérifié, sans moteur de recherche
+            done = imported.run(conn, deadline=deadline)
+            if done.get("processed") or done.get("errors"):
+                log.info("[local] fiches importées : %s", done)
+        except Exception as exc:  # noqa: BLE001 — n'empêche jamais les alertes ni les campagnes suivantes
+            conn.rollback()
+            log.warning("[local] fiches importées non traitées : %s", exc)
         try:
             from . import notify as local_notify
             local_notify.notify_new_businesses(conn)

@@ -128,7 +128,7 @@ export interface LocalRow {
   seo_opportunity_score?: number | null; pipeline_stage?: string | null; error_category?: string | null; entity_level?: string | null; sibling_count?: number | null;
   score_summary?: string | null; latitude?: number | string | null; longitude?: number | string | null; new_business_at?: string | null;
   draft_created_at?: string | null; last_contacted_at?: string | null;
-  deep_enriched_at?: string | null; buy_signals?: any; budget_level?: string | null; followups?: number | null; manager_name?: string | null; address?: string | null; social_links?: any; notes?: string | null;
+  deep_enriched_at?: string | null; buy_signals?: any; budget_level?: string | null; followups?: number | null; manager_name?: string | null; address?: string | null; social_links?: any; notes?: string | null; site_year?: number | null; site_review?: string | null;
 }
 
 // « Aucun site » n'est un FAIT qu'après une vraie recherche (miroir de signals.ABSENCE_MIN).
@@ -137,13 +137,20 @@ export const siteSearched = (p: { website_status?: string | null; website_absenc
   p.website_status === "NOT_FOUND" && Number(p.website_absence_confidence ?? 0) >= ABSENCE_MIN;
 // Réponse SIMPLE à « a-t-il un site ? » pour les listes (jamais « pas de site » affirmé avant une vraie recherche).
 export type SiteKind = "yes" | "down" | "no" | "check" | "pending";
-export function siteInfo(p: { website_status?: string | null; website_absence_confidence?: any; website_url?: string | null }): { kind: SiteKind; label: string; url: string | null } {
+// Site RÉCENT (miroir de worker/local/scoring.RECENT_SITE_YEAR) : mention « © » de cette année ou après → écarté du ciblage.
+export const RECENT_SITE_YEAR = 2024;
+export const recentSite = (p: { site_year?: number | null; website_status?: string | null }) =>
+  p.site_year != null && Number(p.site_year) >= RECENT_SITE_YEAR && ["CONFIRMED", "PROBABLE"].includes(p.website_status ?? "") ? Number(p.site_year) : null;
+export function siteInfo(p: { website_status?: string | null; website_absence_confidence?: any; website_url?: string | null; site_year?: number | null;
+  site_review?: string | null }): { kind: SiteKind; label: string; url: string | null } {
   const url = p.website_url ?? null;
+  const recent = recentSite(p);
   switch (p.website_status) {
-    case "CONFIRMED": return { kind: "yes", label: "A un site", url };
-    case "PROBABLE": return { kind: "yes", label: "A un site (probable)", url };
+    case "CONFIRMED": return { kind: "yes", label: recent ? `Site récent (© ${recent})` : "A un site", url };
+    case "PROBABLE": return { kind: "yes", label: recent ? `Site récent (© ${recent})` : "A un site (probable)", url };
     case "UNREACHABLE": return { kind: "down", label: "Site en panne", url };
-    case "UNCERTAIN": return { kind: "check", label: "Site à vérifier", url: null };
+    // site douteux : le lien est montré seulement quand c'est à TOI de le vérifier (import CSV)
+    case "UNCERTAIN": return p.site_review === "PENDING" ? { kind: "check", label: "Site à vérifier par toi", url } : { kind: "check", label: "Site à vérifier", url: null };
     case "NOT_FOUND": return siteSearched(p) ? { kind: "no", label: "Pas de site trouvé", url: null } : { kind: "pending", label: "Recherche du site en cours", url: null };
     default: return { kind: "pending", label: "Site pas encore recherché", url: null };
   }
@@ -166,16 +173,23 @@ export function simpleStatus(p: { status: string; category?: string | null; do_n
 export const formatPhone = (s: string) => s.replace(/(\d{2})(?=\d)/g, "$1 ");
 
 // Profils sociaux VÉRIFIÉS (lien sur le site officiel, ou nom + ville dans le résultat de recherche) : worker/local/socials.py.
-export interface SocialLink { network: string; url: string; via: "site" | "search"; confidence: number }
+export interface SocialLink { network: string; url: string; via: "site" | "search" | "import"; confidence: number }
 export const verifiedSocials = (p: { social_links?: any }): SocialLink[] => asList(p.social_links).filter((x: any) => x?.url && x?.network);
 export const NETWORK_ICONS: Record<string, string> = { Facebook: "📘", Instagram: "📸", LinkedIn: "💼", TikTok: "🎵", YouTube: "▶️", Pinterest: "📌", X: "✖️" };
 
 // FICHE PRÊTE (miroir de worker/local/today.READY) : traitement terminé sans erreur, enrichissement fait, site tranché, au moins un contact.
 export const READY_SQL = "p.pipeline_stage='DONE' AND p.deep_enriched_at IS NOT NULL AND (p.phone IS NOT NULL OR p.email IS NOT NULL OR p.contact_form=1) "
-  + "AND (p.website_status IN ('CONFIRMED','PROBABLE','UNREACHABLE') OR (p.website_status='NOT_FOUND' AND p.website_absence_confidence >= 0.6))";
+  + "AND (p.website_status IN ('CONFIRMED','PROBABLE','UNREACHABLE') OR (p.website_status='NOT_FOUND' AND p.website_absence_confidence >= 0.6) "
+  + "OR JSON_EXTRACT(p.provenance, '$.import_csv') IS NOT NULL)";
+// Fiche importée (CSV) : prête dès qu'elle a un contact, site vérifié ou non (un site douteux reste « à vérifier » : site_review).
+export function isImported(p: { provenance?: any }): boolean {
+  let v = p.provenance;
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { return false; } }
+  return !!(v && typeof v === "object" && (v as any).import_csv);
+}
 export function ficheReady(p: { pipeline_stage?: string | null; deep_enriched_at?: any; phone?: string | null; email?: string | null; contact_form?: any;
-  website_status?: string | null; website_absence_confidence?: any }): boolean {
-  const site = ["CONFIRMED", "PROBABLE", "UNREACHABLE"].includes(p.website_status ?? "") || siteSearched(p);
+  website_status?: string | null; website_absence_confidence?: any; provenance?: any }): boolean {
+  const site = ["CONFIRMED", "PROBABLE", "UNREACHABLE"].includes(p.website_status ?? "") || siteSearched(p) || isImported(p);
   return p.pipeline_stage === "DONE" && !!p.deep_enriched_at && !!(p.phone || p.email || Number(p.contact_form)) && site;
 }
 

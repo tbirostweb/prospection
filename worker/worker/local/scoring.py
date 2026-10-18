@@ -20,6 +20,7 @@ Un score Lighthouse faible est un SIGNAL parmi d'autres, jamais une raison suffi
 """
 from __future__ import annotations
 
+import os
 from datetime import date
 
 from . import budget as budget_mod, learning as learning_mod, naf as naf_mod, signals as signals_mod
@@ -49,6 +50,8 @@ DATA_CONF_MIN_TRES_BON = 70
 DATA_CONF_MIN_CONTACT = 50
 DATA_CONF_FLOOR = 40       # en dessous : au mieux « À examiner »
 SITE_OK = ("CONFIRMED", "PROBABLE")
+# Site RÉCENT (mention « © » de cette année ou après) : refonte inutile, la fiche est écartée même avec un e-mail (« après 2023 » = 2024+).
+RECENT_SITE_YEAR = int(os.getenv("LOCAL_RECENT_SITE_YEAR") or "2024")
 SMALL_EMPLOYEES = {None, "NN", "00", "01", "02", "03"}
 
 
@@ -72,6 +75,14 @@ def freshness_factor(created: date | None, bodacc: dict | None, today: date) -> 
         f = min(1.0, f + 0.2)
         note += " · création confirmée au BODACC"
     return f, note
+
+
+def recent_site(p: dict) -> int | None:
+    """Année du site s'il est RÉCENT (site retenu dont la mention « © » la plus récente est >= RECENT_SITE_YEAR), sinon None."""
+    year = p.get("site_year")
+    if year is None or p.get("website_status") not in SITE_OK:
+        return None
+    return int(year) if int(year) >= RECENT_SITE_YEAR else None
 
 
 def has_contact(p: dict) -> bool:
@@ -257,8 +268,11 @@ def score_prospect(p: dict, weights: dict | None = None, thresholds: dict | None
 
     excluded = bool(p.get("excluded_reason"))
     dnc = bool(p.get("do_not_contact") or p.get("status") == "DO_NOT_CONTACT")
+    recent = recent_site(p)
     if excluded:
         cap(0, f"exclu : {p['excluded_reason']}")
+    if recent:
+        cap(0, f"site récent (© {recent}, {RECENT_SITE_YEAR} ou après) : refonte inutile, pas une cible même avec un e-mail")
     if dnc:
         cap(0, "ne plus contacter (demande de l'entreprise)")
     if p.get("is_chain") or kind:
@@ -302,7 +316,7 @@ def score_prospect(p: dict, weights: dict | None = None, thresholds: dict | None
                   "detail": f"Score brut {raw} → plafond {c['limit']}{applied} : {c['reason']}"
                             + (" (plafond du score de base : signaux d'achat, budget et tes résultats s'ajoutent ensuite)" if c["soft"] else "")})
 
-    if excluded or dnc:
+    if excluded or dnc or recent:
         category = "IGNORER"
     elif stage == "PRELIMINARY":
         category = None

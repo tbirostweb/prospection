@@ -8,7 +8,7 @@ export const LIST_COLUMNS = `p.id, p.siret, p.company_name, p.trade_name, p.acti
   p.excluded_reason, p.do_not_contact, p.phone, p.email, p.email_kind, p.contact_page, p.bodacc, p.discovered_at, p.contacted_at,
   p.commercial_potential_score, p.data_confidence_score, p.website_search_tried, p.website_search_total, p.website_absence_confidence, p.chain_kind,
   p.contact_confidence, p.contact_form, p.seo_opportunity_score, p.pipeline_stage, p.error_category, p.entity_level, p.sibling_count,
-  p.latitude, p.longitude, p.new_business_at, p.draft_created_at, p.last_contacted_at, p.buy_signals, p.budget_level, p.followups, p.manager_name, p.deep_enriched_at, p.social_links, p.address`;
+  p.latitude, p.longitude, p.new_business_at, p.draft_created_at, p.last_contacted_at, p.buy_signals, p.budget_level, p.followups, p.manager_name, p.deep_enriched_at, p.social_links, p.address, p.site_year, p.site_review`;
 
 /** File « À contacter » (page /local/contact et son export CSV) : jamais d'opposition ni d'exclusion, fiche prête ou marquée à contacter. */
 export const CONTACT_QUEUE_LIMIT = 300;

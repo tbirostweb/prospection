@@ -21,6 +21,7 @@ export default async function ContactQueue() {
       <PageHeader title="À contacter" kicker="01 — Aujourd'hui"
         intro={<>Les entreprises dont on sait si elles ont un site et qui ont au moins un moyen de contact. Tu contactes toi-même, puis tu cliques « Marquer contacté ».</>}>
         <Link href="/local/tournee" className="btn-ghost btn-sm">Préparer une tournée ↗</Link>
+        <Link href="/local/import" className="btn-ghost btn-sm">Importer un CSV ↗</Link>
       </PageHeader>
       {rows.length > 0 && <ExportButton params={{ list: "contact" }} />}
       {due.length > 0 && (

@@ -33,7 +33,8 @@ CLEAN = "do_not_contact=0 AND excluded_reason IS NULL AND is_chain=0"
 # FICHE PRÊTE (miroir de web/lib/local.ts READY_SQL) : traitement terminé sans erreur, enrichissement fait, site tranché (trouvé, en panne, ou absent
 # après une VRAIE recherche) et au moins un moyen de contact. Seules ces fiches sont proposées : moins de prospects, mais exploitables tels quels.
 READY = ("p.pipeline_stage='DONE' AND p.deep_enriched_at IS NOT NULL AND (p.phone IS NOT NULL OR p.email IS NOT NULL OR p.contact_form=1) "
-         "AND (p.website_status IN ('CONFIRMED','PROBABLE','UNREACHABLE') OR (p.website_status='NOT_FOUND' AND p.website_absence_confidence >= 0.6))")
+         "AND (p.website_status IN ('CONFIRMED','PROBABLE','UNREACHABLE') OR (p.website_status='NOT_FOUND' AND p.website_absence_confidence >= 0.6) "
+         "OR JSON_EXTRACT(p.provenance, '$.import_csv') IS NOT NULL)")   # fiche importée : prête dès qu'elle a un contact
 
 
 def best_time(activity_key: str | None) -> str:

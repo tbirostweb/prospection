@@ -15,6 +15,7 @@ export default async function LocalPage() {
         intro="Toutes les entreprises trouvées par tes campagnes. Elles n'ont rien demandé : ce sont des prospects à froid.">
         <Link href="/local/carte" className="btn-ghost btn-sm">Voir sur la carte →</Link>
         <Link href="/local/campagnes" className="btn-ghost btn-sm">+ Nouvelle campagne</Link>
+        <Link href="/local/import" className="btn-ghost btn-sm">Importer un CSV ↗</Link>
       </PageHeader>
       <LocalBoard rows={JSON.parse(JSON.stringify(rows))} />
     </div>

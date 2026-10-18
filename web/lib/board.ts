@@ -11,6 +11,7 @@ export const BOARD_VIEWS: { id: string; label: string; test: (p: LocalRow) => bo
   { id: "nosite", label: "Pas de site trouvé", test: (p) => siteInfo(p).kind === "no" },
   { id: "down", label: "Site en panne", test: (p) => siteInfo(p).kind === "down" },
   { id: "site", label: "A un site", test: (p) => siteInfo(p).kind === "yes" },
+  { id: "review", label: "Sites à vérifier", test: (p) => p.site_review === "PENDING" },
   { id: "worked", label: "Déjà contactées", test: (p) => ["CONTACTED", "REPLIED", "INTERESTED", "WON", "LOST"].includes(p.status) },
 ];
 export const BOARD_SORTS: [string, string, (a: LocalRow, b: LocalRow) => number][] = [

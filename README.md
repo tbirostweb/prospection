@@ -204,6 +204,7 @@ L'app limite les échecs de connexion par adresse (en-tête `X-Real-Ip` posé pa
 | Pas de notif Telegram | Token/chat_id manquants, ou bot pas admin du canal : `python -m worker.telegram_check`. |
 | « Base non initialisée » | MySQL pas prêt : attends le healthcheck, vérifie `DATABASE_URL`. |
 | Grande zone (un département entier) | Télécharger l'export officiel `StockEtablissement_utf8.csv` (data.gouv.fr), puis `python -m worker.local.bulk fichier.csv --campaign N` : lu en flux, filtré (actifs, diffusables, département, activités), chaînes bannies, dédoublonné par SIRET, situé au centre de sa commune. |
+| Importer un CSV de prospects | Page « Importer un CSV » (liens depuis « À contacter » et « Entreprises », `/local/import`) : aperçu sans écriture (Nouvelles / Existantes / Ambiguës / Erreurs, motif par ligne), puis « Confirmer l'import » dans une transaction. Format de l'export de l'app (UTF-8, « ; » ou « , », 2 Mo, 5 000 lignes). Rapprochement par SIRET, sinon SIREN (jamais par e-mail) ; une fiche existante n'est que complétée (champs vides) ; oppositions refusées ; fiches créées hors campagne (étape `IMPORTED`, jamais retraitées par le worker). Journal (migration 026) sur la même page. |
 | Conservation des données | `python -m worker.local.retention` (chaque nuit, 04:30) : prospect jamais travaillé supprimé après 18 mois (`LOCAL_RETENTION_MONTHS`), exclu après 6 mois ; « ne plus contacter », tes retours et tes résultats jamais supprimés. |
 | Vérifier l'interface sans données réelles | `python scripts/demo_db.py` (base `prospection_demo` sur le MySQL de test), puis la configuration « web-demo » de `.claude/launch.json` : `next dev` sur 127.0.0.1:3010 sans mot de passe (`DEV_NO_AUTH=1`, refusé hors développement et hors localhost). |
 | Résumé à la mauvaise heure | Le conteneur worker est en `TZ=Europe/Paris` (déjà configuré). |
@@ -218,6 +219,7 @@ Tests unitaires (aucune base requise) et d'intégration (**vrai MySQL**, réseau
 cd worker && pip install -e ".[dev]" && PYTHONPATH=. pytest -q                      # unitaires seuls
 URL=$(scripts/dev_mysql.sh start)                                                   # MySQL jetable en local (requiert mysqld, ex. brew install mysql)
 cd worker && TEST_DATABASE_URL=$URL PYTHONPATH=. pytest -q                          # + intégration
+cd web && TEST_DATABASE_URL=$URL npm test                                           # web, + import CSV sur vrai MySQL (sinon ignoré)
 scripts/dev_mysql.sh stop
 ```
 L'image de production est **Python 3.11** : un test garde contre les syntaxes réservées à 3.12. À lancer avant de livrer toute migration ou requête SQL.

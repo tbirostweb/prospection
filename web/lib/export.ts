@@ -75,6 +75,8 @@ const social = (p: LocalRow, network: string) => {
 export const EXPORT_HEADERS = [
   "Nom", "Raison sociale", "Activité", "Adresse", "Code postal", "Ville", "Distance (km)", "Site web", "URL du site", "E-mail", "Téléphone",
   "Formulaire de contact", "Facebook", "Instagram", "LinkedIn", "Statut de suivi", "Contacté le", "Campagne", "Date d'ajout", "SIREN",
+  // Ajoutée en fin de liste (l'ordre historique reste stable) : clé de rapprochement de l'import CSV (lib/csvimport.ts).
+  "SIRET",
 ];
 
 export function exportLine(p: ExportRow): string[] {
@@ -86,7 +88,7 @@ export function exportLine(p: ExportRow): string[] {
     p.distance_km == null ? "" : Number(p.distance_km).toFixed(1).replace(".", ","),
     site.label, site.url, p.email ?? "", p.phone ? formatPhone(p.phone) : "",
     safeHref(p.contact_page) ?? "", social(p, "Facebook"), social(p, "Instagram"), social(p, "LinkedIn"),
-    simpleStatus(p), day(p.contacted_at), p.campaigns ?? "", day(p.discovered_at), sirenOf(p) ?? "",
+    simpleStatus(p), day(p.contacted_at), p.campaigns ?? "", day(p.discovered_at), sirenOf(p) ?? "", p.siret ?? "",
   ];
 }
 
