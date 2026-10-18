@@ -7,7 +7,7 @@ description: Règles de la prospection LOCALE proactive de l'app Prospection (co
 
 ## Périmètre
 - L'application ne fait plus QUE de la prospection locale (l'ancien pipeline d'opportunités — Codeur, BOAMP, recherche web, analyse IA — a été supprimé). Un `LOCAL_PROSPECT` est une entreprise découverte par nous, qui n'a RIEN demandé : ne jamais écrire ni laisser entendre qu'elle « cherche un développeur » (formulation : « peut avoir intérêt à… »).
-- Telegram : alertes des prospects « À contacter » ou mieux avec boutons de classement (⭐ 📞 🚫 + raison, ❌ Mauvais site) ; « ne plus contacter » n'est jamais modifiable par un bouton. Aucune IA (Ollama supprimé).
+- Telegram : alertes des prospects « À contacter » ou mieux avec boutons de classement (⭐ 📞 🚫 + raison, ❌ Mauvais site) ; « ne plus contacter » n'est jamais modifiable par un bouton. Résumé du matin (`worker/worker/digest.py`) : un prospect présenté dans « les meilleurs à contacter » est marqué `digest_featured_at` (migration 025) et n'y revient plus ; les relances du jour, elles, reviennent tant qu'elles sont dues. Aucune IA (Ollama supprimé).
 
 ## Site officiel
 - Ne jamais prendre le premier résultat. Chaque candidat est LU et reçoit une confiance issue d'une accumulation de PREUVES pondérées (`websiteEvidence[]` : SIRET/SIREN très fort, adresse très forte, téléphone fort, nom + ville moyen, nom seul faible — plafonné à 0,55) et d'une VÉRIFICATION INVERSÉE (un autre SIREN valide sur le site = preuve négative forte, interdit d'accepter).

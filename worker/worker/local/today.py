@@ -60,15 +60,24 @@ def followups(conn, now: datetime | None = None) -> list[dict]:
     return [{**r, "due": d} for r in rows if (d := followup_due(r, now))]
 
 
-def top_prospects(conn, n: int = 3) -> list[dict]:
-    """Les meilleurs pas encore contactés : les plus récents d'abord à score égal (la nouveauté est un signal)."""
+def top_prospects(conn, n: int = 3, fresh_only: bool = False) -> list[dict]:
+    """Les meilleurs pas encore contactés : les plus récents d'abord à score égal (la nouveauté est un signal).
+    `fresh_only` (résumé du matin) : seulement ceux qui n'y ont JAMAIS été présentés (digest_featured_at IS NULL)."""
+    fresh = " AND p.digest_featured_at IS NULL" if fresh_only else ""
     rows = db.fetch_all(conn, f"""SELECT id, company_name, trade_name, city, phone, email, activity_key, prospect_score, buy_signals, category
-                                  FROM local_prospects p WHERE category IN {GOOD} AND status IN {OPEN_STATUSES} AND {CLEAN} AND {READY}
+                                  FROM local_prospects p WHERE category IN {GOOD} AND status IN {OPEN_STATUSES} AND {CLEAN} AND {READY}{fresh}
                                   ORDER BY prospect_score DESC, discovered_at DESC LIMIT %s""", (n,))
     for r in rows:
         sigs = json.loads(r["buy_signals"]) if isinstance(r.get("buy_signals"), (str, bytes)) else (r.get("buy_signals") or [])
         r["signal"] = sigs[0]["label"] if sigs else None
     return rows
+
+
+def mark_featured(conn, ids: list[int]) -> None:
+    """Mémorise que ces prospects ont été présentés dans le résumé du matin : ils n'y seront plus proposés."""
+    if ids:
+        db.execute(conn, "UPDATE local_prospects SET digest_featured_at=UTC_TIMESTAMP() WHERE id IN (%s)" % ",".join(["%s"] * len(ids)), tuple(ids))
+        conn.commit()
 
 
 def tour(conn, stops: int = 6) -> dict | None:

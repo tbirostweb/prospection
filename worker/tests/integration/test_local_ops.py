@@ -34,7 +34,7 @@ def test_resume_quotidien_et_hebdomadaire(env, conn, monkeypatch, telegram):
     digest.daily()
     digest.weekly()
     assert len(telegram.texts) == 2
-    assert "Ta journée de prospection" in telegram.texts[0] and "Les 3 meilleurs à contacter" in telegram.texts[0]
+    assert "Ta journée de prospection" in telegram.texts[0] and "meilleur" in telegram.texts[0] and "nouveau" in telegram.texts[0]
     assert "Tournée proposée" in telegram.texts[0] and "google.com/maps/dir/" in telegram.texts[0]
     assert "Bilan de la semaine" in telegram.texts[1] and "Entreprises découvertes" in telegram.texts[1]
 
@@ -99,6 +99,58 @@ def test_resume_du_matin_relances_dues_meilleurs_et_tournee(env, conn, monkeypat
     assert "Relances du jour (2)" in text and "☎ appeler · tôt (7 h 30" in text and "Couverture D" in text
     assert "0325000000" not in text and "03 25 00 00 00" not in text and "0325111111" not in text and "03 25 11 11 11" not in text   # jamais le numéro
     assert "Chaine E" not in text and "Pas Bon F" not in text and "Incomplet G" not in text
+
+
+def test_resume_du_matin_ne_represente_jamais_un_meilleur_prospect(env, conn, monkeypatch, telegram):
+    """Un prospect présenté dans « les meilleurs à contacter » n'y revient pas le lendemain ; un nouveau oui ; les relances restent ;
+    plus aucun nouveau = pas de répétition (ligne courte) ; résumé entièrement vide = aucun message ; Telegram en panne = rien de marqué."""
+    from datetime import datetime, timedelta, timezone
+    from worker.local import today
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    def add(siret, name, **over):
+        row = {"siret": siret, "fingerprint": siret, "company_name": name, "city": "TROYES", "activity_key": "plombiers", "prospect_score": 70,
+               "category": "A_CONTACTER", "status": "QUALIFIED", "pipeline_stage": "DONE", "deep_enriched_at": now, "phone": "0325111111",
+               "website_status": "CONFIRMED", **over}
+        return db.execute(conn, f"INSERT INTO local_prospects ({', '.join(row)}) VALUES ({', '.join(['%s'] * len(row))})", tuple(row.values()))
+    for i, score in enumerate((90, 85, 80, 75)):
+        add(str(10 + i), f"PROSPECT {chr(65 + i)}", prospect_score=score)
+    add("20", "RELANCE R", status="CONTACTED", contacted_at=now - timedelta(days=4), phone=None, deep_enriched_at=None)
+    conn.commit()
+    monkeypatch.setattr("worker.db.connect", lambda: __import__("contextlib").nullcontext(conn))
+    monkeypatch.setattr(today, "tour", lambda c, stops=6: None)          # tournée testée ailleurs : ici, seul le choix des prospects compte
+
+    telegram.ok = False                                                  # jour 0 : Telegram en panne -> rien n'est marqué
+    digest.daily()
+    assert db.fetch_one(conn, "SELECT COUNT(*) AS n FROM local_prospects WHERE digest_featured_at IS NOT NULL")["n"] == 0
+    telegram.ok = True
+
+    digest.daily()                                                       # jour 1 : les 3 meilleurs
+    d1 = telegram.texts[-1]
+    assert "Les 3 meilleurs nouveaux à contacter" in d1 and all(f"Prospect {c}" in d1 for c in "ABC") and "Prospect D" not in d1
+    assert "Relances du jour (1)" in d1 and "Relance R" in d1
+
+    digest.daily()                                                       # jour 2 : seul D reste ; A, B, C ne reviennent pas ; la relance reste
+    d2 = telegram.texts[-1]
+    assert "Le meilleur nouveau à contacter" in d2 and "Prospect D" in d2 and not any(f"Prospect {c}" in d2 for c in "ABC")
+    assert "Relances du jour (1)" in d2 and "Relance R" in d2
+
+    add("30", "PROSPECT NEUF", prospect_score=60)                        # jour 3 : un nouveau prospect arrive -> présenté, même moins bien noté
+    conn.commit()
+    digest.daily()
+    d3 = telegram.texts[-1]
+    assert "Prospect Neuf" in d3 and not any(f"Prospect {c}" in d3 for c in "ABCD")
+
+    digest.daily()                                                       # jour 4 : plus aucun nouveau -> aucune répétition, relance toujours là
+    d4 = telegram.texts[-1]
+    assert "Aucun nouveau prospect" in d4 and "meilleur" not in d4 and "Prospect " not in d4 and "Relance R" in d4
+
+    db.execute(conn, "UPDATE local_prospects SET status='WON' WHERE company_name='RELANCE R'")     # jour 5 : plus rien du tout -> aucun message
+    conn.commit()
+    monkeypatch.setattr("worker.local.health.degradations", lambda c: [])
+    n = len(telegram.texts)
+    digest.daily()
+    assert len(telegram.texts) == n
 
 
 def test_creneaux_d_appel_identiques_web_et_worker():

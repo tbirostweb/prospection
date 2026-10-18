@@ -17,7 +17,7 @@ recherche du site officiel vérifiée par preuves, contacts publics, score par r
 - Des **brouillons d'e-mail personnalisés** créés à la demande (bouton « Créer un brouillon »), à partir des faits détectés, signés avec ton identité — jamais envoyés par l'application.
 - Une **veille des nouvelles entreprises** (BODACC + SIRENE) par campagne, chaque semaine ou chaque mois, annoncée sur Telegram.
 - Des **alertes Telegram** pour chaque prospect « À contacter » ou mieux, avec des boutons pour le **classer depuis ton téléphone** : ⭐ bon prospect · 📞 contacté · 🚫 pas intéressé (+ la raison) · ❌ mauvais site.
-- Un **résumé du matin** (07:15 : relances du jour, 3 meilleurs prospects, tournée proposée avec l'itinéraire) et un **bilan hebdomadaire** (lundi 08:00) sur Telegram, et des **alertes techniques** en cas de dégradation.
+- Un **résumé du matin** (07:15 : relances du jour, jusqu'à 3 meilleurs NOUVEAUX prospects — un prospect déjà présenté n'y revient jamais, il reste dans « À contacter » —, tournée proposée avec l'itinéraire ; aucun message si tout est vide) et un **bilan hebdomadaire** (lundi 08:00) sur Telegram, et des **alertes techniques** en cas de dégradation.
 - Une **recherche par paliers**, du gratuit au payant : moteurs SearXNG d'abord ; puis, seulement si aucun n'a pu répondre, les API à quota gratuit **Brave Search** (`LOCAL_BRAVE_API_KEY`, 30 requêtes / jour par défaut) et **Tavily** (`LOCAL_TAVILY_API_KEY`, 30 / jour et 1 000 / mois) ; enfin, en dernier recours, **Serper** (payant, `LOCAL_SERPER_API_KEY`, 150 / jour par défaut, plafond mensuel `LOCAL_PAID_MONTHLY_BUDGET`). Sans clé, rien de payant n'est jamais appelé. Pas à pas : [docs/GUIDE_CONNEXION.md](docs/GUIDE_CONNEXION.md).
 
 ---
