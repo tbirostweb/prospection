@@ -1,6 +1,6 @@
 // Brouillon d'e-mail PERSONNALISÉ, créé seulement quand tu cliques « Créer un brouillon » — jamais envoyé automatiquement.
 // Construit UNIQUEMENT avec des faits réellement détectés sur l'entreprise (site non trouvé, problèmes objectifs du site, création récente…).
-// Ton : court, courtois, sans fausse affirmation (« je peux me tromper »), toujours avec une phrase permettant de refuser tout nouveau contact.
+// Ton : court, courtois, sans fausse affirmation (« sauf erreur de ma part »), toujours avec une ligne permettant de refuser tout nouveau contact.
 
 import { siteSearched, verifiedSocials } from "./local";
 
@@ -23,25 +23,47 @@ export function informationNotice(p: any, sender: Sender = {}): string {
 export interface Draft { subject: string; body: string; core: string; facts: string[]; kind: string }
 
 /** Offre « clé en main » (Réglages → « Mon offre ») : le texte est fixe, seuls les chiffres viennent des réglages, jamais du code (dépôt public).
- *  Prix absents = aucune phrase de prix ; places de lancement à 0 = ni prix de lancement ni mention « pas encore d'avis ». */
-export interface Offer { enabled?: boolean; area?: string; launch_price?: number | null; normal_price?: number | null; launch_slots_left?: number | null }
-const euros = (n: number) => `${new Intl.NumberFormat("fr-FR").format(n).replace(/ | /g, " ")} €`;
+ *  Prix absents = aucune phrase de prix ; places de lancement à 0 = pas de tarif de lancement. Le paiement, le domaine et l'hébergement se
+ *  règlent au devis : jamais dans le premier message. */
+export interface Offer { enabled?: boolean; area?: string; launch_price?: number | null; normal_price?: number | null; launch_slots_left?: number | null;
+  photos_max_km?: number | null }
+const euros = (n: number) => `${new Intl.NumberFormat("fr-FR").format(n).replace(/\u202f|\u00a0/g, " ")} €`;
 
-export function offerParagraphs(offer: Offer): string[] {
+/** Métiers où des photos faites sur place servent vraiment le site (salon, atelier, chantier, vitrine…). Jamais les photographes. */
+export const PHOTO_ACTIVITIES = new Set(["coiffure", "beaute", "soins_personnels", "fitness", "restaurants", "bars", "traiteurs", "boulangeries", "garages",
+  "commerces", "boutiques", "fleuristes", "opticiens", "artisans_art", "menuisiers", "paysagistes", "peintres", "couvreurs", "macons", "plombiers",
+  "electriciens", "hebergements", "immobilier", "evenementiel", "auto_ecoles"]);
+export const PHOTOS_MAX_KM = 20;
+/** Proposer les photos en option : métier concerné ET établissement assez proche (distance au centre de la campagne, ≤ `photos_max_km`). */
+export function photosOffered(p: { activity_key?: string | null; distance_km?: any }, offer: Offer = {}): boolean {
+  const km = p.distance_km === null || p.distance_km === undefined || p.distance_km === "" ? NaN : Number(p.distance_km);
+  const max = Number(offer.photos_max_km ?? PHOTOS_MAX_KM);
+  return PHOTO_ACTIVITIES.has(p.activity_key ?? "") && Number.isFinite(km) && km <= max;
+}
+
+export function offerParagraphs(offer: Offer, opts: { photos?: boolean } = {}): string[] {
   const out = [
-    "Concrètement, je m'occupe de tout : je passe une heure sur place pour les photos, j'écris les textes et vous n'avez qu'à relire. "
-      + "Le site est en ligne trois semaines après la visite, votre fiche Google est mise à jour, et je vous envoie un bilan chiffré au bout de trois mois (appels, demandes reçues, position sur Google).",
-    "Vous ne payez rien avant la mise en ligne, et il n'y a aucun abonnement obligatoire : le nom de domaine et l'hébergement sont à votre nom.",
+    "Concrètement, j'écris les textes à partir de ce que vous me racontez de votre métier, vous n'avez qu'à relire. "
+      + "Le site est en ligne en deux à quatre semaines, et je vous envoie un bilan chiffré au bout de trois mois (appels, demandes reçues, position sur Google). "
+      + (opts.photos ? "En option, je peux aussi créer ou compléter votre fiche Google et passer faire les photos." : "En option, je peux aussi créer ou compléter votre fiche Google."),
   ];
   const slots = Math.max(0, Math.floor(Number(offer.launch_slots_left) || 0));
   const launch = Number(offer.launch_price) || 0, normal = Number(offer.normal_price) || 0;
   if (slots > 0 && launch > 0 && normal > launch) {
-    out.push(`Je lance mon activité auprès des entreprises de la région et je n'ai pas encore d'avis client. Pour ${slots > 1 ? `les ${slots} prochaines` : "la prochaine"}, `
-      + `le site est à ${euros(launch)} au lieu de ${euros(normal)}, en échange d'un avis honnête.`);
+    out.push(`C'est mon offre de lancement : pour ${slots > 1 ? `les ${slots} prochaines entreprises` : "la prochaine entreprise"}, `
+      + `le site est à ${euros(launch)} au lieu de ${euros(normal)}.`);   // jamais de réduction contre un avis : interdit par Google (avis incités)
   } else if (normal > 0) {
     out.push(`Le site est à ${euros(normal)}.`);
   }
   return out;
+}
+
+/** Une seule demande à la fin : le site (réalisations, tarifs, devis, réservation d'un appel ou d'une visio) ; sans site réglé, une réponse au message. */
+export function callToAction(website?: string): string {
+  const site = website?.trim().replace(/\/$/, "");
+  return site
+    ? `Vous pouvez voir mes réalisations et mes tarifs sur ${site}, et y demander un devis ou réserver un appel ou une visio.`
+    : "Si vous voulez en parler, répondez simplement à ce message.";
 }
 
 export const ISSUE_PHRASES: Record<string, string> = {
@@ -81,8 +103,8 @@ function monthsSince(d?: string | null): number | null {
 }
 
 /** `p` : ligne `local_prospects`. Renvoie null quand AUCUN fait objectif ne justifie un message (on n'invente jamais une faiblesse). */
-/** « de Le Petit Bistrot » → « du Petit Bistrot », « de Les Délices » → « des Délices », « de L'Atelier » → « de l'Atelier ». */
-export const deName = (name: string) => /^le\s/i.test(name) ? `du ${name.slice(3)}` : /^les\s/i.test(name) ? `des ${name.slice(4)}` : /^la\s/i.test(name) ? `de la ${name.slice(3)}` : /^l['’]/i.test(name) ? `de l'${name.slice(2)}` : `de ${name}`;
+/** « de Le Petit Bistrot » → « du Petit Bistrot », « de Les Délices » → « des Délices », « de L'Atelier » → « de l'Atelier », « de Elio » → « d'Elio ». */
+export const deName = (name: string) => /^le\s/i.test(name) ? `du ${name.slice(3)}` : /^les\s/i.test(name) ? `des ${name.slice(4)}` : /^la\s/i.test(name) ? `de la ${name.slice(3)}` : /^l['’]/i.test(name) ? `de l'${name.slice(2)}` : /^[aeiouyàâéèêëîïôöûüœæ]/i.test(name) ? `d'${name}` : `de ${name}`;
 
 export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draft | null {
   const name = cap((p.trade_name || p.company_name || "").trim());
@@ -105,7 +127,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   } else if (status === "NOT_FOUND") {
     kind = "sans_site";
     const onSocial = socials.length ? ` Je vois que vous êtes présent${socials.some((u) => /facebook/.test(u)) ? " sur Facebook" : " sur les réseaux sociaux"}, mais` : " En faisant quelques recherches,";
-    opening = `${onSocial} je n'ai pas trouvé de site internet pour ${ref} (je peux me tromper : si vous en avez un, ne tenez pas compte de ce message).`;
+    opening = `${onSocial} je n'ai pas trouvé de site internet pour ${ref}, sauf erreur de ma part.`;
     facts.push("aucun site internet officiel trouvé lors de mes recherches");
   } else if (status === "UNREACHABLE") {
     kind = "site_inaccessible";
@@ -135,7 +157,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const list = kind === "site_ameliorable" ? "\n" + facts.map((f) => `- ${f}`).join("\n") : "";
   const area = offer.enabled && offer.area?.trim() ? `, ${offer.area.trim()}` : "";
   const ask = offer.enabled
-    ? `${offerParagraphs(offer).join("\n\n")}\n\nSi ça vous intéresse, je peux vous appeler 15 minutes ou passer vous voir.`
+    ? `${offerParagraphs(offer, { photos: photosOffered(p, offer) }).join("\n\n")}\n\n${callToAction(sender.website)}`
     : "Seriez-vous d'accord pour un échange de 10 minutes, sans engagement ? Je peux aussi vous envoyer quelques exemples de réalisations.";
   const core = `${first}${list}\n\nJe suis ${who || "développeur web indépendant"}${area}. ${pitch}\n\n${ask}`;
   const body = wrapDraft(p, sender, core);

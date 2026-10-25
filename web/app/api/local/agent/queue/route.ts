@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Offer, Sender, buildDraft, cap } from "@/lib/draft";
+import { Offer, Sender, buildDraft, cap, photosOffered } from "@/lib/draft";
 import { CONTACT_QUEUE_SQL, LIST_COLUMNS, getSetting, safeRows } from "@/lib/localdb";
 import { splitByTrigger, strongSignals } from "@/lib/local";
 
@@ -22,16 +22,18 @@ export async function GET(req: NextRequest) {
     if (!d) continue;                                   // aucun fait objectif : on n'écrit pas
     const t = strongSignals(p)[0];
     items.push({
-      id: p.id, entreprise: cap((p.trade_name || p.company_name || "").trim()), ville: p.city ? cap(p.city) : null,
+      id: p.id, entreprise: cap((p.trade_name || p.company_name || "").trim()),
+      nom_commercial: p.trade_name ? cap(String(p.trade_name).trim()) : null, raison_sociale: p.company_name ? cap(String(p.company_name).trim()) : null,
+      ville: p.city ? cap(p.city) : null,
       activite: p.activity_label ? String(p.activity_label).split(",")[0] : null,
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,
-      faits: d.facts, type: d.kind, canal: p.email ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
+      faits: d.facts, type: d.kind, photos_en_option: photosOffered(p, offer), canal: p.email ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
       reference: { objet: d.subject, coeur: d.core }, fiche: `/local/${p.id}`,
     });
   }
   return NextResponse.json({
     offre: { active: !!offer.enabled, zone: offer.area ?? "", prix_normal: offer.normal_price ?? null, prix_lancement: offer.launch_price ?? null,
-      places_lancement_restantes: offer.launch_slots_left ?? 0 },
+      places_lancement_restantes: offer.launch_slots_left ?? 0, photos_jusqu_a_km: offer.photos_max_km ?? 20 },
     expediteur: { activite: sender.role || "développeur web indépendant", marque: sender.company || null },
     prospects: items,
   });

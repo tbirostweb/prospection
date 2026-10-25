@@ -75,7 +75,7 @@ export default function SettingsPage() {
         <h2 className="section-title">Mon offre (dans les brouillons)</h2>
         <label className="flex min-h-[44px] items-center gap-3 text-sm">
           <input type="checkbox" checked={!!offer.enabled} onChange={(e) => setOffer("enabled", e.target.checked)} />
-          <span>Présenter mon offre « clé en main » dans les brouillons (visite photos, textes écrits pour le client, rien à payer avant la mise en ligne, sans abonnement obligatoire, bilan à 3 mois)</span>
+          <span>Présenter mon offre « clé en main » dans les brouillons (textes écrits pour le client, mise en ligne en 2 à 4 semaines, fiche Google, bilan à 3 mois, photos en option pour les métiers concernés et proches, lien vers tes réalisations)</span>
         </label>
         <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <label className="flex flex-col gap-1 sm:col-span-2"><span className="mono">Où tu es (après « Je suis … »)</span>
@@ -84,10 +84,12 @@ export default function SettingsPage() {
             <input type="number" min={0} value={offer.normal_price ?? ""} onChange={(e) => setOffer("normal_price", numOrNull(e.target.value))} className="field" /></label>
           <label className="flex flex-col gap-1"><span className="mono">Prix de lancement (€)</span>
             <input type="number" min={0} value={offer.launch_price ?? ""} onChange={(e) => setOffer("launch_price", numOrNull(e.target.value))} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Photos proposées jusqu'à (km)</span>
+            <input type="number" min={0} max={100} value={offer.photos_max_km ?? 20} onChange={(e) => setOffer("photos_max_km", Number(e.target.value) || 0)} className="field" /></label>
           <label className="flex flex-col gap-1"><span className="mono">Places de lancement restantes</span>
             <input type="number" min={0} max={20} value={offer.launch_slots_left ?? 0} onChange={(e) => setOffer("launch_slots_left", Number(e.target.value) || 0)} className="field" /></label>
         </div>
-        <p className="mt-2 text-xs text-muted">Places restantes au-dessus de 0 : le brouillon dit franchement que tu n'as pas encore d'avis client et cite le prix de lancement.
+        <p className="mt-2 text-xs text-muted">Places restantes au-dessus de 0 : le brouillon peut présenter ton offre de lancement (prix de lancement au lieu du prix normal). Jamais de réduction contre un avis Google : c'est interdit par Google.
           Passe-les à 0 dès que tes premiers clients ont signé. Sans prix, aucune phrase de prix n'est écrite.</p>
       </section>
 

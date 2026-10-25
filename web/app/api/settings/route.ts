@@ -79,7 +79,8 @@ function sanitize(key: string, value: any): any | null {
       const price = (k: string) => (value[k] === null || value[k] === "" || value[k] === undefined ? null : num(value[k], 0, 100000));
       const slots = num(value.launch_slots_left ?? 0, 0, 20);
       return { enabled: !!value.enabled, area: String(value.area ?? "").trim().slice(0, 80), launch_price: price("launch_price"),
-        normal_price: price("normal_price"), launch_slots_left: slots === null ? 0 : Math.floor(slots) };
+        normal_price: price("normal_price"), launch_slots_left: slots === null ? 0 : Math.floor(slots),
+        photos_max_km: num(value.photos_max_km ?? 20, 0, 100) ?? 20 };
     }
     case "local_banned_brands": {
       // Tes enseignes à bannir en plus de la liste intégrée (franchises, chaînes locales…) : 300 au plus, 3 caractères minimum.
