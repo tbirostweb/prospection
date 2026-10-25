@@ -89,26 +89,26 @@ export default function ImportPanel() {
   }
 
   return (
-    <section className="mb-12">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <label className={`btn-ghost min-h-[44px] w-full cursor-pointer sm:w-auto ${busy ? "pointer-events-none opacity-50" : ""}`}>
+    <section className="mb-8">
+      <div className="panel flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label className={`btn-primary w-full cursor-pointer sm:w-auto ${busy ? "pointer-events-none opacity-50" : ""}`}>
           <input type="file" accept=".csv,text/csv" className="sr-only" disabled={!!busy}
             onChange={(e) => { choose(e.target.files?.[0]); e.target.value = ""; }} />
-          {busy === "preview" ? "Analyse en cours…" : file ? "Choisir un autre fichier ↗" : "Choisir un fichier CSV ↗"}
+          {busy === "preview" ? "Analyse en cours…" : file ? "Choisir un autre fichier" : "Choisir un fichier CSV"}
         </label>
         <span className="w-full text-xs text-muted">
           CSV UTF-8 (export de l'application), « ; » ou « , », {IMPORT_MAX_BYTES / 1024 / 1024} Mo et 5 000 lignes au plus. L'aperçu n'enregistre rien.
         </span>
       </div>
 
-      {error && <p role="alert" className="mt-4 border-2 border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+      {error && <p role="alert" className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
 
       {summary && (
         <div className="mt-6" aria-live="polite">
           <h2 className="section-title">Import terminé</h2>
           <div className="stat-grid grid-cols-2 sm:grid-cols-5">
             {([["Créées", summary.created], ["Complétées", summary.updated], ["Inchangées", summary.unchanged], ["Ignorées", summary.ignored], ["Erreurs", summary.errors]] as [string, number][])
-              .map(([l, n]) => <div key={l} className="stat-block"><div className="big-number text-3xl">{n}</div><div className="mono mt-2">{l}</div></div>)}
+              .map(([l, n]) => <div key={l} className="stat-block"><div className="mono">{l}</div><div className="big-number mt-3 text-3xl">{n}</div></div>)}
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href={`/local/import?journal=${summary.importId}`} className="btn-ghost btn-sm">Voir le journal ↗</Link>
@@ -125,7 +125,7 @@ export default function ImportPanel() {
               ["Erreurs", preview.counts.errors, "ERROR"]] as [string, number, Kind][]).map(([l, n, k]) => (
               <button key={k} type="button" onClick={() => { setFilter(filter === k ? "all" : k); setShown(PAGE); }} aria-pressed={filter === k}
                 className={`stat-block min-h-[44px] text-left ${filter === k ? "stat-block-accent" : ""}`}>
-                <div className="big-number text-3xl">{n}</div><div className="mono mt-2">{l}</div>
+                <div className="mono">{l}</div><div className="big-number mt-3 text-3xl">{n}</div>
               </button>))}
           </div>
           <ul className="mt-4 space-y-1 text-sm text-muted">
@@ -174,10 +174,10 @@ function ImportLine({ r, choice, skipped, onChoice, onSkip }: {
     <div className={`row-item py-4 text-sm ${skipped ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="font-mono text-xs text-muted">L. {r.line}</span>
-        <span className={`border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide ${KIND_CLASS[r.kind]}`}>{KIND_LABEL[r.kind]}</span>
-        <span className="min-w-0 break-words font-display text-lg font-bold uppercase leading-tight">{r.name || "Sans nom"}</span>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${KIND_CLASS[r.kind]}`}>{KIND_LABEL[r.kind]}</span>
+        <span className="min-w-0 break-words text-base font-semibold leading-tight">{r.name || "Sans nom"}</span>
       </div>
-      <div className="mt-1 break-all font-mono text-xs uppercase tracking-wide text-muted">
+      <div className="mt-1 break-all text-xs text-muted">
         {[r.city, r.siret ? `SIRET ${r.siret}` : r.siren ? `SIREN ${r.siren}` : null, r.email, r.phone].filter(Boolean).join(" · ")}
       </div>
       <p className="mt-2 break-words">{r.reason}{r.changes.length > 0 && r.kind === "EXISTING" ? ` : ${r.changes.join(", ")}` : ""}</p>
@@ -190,7 +190,7 @@ function ImportLine({ r, choice, skipped, onChoice, onSkip }: {
         </label>
       )}
       {r.kind === "AMBIGUOUS" && (
-        <fieldset className="mt-3 border-2 border-amber-300 p-3">
+        <fieldset className="mt-3 rounded-2xl border border-amber-300 p-3">
           <legend className="mono px-1 !text-ink">Que faire de cette ligne ?</legend>
           {r.candidates.map((c) => (
             <label key={c.id} className="check text-sm">

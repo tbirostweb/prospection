@@ -43,14 +43,15 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-2xl">
-      <header className="page-header">
-        <span className="page-kicker">05 — Configuration</span>
-        <h1 className="page-title">Réglages<span className="text-signal">.</span></h1>
-        <p className="page-intro">Les réglages du haut suffisent dans la plupart des cas. N'oublie pas « Enregistrer » en bas.</p>
-        <div className="mt-6"><Link href="/local/stats" className="btn-ghost btn-sm">Statistiques et état technique →</Link></div>
+      <header className="page-header flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="page-title">Réglages</h1>
+          <p className="page-intro">Les réglages du haut suffisent dans la plupart des cas. N'oublie pas « Enregistrer » en bas.</p>
+        </div>
+        <Link href="/local/stats" className="btn-ghost btn-sm">Statistiques</Link>
       </header>
 
-      <section className="panel mb-12">
+      <section className="panel">
         <h2 className="section-title">Mon identité (signature des messages)</h2>
         <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           {([["name", "Prénom et nom", "Théo …"], ["company", "Entreprise / marque", "…"], ["role", "Activité", "développeur web indépendant"],
@@ -67,7 +68,7 @@ export default function SettingsPage() {
           La notice d'information (source des données, finalité, droits, opposition) est citée dans chaque brouillon : sans elle, le bouton « Ouvrir dans ma messagerie » reste désactivé.</p>
       </section>
 
-      <section className="panel mb-12">
+      <section className="panel">
         <h2 className="section-title">Ma ville (valeurs par défaut des campagnes)</h2>
         <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
           <label className="flex flex-col gap-1"><span className="mono">Ville</span>
@@ -81,7 +82,7 @@ export default function SettingsPage() {
         
       </section>
 
-      <section className="panel mb-12">
+      <section className="panel">
         <h2 className="section-title">Priorité de ciblage</h2>
         <div className="flex flex-col gap-2 text-sm">
           {([["redesign", "🛠️ Refonte d'abord", "entreprises qui ONT un site daté ou faible (pas adapté au mobile, pas sécurisé, technologies anciennes, site gratuit Wix…) : le besoin se voit et se montre"],
@@ -93,7 +94,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="panel mb-12">
+      <section className="panel">
         <h2 className="section-title">Enseignes bannies</h2>
         <p className="mb-3 text-sm text-muted">
           Plus de 700 chaînes et franchises sont déjà écartées automatiquement. Ajoute ici celles qui manquent, une par ligne.
@@ -103,7 +104,7 @@ export default function SettingsPage() {
       </section>
 
       {presets.length > 0 && (
-        <section className="panel mb-12">
+        <section className="panel">
           <h2 className="section-title">Mes pré-recherches</h2>
           <ul className="divide-y divide-line border-t border-line text-sm">
             {presets.map((p, i) => (
@@ -117,7 +118,7 @@ export default function SettingsPage() {
         </section>
       )}
 
-      <details className="mb-10 border-t border-ink pt-2">
+      <details className="panel">
         <summary className="mono flex min-h-[44px] cursor-pointer items-center">Réglages avancés du score (à ne toucher qu'en connaissance de cause)</summary>
         <div className="mt-4">
       <section className="mb-6 border-t border-line pt-4">

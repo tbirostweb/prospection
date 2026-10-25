@@ -40,13 +40,14 @@ export default function PipelineBoard({ rows, stats }: { rows: any[]; stats: { c
   ];
   return (
     <div>
-      <div className="mb-10 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-5">
+      <div className="stat-grid mb-8 grid-cols-2 sm:grid-cols-5">
         {funnel.map(([l, n, r]) => (
-          <div key={l} className="min-w-0 border-t border-ink pt-3"><div className="big-number text-4xl">{n}</div>
-            <div className="mono mt-2">{l}</div>{r && <div className="mt-0.5 text-xs text-muted">{r} de l'étape précédente</div>}</div>
+          <div key={l} className="stat-block"><div className="mono">{l}</div><div className="big-number mt-3 text-3xl">{n}</div>
+            {r && <div className="mt-1 text-xs text-muted">{r} de l'étape précédente</div>}</div>
         ))}
-        <div className="col-span-2 min-w-0 border-t border-ink pt-3 sm:col-span-1"><div className="big-number text-4xl text-accent">{pct(stats.won, stats.contacted)}</div>
-          <div className="mono mt-2">Taux de transformation</div><div className="mt-0.5 text-xs text-muted">{stats.contacted < 20 ? "échantillon encore trop petit" : "clients / contactés"}</div></div>
+        <div className="stat-block stat-block-accent col-span-2 sm:col-span-1"><div className="mono">Taux de transformation</div>
+          <div className="big-number mt-3 text-3xl">{pct(stats.won, stats.contacted)}</div>
+          <div className="mt-1 text-xs text-white/90">{stats.contacted < 20 ? "échantillon encore trop petit" : "clients / contactés"}</div></div>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrer (nom, ville)" className="field w-full sm:w-auto sm:min-w-[240px]" aria-label="Filtrer" />
@@ -59,18 +60,18 @@ export default function PipelineBoard({ rows, stats }: { rows: any[]; stats: { c
           return (
             <section key={c.status} onDragOver={(e) => { e.preventDefault(); setOver(c.status); }} onDragLeave={() => setOver(null)}
               onDrop={(e) => { e.preventDefault(); setOver(null); if (drag != null) move(drag, c.status); setDrag(null); }}
-              className={`flex w-[78vw] max-w-[17rem] shrink-0 snap-start flex-col border-t-2 pt-3 sm:w-64 ${over === c.status ? "border-accent bg-accent/5" : "border-ink"}`}>
-              <h2 className="mb-1 flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-[0.12em]"><span className={`h-2.5 w-2.5 rounded-full ${c.color}`} />{c.label}
-                <span className="ml-auto font-mono text-xs font-semibold text-muted">{list.length}</span></h2>
-              <div className="mb-2 min-h-[1rem] text-[11px] text-muted">{c.hint}</div>
-              <div className="flex max-h-[70vh] flex-col overflow-y-auto border-t border-line">
+              className={`flex w-[78vw] max-w-[17rem] shrink-0 snap-start flex-col rounded-[var(--radius-card)] p-3 sm:w-64 ${over === c.status ? "bg-signal/10 ring-2 ring-signal/40" : "bg-line2/60"}`}>
+              <h2 className="mb-1 flex items-center gap-2 px-1 text-sm font-semibold"><span className={`h-2.5 w-2.5 rounded-full ${c.color}`} />{c.label}
+                <span className="ml-auto rounded-full bg-surface px-2 text-xs font-semibold text-muted">{list.length}</span></h2>
+              <div className="mb-2 min-h-[1rem] px-1 text-[11px] text-muted">{c.hint}</div>
+              <div className="flex max-h-[70vh] flex-col gap-2 overflow-y-auto">
                 {list.map((p) => {
                   const days = since(p.last_contacted_at || p.contacted_at);
                   const stale = p.status === "CONTACTED" && days != null && days >= 7;
                   return (
                     <article key={p.id} draggable onDragStart={() => setDrag(p.id)} onDragEnd={() => setDrag(null)}
-                      className={`cursor-grab border-b border-line py-3 text-sm active:cursor-grabbing ${drag === p.id ? "opacity-50" : ""} ${stale ? "bg-amber-50/70 px-2" : ""}`}>
-                      <Link href={`/local/${p.id}`} className="block break-words font-bold leading-tight tracking-[-0.01em] hover:text-accent">{p.trade_name || p.company_name}</Link>
+                      className={`cursor-grab rounded-2xl border p-3 text-sm shadow-soft active:cursor-grabbing ${drag === p.id ? "opacity-50" : ""} ${stale ? "border-amber-200 bg-amber-50" : "border-line bg-surface"}`}>
+                      <Link href={`/local/${p.id}`} className="block break-words font-semibold leading-tight tracking-[-0.01em] hover:text-accent">{p.trade_name || p.company_name}</Link>
                       <div className="text-xs text-muted">{[p.city, siteInfo(p).label].filter(Boolean).join(" · ")}</div>
                       <div className="mt-1 flex flex-wrap gap-2 text-xs">
                         {p.phone && <a href={`tel:${p.phone}`} className="text-accent hover:underline">☎ {p.phone.replace(/(\d{2})(?=\d)/g, "$1 ")}</a>}

@@ -18,7 +18,7 @@ const SOURCE_LABELS: Record<string, string> = { sirene: "SIRENE", sirene_bulk: "
 const pct = (v: any) => (v == null ? "–" : `${Math.round(Number(v) * 100)} %`);
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="grid gap-1.5 border-b border-line py-4 sm:grid-cols-[160px_1fr] sm:gap-4"><dt className="mono pt-0.5">{label}</dt><dd className="min-w-0 break-words text-sm">{children}</dd></div>;
+  return <div className="grid gap-1.5 border-b border-line2 py-4 first:pt-0 last:border-b-0 last:pb-0 sm:grid-cols-[140px_1fr] sm:gap-4"><dt className="mono pt-0.5">{label}</dt><dd className="min-w-0 break-words text-sm">{children}</dd></div>;
 }
 
 /** Fiche entreprise : a-t-elle un site, comment la contacter, où j'en suis. Les détails techniques sont repliés en bas. */
@@ -43,35 +43,35 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="max-w-3xl">
-      <Link href="/local/contact" className="mono mb-8 inline-flex min-h-[44px] items-center gap-1 hover:text-accent">← À contacter</Link>
+      <Link href="/local/contact" className="mb-4 inline-flex min-h-[44px] items-center gap-1 text-sm text-muted hover:text-ink">← À contacter</Link>
       <header className="page-header">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mono">{simpleStatus(p)}</span>
-          {p.chain_kind && <span className="chip !text-[10px] !py-0">{CHAIN_KIND_LABELS[p.chain_kind]}</span>}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="chip">{simpleStatus(p)}</span>
+          {p.chain_kind && <span className="chip">{CHAIN_KIND_LABELS[p.chain_kind]}</span>}
         </div>
-        <h1 className="page-title mt-3 !text-[clamp(2.25rem,7vw+0.5rem,4.5rem)]">{name}</h1>
-        <div className="page-intro !mt-4">{[p.activity_label ?? "Activité non classée", p.address ?? p.city, p.distance_km != null ? distanceLabel(p.distance_km) : null].filter(Boolean).join(" · ")}</div>
+        <h1 className="page-title">{name}</h1>
+        <div className="page-intro">{[p.activity_label ?? "Activité non classée", p.address ?? p.city, p.distance_km != null ? distanceLabel(p.distance_km) : null].filter(Boolean).join(" · ")}</div>
         {p.excluded_reason && <p className="mt-2 text-sm font-medium text-red-700">Écartée : {p.excluded_reason}</p>}
       </header>
 
       {p.pipeline_stage === "ERROR" && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
           La vérification de cette entreprise a échoué ({ERROR_LABELS[p.error_category] ?? p.error_category})
           {p.next_retry_at ? ` : nouvel essai après ${dateFr(p.next_retry_at)}.` : " : plus de nouvel essai automatique."}
         </div>
       )}
 
       {due && (
-        <section className="mb-8 flex flex-wrap items-center justify-between gap-3 border-y border-ink py-4 text-sm">
+        <section className="panel flex flex-wrap items-center justify-between gap-3 text-sm">
           <span><b>{due.label}</b>{p.followups ? ` · déjà relancé ${p.followups} fois` : ""}</span>
           <FollowupButtons id={p.id} kind={due.kind} />
         </section>
       )}
 
-      <section className="mb-12">
+      <section className="panel">
         <dl>
           <Row label="Site web">
-            <span className={`border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide ${SITE_KIND_CLASS[site.kind]}`}>{site.label}</span>
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${SITE_KIND_CLASS[site.kind]}`}>{site.label}</span>
             {safeHref(p.website_url) && siteOk && <div className="mt-1"><a href={safeHref(p.website_url)!} target="_blank" rel="noopener noreferrer" className="break-all font-medium text-accent hover:underline">{p.website_url} ↗</a></div>}
             {p.website_url && p.website_status === "UNREACHABLE" && <div className="mt-1 text-muted">{p.website_url} (ne répond pas)</div>}
             {p.website_status === "PROBABLE" && <div className="mt-1 text-xs text-muted">Très probablement le sien : vérifie d'un coup d'œil.</div>}
@@ -102,8 +102,8 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
       <ProspectActions id={p.id} status={p.status} notes={p.notes} doNotContact={!!p.do_not_contact} websiteUrl={p.website_url} siteAccepted={siteOk} feedbackReason={p.feedback_reason} />
       <DraftBox id={p.id} email={p.email} subject={p.draft_subject} body={p.draft_message} createdAt={p.draft_created_at ? String(p.draft_created_at) : null} doNotContact={!!p.do_not_contact} />
 
-      <details className="mt-12 border-t-[3px] border-ink pt-2">
-        <summary className="mono flex min-h-[44px] cursor-pointer items-center">Détails techniques (score, preuves, sources)</summary>
+      <details className="panel">
+        <summary className="flex min-h-[44px] cursor-pointer items-center text-sm font-medium text-muted hover:text-ink">Détails techniques (score, preuves, sources)</summary>
         <div className="mt-4 space-y-5 text-sm">
           <div>
             <div className="mono mb-1">Entreprise</div>

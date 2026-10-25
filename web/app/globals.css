@@ -3,45 +3,36 @@
 @tailwind utilities;
 
 /* ─── Tokens ────────────────────────────────────────────────────────────────
-   Direction « néo-brutaliste d'agence » avec la palette de birostweb.fr :
-   fond blanc cassé, encre presque noire, accent orange vif, bloc sombre.
-   Aucun arrondi, aucune ombre floue ; filets épais, inversions de couleur.
+   Direction « tableau de bord minimaliste » : fond gris clair chaud, grandes cartes blanches très arrondies,
+   texte presque noir, boutons en pilule (noir = action principale), orange de marque (birostweb.fr) réservé
+   aux accents : une carte de chiffre clé, les points d'état, le focus. Pas de majuscules forcées, pas de filets épais.
    Valeurs en triplets RGB pour garder les opacités Tailwind (bg-ink/10…).
 
-   Origine (variables CSS de birostweb.fr) : --surface #FBFAF6, --ink #231F20,
-   --gray #6E6A5F, --accent #F0451E, --accent-d #CE3711, --paper #E5E2D6,
-   --line #CFCABC, --line-2 #E9E5DB, --d-bg #231F20, --d-text #F0EDE4,
-   --d-dim #AEA99C, --d-line #3A3532.
-
-   Contrastes (WCAG) : ink/surface 15,6:1 · muted/surface 5,2:1 ·
-   accent (#CE3711)/surface 4,8:1 · blanc/accent 5,0:1 · ink/signal 4,3:1 (grands textes seulement) ·
-   signal (#F0451E)/surface 3,6:1 → réservé aux très grands titres, chiffres et aplats ·
-   signal/night 4,3:1 (grands chiffres) · night-text/night 13,8:1 · night-dim/night 7,0:1 ·
-   accent-light/night 5,7:1 (petit texte orange sur fond sombre). */
+   Contrastes (WCAG) : ink/canvas 15,0:1 · ink/surface 16,4:1 · muted/surface 5,4:1 · muted/canvas 4,9:1 ·
+   accent (#CE3711)/surface 4,8:1 (liens) · blanc/accent 5,0:1 · blanc/ink 16,4:1. Le signal (#F0451E) n'est jamais
+   un texte sur fond clair : seulement des points, des barres et l'aplat dégradé de la carte vedette (texte blanc ≥ 4,5:1 sur sa moitié foncée). */
 :root {
   color-scheme: light;
 
-  --surface: 251 250 246;      /* #FBFAF6 fond */
-  --paper: 229 226 214;        /* #E5E2D6 aplats discrets */
-  --ink: 35 31 32;             /* #231F20 texte, filets épais */
-  --muted: 110 106 95;         /* #6E6A5F texte secondaire */
-  --signal: 240 69 30;         /* #F0451E orange de marque : grands titres, numéros, aplats */
-  --accent: 206 55 17;         /* #CE3711 orange foncé de marque : boutons (texte blanc), liens */
+  --canvas: 242 241 238;       /* #F2F1EE fond de page */
+  --surface: 255 255 255;      /* #FFFFFF cartes */
+  --paper: 246 245 242;        /* #F6F5F2 aplats discrets dans une carte (lignes au survol, champs inactifs) */
+  --ink: 28 26 27;             /* #1C1A1B texte, boutons principaux */
+  --muted: 107 104 98;         /* #6B6862 texte secondaire */
+  --signal: 240 69 30;         /* #F0451E orange de marque : points, barres, carte vedette */
+  --accent: 206 55 17;         /* #CE3711 orange foncé de marque : liens, focus */
   --accent-dark: 166 42 10;    /* #A62A0A survol de lien */
-  --accent-light: 255 106 69;  /* #FF6A45 (dérivé) petit texte orange sur fond sombre */
-  --line: 207 202 188;         /* #CFCABC filets secondaires */
-  --line2: 233 229 219;        /* #E9E5DB filets tertiaires */
-  --night: 35 31 32;           /* #231F20 blocs sombres, pied de page */
-  --night-text: 240 237 228;   /* #F0EDE4 */
-  --night-dim: 174 169 156;    /* #AEA99C */
-  --night-line: 58 53 50;      /* #3A3532 */
+  --accent-light: 255 106 69;  /* #FF6A45 petit texte orange sur fond sombre */
+  --line: 230 227 221;         /* #E6E3DD filets et contours */
+  --line2: 239 237 233;        /* #EFEDE9 séparateurs internes */
+  --night: 28 26 27;           /* #1C1A1B blocs sombres (page de connexion) */
+  --night-text: 242 241 238;
+  --night-dim: 174 169 160;
+  --night-line: 58 54 52;
 
-  --rule: 3px;                 /* filet épais */
-  --rule-thin: 2px;
-  --shadow-hard: 5px 5px 0 0 rgb(var(--ink));   /* ombre dure décalée, avec parcimonie */
-  --tracking-display: -0.015em;
-  --tracking-label: 0.12em;
-  --leading-display: 0.9;
+  --radius-card: 24px;
+  --radius-control: 14px;
+  --shadow-soft: 0 1px 2px rgb(28 26 27 / 0.04), 0 1px 1px rgb(28 26 27 / 0.02);
   --tap: 44px;                 /* cible tactile minimale */
 }
 
@@ -50,18 +41,18 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-surface text-ink font-sans antialiased;
+    @apply bg-canvas text-ink font-sans antialiased;
     overflow-wrap: break-word;
   }
   h1, h2, h3 {
     @apply font-display;
-    letter-spacing: var(--tracking-display);
+    letter-spacing: -0.02em;
   }
   a, button, summary, select, input, textarea {
     -webkit-tap-highlight-color: transparent;
   }
   :focus-visible {
-    outline: 3px solid rgb(var(--accent));
+    outline: 2px solid rgb(var(--accent));
     outline-offset: 2px;
   }
   input[type="checkbox"], input[type="radio"] {
@@ -69,10 +60,9 @@
     width: 1.1rem;
     height: 1.1rem;
     flex-shrink: 0;
-    border-radius: 0;
   }
   ::selection {
-    @apply bg-signal text-ink;
+    @apply bg-signal/25 text-ink;
   }
   /* Les médias et tableaux ne doivent jamais élargir la page. */
   img, svg, video, canvas, iframe {
@@ -81,123 +71,92 @@
 }
 
 @layer components {
-  /* Label monospace en capitales (intitulés, méta, navigation) */
+  /* Petit libellé (intitulés, méta) — casse normale, discret */
   .mono {
-    @apply font-mono font-medium uppercase text-[11px] leading-snug text-muted;
-    letter-spacing: var(--tracking-label);
+    @apply text-[13px] font-medium leading-snug text-muted;
   }
 
-  /* Bloc : filet épais noir en haut */
+  /* Carte blanche : le bloc de base de toutes les pages */
   .panel {
-    border-top: var(--rule) solid rgb(var(--ink));
-    @apply pt-5 pb-2;
+    @apply mb-6 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-soft md:p-6;
   }
-  /* Encadré (états vides, messages) */
   .card {
-    border: var(--rule-thin) solid rgb(var(--ink));
-    @apply p-6;
+    @apply rounded-[var(--radius-card)] border border-line bg-surface p-6 shadow-soft;
   }
   .card-link {
-    border-bottom: var(--rule-thin) solid rgb(var(--ink));
-    @apply block py-4 transition-colors hover:bg-ink hover:text-surface;
+    @apply block rounded-2xl px-4 py-3.5 transition-colors hover:bg-paper;
   }
 
-  /* Étiquette rectangulaire */
+  /* Étiquette discrète */
   .chip {
-    @apply inline-flex items-center gap-1 border border-ink px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide;
+    @apply inline-flex items-center gap-1.5 rounded-full bg-paper px-2.5 py-0.5 text-xs font-medium text-ink/80;
+  }
+  /* Point d'état coloré (avant un libellé) */
+  .dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
   }
 
-  /* Bouton à bascule (filtres, étapes, activités) : rectangle à contour, inversé quand actif */
+  /* Bouton à bascule (filtres, étapes, onglets) : pilule, noire quand active */
   .pill {
-    border: var(--rule-thin) solid rgb(var(--ink));
-    @apply inline-flex min-h-[var(--tap)] items-center justify-center gap-1.5 px-4 font-mono text-xs font-medium uppercase tracking-wide
-           transition-colors hover:bg-ink hover:text-surface;
+    @apply inline-flex min-h-[var(--tap)] items-center justify-center gap-1.5 rounded-full border border-line bg-surface px-4 text-sm font-medium
+           text-ink transition-colors hover:bg-paper;
   }
   .pill-on {
-    @apply bg-ink text-surface;
+    @apply border-ink bg-ink text-white hover:bg-ink;
   }
 
-  /* Boutons rectangulaires. Principal = aplat orange + « ↗ » ; survol = inversion en noir. */
+  /* Boutons en pilule. Principal = noir ; secondaire = blanc à contour fin ; accent = orange (une seule action forte par écran). */
   .btn {
-    @apply inline-flex min-h-[var(--tap)] items-center justify-center gap-2 px-5 py-2
-           font-mono text-[13px] font-semibold uppercase tracking-wide transition-colors
-           disabled:opacity-50 disabled:pointer-events-none;
-    border: var(--rule-thin) solid transparent;
+    @apply inline-flex min-h-[var(--tap)] items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-colors
+           disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-accent text-white hover:bg-ink hover:text-surface;
-    border-color: rgb(var(--accent));
-  }
-  .btn-primary:hover { border-color: rgb(var(--ink)); }
-  .btn-primary:not(.no-arrow)::after {
-    content: "↗";
-    @apply inline-block text-base leading-none transition-transform;
-  }
-  .btn-primary:not(.no-arrow):hover::after {
-    transform: translate(2px, -2px);
+    @apply btn bg-ink text-white hover:bg-ink/85;
   }
   .btn-ghost {
-    @apply btn bg-transparent text-ink hover:bg-ink hover:text-surface;
-    border-color: rgb(var(--ink));
+    @apply btn border border-line bg-surface text-ink hover:bg-paper;
   }
   .btn-dark {
-    @apply btn bg-ink text-surface hover:bg-accent hover:text-white;
-    border-color: rgb(var(--ink));
+    @apply btn bg-ink text-white hover:bg-ink/85;
+  }
+  .btn-accent {
+    @apply btn bg-accent text-white hover:bg-accent-dark;
   }
   .btn-sm {
-    @apply px-3.5 py-1.5;
-  }
-  /* Ombre dure décalée (parcimonie : un seul élément fort par écran) */
-  .hard-shadow {
-    box-shadow: var(--shadow-hard);
+    @apply px-4 py-1.5;
   }
 
-  /* Flèche carrée en bout de ligne (listes d'entreprises) */
+  /* Flèche ronde en bout de ligne (listes d'entreprises) */
   .row-arrow {
-    border: var(--rule-thin) solid rgb(var(--ink));
-    @apply grid h-11 w-11 shrink-0 place-items-center text-lg leading-none
-           transition-colors hover:bg-ink hover:text-surface;
+    @apply grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-surface text-base leading-none text-ink
+           transition-colors hover:bg-ink hover:text-white;
   }
 
   /* Champs de formulaire */
   .field {
-    border: var(--rule-thin) solid rgb(var(--ink));
-    @apply min-h-[var(--tap)] min-w-0 max-w-full bg-white px-3 py-2 text-sm outline-none transition-colors;
+    @apply min-h-[var(--tap)] min-w-0 max-w-full rounded-[var(--radius-control)] border border-line bg-surface px-3.5 py-2 text-sm outline-none
+           transition-colors placeholder:text-muted/70;
   }
   .field:focus {
-    outline: 3px solid rgb(var(--accent));
-    outline-offset: 0;
+    border-color: rgb(var(--ink) / 0.4);
+    box-shadow: 0 0 0 3px rgb(var(--signal) / 0.15);
   }
 
-  /* Page de connexion (bloc sombre) : champ à bordure épaisse, focus orange clair (5,7:1 sur fond sombre) */
+  /* Page de connexion : carte blanche centrée */
   .login-field {
-    border: var(--rule) solid rgb(var(--night-text));
-    @apply block min-h-[52px] w-full min-w-0 bg-white px-4 py-3 font-mono text-base text-ink outline-none;
-    border-radius: 0;
+    @apply block min-h-[52px] w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-surface px-4 py-3 text-base text-ink outline-none;
   }
   .login-field:focus-visible,
   .login-field:focus {
-    outline: 3px solid rgb(var(--accent-light));
-    outline-offset: 3px;
+    border-color: rgb(var(--ink) / 0.4);
+    box-shadow: 0 0 0 3px rgb(var(--signal) / 0.18);
   }
   .login-field[aria-invalid="true"] {
-    border-color: rgb(var(--accent-light));
+    border-color: rgb(var(--accent));
   }
   .login-submit {
-    border: var(--rule) solid rgb(var(--accent));
-    @apply flex min-h-[56px] w-full items-center justify-between gap-3 bg-accent px-5 font-mono text-sm font-semibold uppercase
-           tracking-[0.12em] text-white transition-colors hover:border-surface hover:bg-surface hover:text-ink;
-  }
-  .login-submit::after {
-    content: "↗";
-    @apply inline-block text-xl leading-none transition-transform;
-  }
-  .login-submit:hover::after {
-    transform: translate(2px, -2px);
-  }
-  .login-submit:focus-visible {
-    outline: 3px solid rgb(var(--accent-light));
-    outline-offset: 3px;
+    @apply flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-ink px-5 text-base font-medium text-white transition-colors
+           hover:bg-ink/85;
   }
 
   /* Libellé cliquable autour d'une case à cocher : cible tactile suffisante */
@@ -205,78 +164,55 @@
     @apply flex min-h-[var(--tap)] items-center gap-2.5;
   }
 
-  /* En-tête héroïque : kicker mono, titre condensé énorme, intro mono en capitales */
+  /* En-tête de page : titre simple, une phrase d'aide, actions secondaires */
   .page-header {
-    border-bottom: var(--rule) solid rgb(var(--ink));
-    @apply relative mb-10 pb-8 md:mb-14 md:pb-10;
+    @apply mb-6 md:mb-8;
   }
-  /* Pas de double filet quand un bloc suit directement l'en-tête */
   .page-header + .panel {
-    border-top: 0;
-    @apply pt-0;
+    @apply mt-0;
   }
   .page-kicker {
-    @apply mono mb-4 block !text-ink;
+    @apply mono mb-1 block;
   }
   .page-title {
-    @apply font-display font-bold uppercase;
-    font-size: clamp(2.6rem, 9vw + 0.5rem, 6.5rem);
-    line-height: var(--leading-display);
-    letter-spacing: var(--tracking-display);
+    @apply font-display font-semibold text-ink;
+    font-size: clamp(1.75rem, 1.6vw + 1.25rem, 2.375rem);
+    line-height: 1.1;
+    letter-spacing: -0.025em;
     overflow-wrap: anywhere;
-    hyphens: manual;
   }
   .page-intro {
-    @apply mt-6 max-w-2xl font-mono text-[12.5px] uppercase leading-relaxed text-muted;
-    letter-spacing: 0.04em;
+    @apply mt-2 max-w-2xl text-[15px] leading-relaxed text-muted;
   }
   .section-title {
-    @apply mono mb-4 block !text-ink;
+    @apply mb-4 block text-lg font-semibold tracking-[-0.01em] text-ink;
   }
   .big-number {
-    @apply font-display font-bold leading-none tabular-nums;
-    letter-spacing: -0.02em;
+    @apply font-display font-semibold leading-none tabular-nums;
+    letter-spacing: -0.03em;
   }
 
-  /* Libellé vertical (décoratif, grands écrans seulement) */
-  .vertical-label {
-    writing-mode: vertical-rl;
-    @apply mono select-none;
-  }
-
-  /* Liste numérotée 01, 02… (lignes d'entreprises, campagnes) séparée par des filets épais */
+  /* Liste d'entreprises : une carte, lignes séparées par des filets fins */
   .row-list {
-    counter-reset: row;
-    border-top: var(--rule) solid rgb(var(--ink));
+    @apply overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface shadow-soft;
   }
   .row-item {
-    counter-increment: row;
-    border-bottom: var(--rule-thin) solid rgb(var(--ink));
-  }
-  .row-num::before {
-    content: counter(row, decimal-leading-zero);
-  }
-  .row-num {
-    @apply font-display font-bold leading-none text-signal tabular-nums;
-    font-size: clamp(1.75rem, 4vw + 0.5rem, 3rem);
-    letter-spacing: -0.02em;
+    @apply border-b border-line2 px-4 last:border-b-0 sm:px-6;
   }
 
-  /* Blocs de chiffres : grille de rectangles sombres séparés par un filet de fond */
+  /* Chiffres clés : cartes blanches ; la carte vedette en dégradé orange */
   .stat-grid {
-    @apply grid gap-[3px] bg-surface;
+    @apply grid gap-4;
   }
   .stat-block {
-    @apply min-w-0 bg-night p-4 text-night-text md:p-5;
-  }
-  .stat-block .big-number {
-    @apply text-signal;
+    @apply min-w-0 rounded-[var(--radius-card)] border border-line bg-surface p-5 text-ink shadow-soft;
   }
   .stat-block .mono {
-    @apply !text-night-text;
+    @apply text-muted;
   }
   .stat-block-accent {
-    @apply bg-accent text-white;
+    @apply border-transparent text-white;
+    background: linear-gradient(135deg, rgb(var(--signal)) 0%, rgb(var(--accent)) 55%, rgb(var(--accent-dark)) 100%);
   }
   .stat-block-accent .big-number,
   .stat-block-accent .mono {
@@ -285,9 +221,6 @@
 }
 
 @layer utilities {
-  .font-mono {
-    font-variant-numeric: tabular-nums;
-  }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }

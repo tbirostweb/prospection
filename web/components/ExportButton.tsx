@@ -34,17 +34,15 @@ export default function ExportButton({ params }: { params: Record<string, string
   }
 
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <button type="button" onClick={run} disabled={busy} className="btn-ghost min-h-[44px] w-full sm:w-auto">
-        {busy ? "Export en cours…" : "Exporter (CSV) ↗"}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <button type="button" onClick={run} disabled={busy} className="btn-ghost btn-sm" title="Sans les entreprises « ne plus contacter » ni exclues">
+        {busy ? "Export en cours…" : "Exporter (CSV)"}
       </button>
-      <label className="check inline-flex min-h-[44px] items-center gap-2 text-sm">
+      <label className="check inline-flex items-center gap-2 text-sm text-muted">
         <input type="checkbox" checked={emailOnly} onChange={(e) => setEmailOnly(e.target.checked)} />
-        Seulement ceux avec e-mail
+        Avec e-mail seulement
       </label>
-      <span className="w-full text-xs text-muted" aria-live="polite">
-        {msg ?? "Sans les entreprises « ne plus contacter » ni exclues."}
-      </span>
+      {msg && <span className="w-full text-xs text-muted" aria-live="polite">{msg}</span>}
     </div>
   );
 }

@@ -7,17 +7,16 @@ import { LocalRow } from "@/lib/local";
 export const dynamic = "force-dynamic";
 
 /** Toutes les entreprises trouvées par les campagnes, avec recherche et quelques filtres simples. */
-export default async function LocalPage() {
+export default async function LocalPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const { view } = await searchParams;
   const rows = await safeRows<LocalRow>(`SELECT ${LIST_COLUMNS} ${BOARD_SQL}`);
   return (
-    <div className="max-w-3xl">
-      <PageHeader title="Entreprises" kicker="03 — Toutes les fiches"
-        intro="Toutes les entreprises trouvées par tes campagnes. Elles n'ont rien demandé : ce sont des prospects à froid.">
-        <Link href="/local/carte" className="btn-ghost btn-sm">Voir sur la carte →</Link>
-        <Link href="/local/campagnes" className="btn-ghost btn-sm">+ Nouvelle campagne</Link>
-        <Link href="/local/import" className="btn-ghost btn-sm">Importer un CSV ↗</Link>
+    <div className="max-w-4xl">
+      <PageHeader title="Entreprises" intro="Toutes les entreprises trouvées par tes campagnes ou importées.">
+        <Link href="/local/carte" className="btn-ghost btn-sm">Carte</Link>
+        <Link href="/local/import" className="btn-ghost btn-sm">Importer un CSV</Link>
       </PageHeader>
-      <LocalBoard rows={JSON.parse(JSON.stringify(rows))} />
+      <LocalBoard rows={JSON.parse(JSON.stringify(rows))} initialView={typeof view === "string" ? view : "all"} />
     </div>
   );
 }

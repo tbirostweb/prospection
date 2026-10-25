@@ -4,17 +4,13 @@ import type { Config } from "tailwindcss";
 // une seule source de vérité, et les modificateurs d'opacité Tailwind (bg-paper/40, text-ink/70…) restent utilisables.
 const token = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
 const night = { DEFAULT: token("night"), bg: token("night"), text: token("night-text"), dim: token("night-dim"), line: token("night-line") };
-// Néo-brutalisme : aucun arrondi, nulle part (y compris rounded-full).
-const square = Object.fromEntries(["none", "sm", "DEFAULT", "md", "lg", "xl", "2xl", "3xl", "full"].map((k) => [k, "0"]));
 
 export default {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
-    borderRadius: square,
-    // Pas d'ombre floue : seulement une ombre dure décalée.
-    boxShadow: { none: "none", DEFAULT: "var(--shadow-hard)", hard: "var(--shadow-hard)" },
     extend: {
       colors: {
+        canvas: token("canvas"),
         surface: token("surface"),
         paper: token("paper"),
         ink: token("ink"),
@@ -23,15 +19,14 @@ export default {
         muted: token("muted"),
         line: token("line"),
         line2: token("line2"),
-        // Blocs sombres (pied de page, chiffres) ; « dark » gardé comme alias.
         night,
         dark: night,
       },
+      boxShadow: { soft: "var(--shadow-soft)" },
       fontFamily: {
-        // Police unique : Inter (choix conservé de bde194a) pour les titres, le texte et les labels.
+        // Police unique : Inter, pour les titres, le texte et les chiffres (tabulaires via `tabular-nums`).
         display: ["var(--font-sans)", "Helvetica Neue", "Arial", "sans-serif"],
         sans: ["var(--font-sans)", "Helvetica Neue", "Arial", "sans-serif"],
-        // Chiffres : même grotesque, en chiffres tabulaires (voir .font-mono dans globals.css)
         mono: ["var(--font-sans)", "Helvetica Neue", "Arial", "sans-serif"],
       },
       maxWidth: { content: "1160px" },

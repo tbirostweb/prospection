@@ -20,7 +20,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
     FROM local_import_rows r LEFT JOIN local_prospects p ON p.id = r.prospect_id WHERE r.import_id=? ORDER BY r.line_no LIMIT 5000`, [journalId]) : [];
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Importer un CSV" kicker="Entreprises — Import"
+      <PageHeader title="Importer un CSV"
         intro="Ajoute ou complète des fiches depuis un fichier CSV (par exemple un export de l'application). Un aperçu te montre tout avant d'enregistrer quoi que ce soit.">
         <Link href="/local/contact" className="btn-ghost btn-sm">← À contacter</Link>
         <Link href="/local" className="btn-ghost btn-sm">Entreprises</Link>
@@ -36,7 +36,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
               <div key={i.id} className="row-item flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 text-sm">
                 <div className="min-w-0">
                   <div className="break-all font-medium">N° {i.id} · {i.filename ?? "import.csv"}</div>
-                  <div className="font-mono text-xs uppercase tracking-wide text-muted">
+                  <div className="text-xs text-muted">
                     {when(i.created_at)} · {i.total_rows} ligne(s) · {i.created_count} créée(s) · {i.updated_count} complétée(s) · {i.unchanged_count} inchangée(s)
                     · {i.ignored_count} ignorée(s) · {i.error_count} erreur(s)
                   </div>

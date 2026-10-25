@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#101B33" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#F2F1EE" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -25,11 +25,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* AppShell : barre de navigation + pied de page, sauf sur /login (plein écran). */}
         <AppShell
           footer={
-            <footer className="bg-dark-bg px-4 py-6 text-dark-dim sm:px-6 md:px-10">
-              <div className="mx-auto flex max-w-content flex-wrap items-baseline justify-between gap-x-6 gap-y-2 text-xs">
-                <span className="font-display text-sm font-black uppercase tracking-[-0.02em] text-dark-text">Prospection locale</span>
+            <footer className="px-4 pb-8 sm:px-6 md:px-10">
+              <div className="mx-auto flex max-w-content flex-wrap justify-between gap-x-6 gap-y-1 text-xs text-muted">
                 <span>Rien n&apos;est jamais envoyé automatiquement : tu contactes toi-même.</span>
-                <span className="mono !text-dark-dim">Campagnes · toutes les 15 min</span>
+                <span>Campagnes mises à jour toutes les 15 min</span>
               </div>
             </footer>
           }

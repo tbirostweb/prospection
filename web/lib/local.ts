@@ -156,9 +156,11 @@ export function siteInfo(p: { website_status?: string | null; website_absence_co
   }
 }
 export const SITE_KIND_CLASS: Record<SiteKind, string> = {
-  yes: "border-emerald-200 bg-emerald-50 text-emerald-800", down: "border-violet-200 bg-violet-50 text-violet-800",
-  no: "border-red-200 bg-red-50 text-red-800", check: "border-amber-200 bg-amber-50 text-amber-900", pending: "border-line bg-paper/40 text-muted",
+  yes: "bg-emerald-50 text-emerald-800", down: "bg-violet-50 text-violet-800",
+  no: "bg-red-50 text-red-800", check: "bg-amber-50 text-amber-900", pending: "bg-paper text-muted",
 };
+// Point d'état (listes) : même code couleur que les étiquettes.
+export const SITE_KIND_DOT: Record<SiteKind, string> = { yes: "bg-emerald-500", down: "bg-violet-500", no: "bg-red-500", check: "bg-amber-500", pending: "bg-line" };
 /** Statut lisible : où j'en suis avec cette entreprise (le statut commercial prime sur la qualification automatique). */
 const COLD_STATUSES = ["DISCOVERED", "ENRICHED", "AUDITED", "QUALIFIED"];
 export function simpleStatus(p: { status: string; category?: string | null; do_not_contact?: any; excluded_reason?: string | null; is_chain?: any }): string {

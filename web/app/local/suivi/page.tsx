@@ -18,7 +18,7 @@ export default async function Suivi() {
   const stats = { contacted: Number(st?.contacted ?? 0), replied: Number(st?.replied ?? 0), interested: Number(st?.interested ?? 0), won: Number(st?.won ?? 0) };
   return (
     <div className="max-w-[1400px]">
-      <PageHeader title="Suivi" kicker="02 — Pipeline" intro="Où en es-tu avec chaque entreprise, de « à contacter » à « client obtenu ». Glisse une carte d'une colonne à l'autre." />
+      <PageHeader title="Suivi" intro="Où en es-tu avec chaque entreprise, de « à contacter » à « client obtenu ». Glisse une carte d'une colonne à l'autre." />
       <PipelineBoard rows={JSON.parse(JSON.stringify(rows))} stats={stats} />
     </div>
   );

@@ -227,7 +227,7 @@ export default function MapView({ rows, campaigns, presets, defaultRadius }: { r
             <option value="score">Couleur : intérêt (vert → rouge)</option><option value="stage">Couleur : où j'en suis</option><option value="category">Couleur : catégorie</option><option value="site">Couleur : état du site</option></select>
         </div>
         {loadErr && <p className="mb-2 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-800">{loadErr}</p>}
-        <div ref={mapEl} className="h-[62vh] min-h-[380px] w-full border-[3px] border-ink" style={{ zIndex: 0 }} />
+        <div ref={mapEl} className="h-[62vh] min-h-[380px] w-full overflow-hidden rounded-[var(--radius-card)] border border-line" style={{ zIndex: 0 }} />
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
           {mode === "score" ? (
             <span className="flex flex-wrap items-center gap-2">Pas intéressant
@@ -265,7 +265,7 @@ export default function MapView({ rows, campaigns, presets, defaultRadius }: { r
         {msg && <p className="mt-2 text-sm text-amber-900">{msg}</p>}
       </div>
 
-      <aside className="min-w-0 border-t border-ink pt-4 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
+      <aside className="min-w-0 border-t border-line pt-4 xl:border-l xl:border-line xl:border-t-0 xl:pl-5 xl:pt-0">
         <div className="mb-3 flex flex-wrap gap-2">
           <button onClick={() => setPanel("list")} className={`btn-sm no-arrow ${panel === "list" ? "btn-primary" : "btn-ghost"}`}>Dans la zone ({inside.length})</button>
           <button onClick={() => setPanel("campaign")} className={`btn-sm no-arrow ${panel === "campaign" ? "btn-primary" : "btn-ghost"}`}>Lancer une campagne ici</button>

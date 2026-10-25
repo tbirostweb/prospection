@@ -84,16 +84,16 @@ export default async function LocalStats() {
   );
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Statistiques" kicker="05 — Résultats" intro="Tes résultats, et l'état technique de la recherche (utile seulement si quelque chose ne marche pas).">
+      <PageHeader title="Statistiques" intro="Tes résultats, et l'état technique de la recherche (utile seulement si quelque chose ne marche pas).">
         <Link href="/settings" className="btn-ghost btn-sm">← Réglages</Link>
       </PageHeader>
-      <div className="stat-grid mb-14 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="stat-grid mb-8 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
         {cards.map(([label, v, sub], i) => (
-          <div key={label} className={`stat-block ${i === 3 ? "stat-block-accent" : ""}`}><div className="big-number text-[clamp(2.5rem,8vw,4.5rem)]">{v}</div>
-            <div className="mono mt-3">{label}</div>{sub && <div className={`mt-1 font-mono text-[11px] ${i === 3 ? "text-white" : "text-night-dim"}`}>{sub}</div>}</div>
+          <div key={label} className={`stat-block ${i === 3 ? "stat-block-accent" : ""}`}><div className="mono">{label}</div>
+            <div className="big-number mt-3 text-[2.25rem]">{v}</div>{sub && <div className={`mt-1 text-xs ${i === 3 ? "text-white/90" : "text-muted"}`}>{sub}</div>}</div>
         ))}
       </div>
-      <section className="panel mb-14 min-w-0">
+      <section className="panel min-w-0">
         <h2 className="section-title">Entonnoir : où perd-on des prospects ?</h2>
         {/* Une étape par ligne : libellé et nombre, puis la barre sur toute la largeur (aucune largeur fixe : rien ne déborde sur mobile). */}
         <ol className="flex flex-col">{funnel.map(([label, n], i) => {
@@ -104,12 +104,12 @@ export default async function LocalStats() {
               <span className="min-w-0">{label}</span>
               <span className="big-number shrink-0 text-xl">{n}</span>
             </div>
-            <div className="mt-2 h-3 w-full border-2 border-ink bg-surface"><div className="h-full bg-signal" style={{ width: `${Math.max(1, (100 * n) / top)}%` }} /></div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-paper"><div className="h-full rounded-full bg-signal" style={{ width: `${Math.max(1, (100 * n) / top)}%` }} /></div>
             {parent && <div className="mt-1.5 font-mono text-xs text-muted">{parent}</div>}
           </li>);
         })}</ol>
       </section>
-      <section className="panel mb-14 min-w-0">
+      <section className="panel min-w-0">
         <h2 className="section-title">Ce que tes résultats m'apprennent</h2>
         {!learn || !learn.outcomes ? (
           <p className="text-sm text-muted">Pas encore de résultat. Après chaque contact, marque « Réponse reçue », « Client obtenu », « Pas intéressant » ou « Sans réponse » :
@@ -141,7 +141,7 @@ export default async function LocalStats() {
         {!report ? <p className="text-sm text-amber-900">Aucun contrôle de surveillance encore effectué (le worker le lance toutes les heures).</p>
           : <p className="mono mb-3">Dernier contrôle il y a {report.age_min} min{report.age_min > 180 ? " — LA SURVEILLANCE NE TOURNE PLUS ?" : ""}</p>}
         {problems.length === 0 && report && <p className="mb-3 text-sm text-emerald-800">✓ Aucune dégradation détectée.</p>}
-        {problems.map((pr, i) => <p key={i} className={`mb-2 border-2 px-3 py-2 text-sm ${pr.level === "critical" ? "border-red-200 bg-red-50 text-red-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}>{pr.level === "critical" ? "❌" : "⚠️"} {pr.message}</p>)}
+        {problems.map((pr, i) => <p key={i} className={`mb-2 rounded-2xl border px-3 py-2 text-sm ${pr.level === "critical" ? "border-red-200 bg-red-50 text-red-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}>{pr.level === "critical" ? "❌" : "⚠️"} {pr.message}</p>)}
         <p className="mb-3 text-xs text-muted">Gratuit d'abord ; « Gratuit à quota » seulement si aucun moteur gratuit n'a pu répondre ; « Payant » en dernier recours. Liste déclarée par le worker (mise à jour à chaque recherche et chaque heure).</p>
         <div className="flex flex-col border-t border-line">{engines.map((e) => (
           <div key={e.engine} className={`min-w-0 border-b border-line py-3 text-sm ${e.configured ? "" : "text-muted"}`}>

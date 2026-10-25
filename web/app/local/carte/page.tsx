@@ -16,7 +16,7 @@ export default async function Carte() {
   ]);
   return (
     <div className="max-w-[1400px]">
-      <PageHeader title="Carte" kicker="03 — Entreprises" intro="Les entreprises sur la carte. Tu peux aussi lancer une campagne depuis un point.">
+      <PageHeader title="Carte" intro="Les entreprises sur la carte. Tu peux aussi lancer une campagne depuis un point.">
         <Link href="/local" className="btn-ghost btn-sm">← Liste des entreprises</Link>
       </PageHeader>
       <MapClient rows={JSON.parse(JSON.stringify(rows))} campaigns={JSON.parse(JSON.stringify(campaigns))} presets={presets} defaultRadius={Number(home.defaultRadius) || 10} />

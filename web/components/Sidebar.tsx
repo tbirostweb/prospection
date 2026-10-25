@@ -5,11 +5,11 @@ import { useEffect, useState } from "react";
 
 // Cinq entrées seulement. Carte et tournée sont accessibles depuis « Entreprises » et « À contacter », les statistiques depuis « Réglages ».
 const NAV = [
-  { href: "/local/contact", label: "À contacter", num: "01", also: ["/local/tournee"] },
-  { href: "/local/suivi", label: "Suivi", num: "02", also: [] },
-  { href: "/local", label: "Entreprises", num: "03", also: ["/local/carte"] },
-  { href: "/local/campagnes", label: "Campagnes", num: "04", also: [] },
-  { href: "/settings", label: "Réglages", num: "05", also: ["/local/stats"] },
+  { href: "/local/contact", label: "À contacter", also: ["/local/tournee", "/local/import"] },
+  { href: "/local/suivi", label: "Suivi", also: [] },
+  { href: "/local", label: "Entreprises", also: ["/local/carte"] },
+  { href: "/local/campagnes", label: "Campagnes", also: [] },
+  { href: "/settings", label: "Réglages", also: ["/local/stats"] },
 ];
 const CTA = { href: "/local/campagnes", label: "Nouvelle campagne" };
 
@@ -20,15 +20,22 @@ function isActive(pathname: string, n: (typeof NAV)[number]) {
 
 function Logo() {
   return (
-    <Link href="/local/contact" className="inline-flex min-h-[44px] min-w-0 items-center gap-2 text-ink">
-      {/* text-xl sous 640 px : avec la police actuelle (Inter, plus large que l'ancienne condensée), text-2xl débordait à 375 px. */}
-      <span className="truncate font-display text-xl font-bold uppercase leading-none tracking-[-0.02em] sm:text-2xl">Prospection</span>
-      <span className="h-2.5 w-2.5 shrink-0 bg-signal" aria-hidden />
+    <Link href="/local/contact" className="inline-flex min-h-[44px] min-w-0 items-center gap-2.5 rounded-full bg-surface py-1.5 pl-1.5 pr-4 shadow-soft">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-signal text-sm font-bold text-white" aria-hidden>P</span>
+      <span className="truncate text-[15px] font-semibold tracking-[-0.01em]">Prospection</span>
     </Link>
   );
 }
 
-/** Barre de navigation fine en haut : liens en petites capitales, action principale en aplat orange collée à droite. */
+function LogoutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" />
+    </svg>
+  );
+}
+
+/** Barre du haut : logo, navigation en pilule (onglet actif en noir), action principale et déconnexion. */
 export default function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -36,67 +43,58 @@ export default function Sidebar() {
   const current = NAV.find((n) => isActive(pathname, n));
 
   return (
-    <header className="sticky top-0 z-[1000] border-b-[3px] border-ink bg-surface">
-      <div className="flex items-stretch justify-between">
-        <div className="flex min-w-0 items-center px-4 sm:px-6 md:px-10 xl:border-r-2 xl:border-ink"><Logo /></div>
+    <header className="sticky top-0 z-[1000] bg-canvas/85 px-4 py-3 backdrop-blur sm:px-6 md:px-10">
+      <div className="mx-auto flex max-w-content items-center justify-between gap-3">
+        <Logo />
 
-        {/* Desktop : liens en ligne */}
-        <nav className="hidden min-w-0 flex-1 items-stretch overflow-hidden xl:flex" aria-label="Navigation principale">
+        {/* Écran large : onglets en pilule */}
+        <nav className="hidden items-center gap-1 rounded-full bg-surface p-1 shadow-soft lg:flex" aria-label="Navigation principale">
           {NAV.map((n) => {
             const active = isActive(pathname, n);
             return (
               <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
-                className={`flex min-h-[56px] items-center gap-2 border-r-2 border-ink px-4 whitespace-nowrap font-mono text-[12px] font-medium uppercase tracking-[0.12em] transition-colors 2xl:px-6 ${
-                  active ? "bg-ink text-surface" : "text-ink hover:bg-ink hover:text-surface"}`}>
-                <span className={active ? "text-accent-light" : "text-muted"}>{n.num}</span>
-                <span>{n.label}</span>
+                className={`inline-flex min-h-[40px] items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                  active ? "bg-ink text-white" : "text-ink/70 hover:bg-paper hover:text-ink"}`}>
+                {n.label}
               </Link>
             );
           })}
         </nav>
-        <form action="/api/auth/logout" method="post" className="hidden xl:flex">
-          <button type="submit" title="Se déconnecter"
-            className="flex min-h-[56px] items-center gap-2 border-l-2 border-ink px-4 font-mono text-[12px] font-medium uppercase tracking-[0.12em] whitespace-nowrap text-ink transition-colors hover:bg-ink hover:text-surface">
-            Déconnexion <span aria-hidden className="text-base leading-none">⏻</span>
-          </button>
-        </form>
-        <Link href={CTA.href}
-          className="hidden items-center gap-3 bg-accent px-6 font-mono text-[12px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap text-white transition-colors hover:bg-ink xl:flex">
-          {CTA.label} <span aria-hidden className="text-lg leading-none">↗</span>
-        </Link>
 
-        {/* Mobile, tablette et petit portable : bouton Menu (aucun défilement horizontal) */}
-        <div className="flex shrink-0 items-center px-4 py-1.5 sm:px-6 xl:hidden">
-          <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="mobile-nav"
-            className="inline-flex min-h-[44px] items-center gap-2 border-2 border-ink px-4 font-mono text-xs font-semibold uppercase tracking-wide hover:bg-ink hover:text-surface">
-            <span className="max-w-[9rem] truncate">{open ? "Fermer" : current?.label ?? "Menu"}</span>
-            <span aria-hidden>{open ? "×" : "☰"}</span>
-          </button>
+        <div className="hidden items-center gap-2 lg:flex">
+          <Link href={CTA.href} className="btn-primary">{CTA.label}</Link>
+          <form action="/api/auth/logout" method="post">
+            <button type="submit" title="Se déconnecter" aria-label="Se déconnecter"
+              className="grid h-11 w-11 place-items-center rounded-full bg-surface text-ink/70 shadow-soft transition-colors hover:text-ink">
+              <LogoutIcon />
+            </button>
+          </form>
         </div>
+
+        {/* Mobile et tablette : bouton Menu (aucun défilement horizontal) */}
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="mobile-nav"
+          className="inline-flex min-h-[44px] shrink-0 items-center gap-2 rounded-full bg-surface px-4 text-sm font-medium shadow-soft lg:hidden">
+          <span className="max-w-[9rem] truncate">{open ? "Fermer" : current?.label ?? "Menu"}</span>
+          <span aria-hidden className="text-base leading-none">{open ? "×" : "☰"}</span>
+        </button>
       </div>
       {open && (
-        <nav id="mobile-nav" className="border-t-2 border-ink xl:hidden" aria-label="Navigation principale">
+        <nav id="mobile-nav" className="mx-auto mt-3 max-w-content rounded-[var(--radius-card)] bg-surface p-2 shadow-soft lg:hidden" aria-label="Navigation principale">
           {NAV.map((n) => {
             const active = isActive(pathname, n);
             return (
               <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
-                className={`flex min-h-[52px] items-center gap-3 border-b-2 border-ink px-4 font-mono text-sm uppercase tracking-wide sm:px-6 ${
-                  active ? "bg-ink font-semibold text-surface" : "text-ink"}`}>
-                <span className={`text-[11px] ${active ? "text-accent-light" : "text-muted"}`}>{n.num}</span>
-                {n.label}
-                <span className="ml-auto" aria-hidden>→</span>
+                className={`flex min-h-[48px] items-center justify-between rounded-2xl px-4 text-[15px] font-medium ${active ? "bg-ink text-white" : "text-ink hover:bg-paper"}`}>
+                {n.label}<span aria-hidden className={active ? "text-white/70" : "text-muted"}>→</span>
               </Link>
             );
           })}
-          <Link href={CTA.href} className="flex min-h-[52px] items-center justify-between bg-accent px-4 font-mono text-sm font-semibold uppercase tracking-wide text-white sm:px-6">
-            {CTA.label} <span aria-hidden className="text-lg">↗</span>
-          </Link>
-          <form action="/api/auth/logout" method="post">
-            <button type="submit"
-              className="flex min-h-[52px] w-full items-center justify-between border-b-2 border-ink bg-surface px-4 font-mono text-sm font-semibold uppercase tracking-wide text-ink hover:bg-ink hover:text-surface sm:px-6">
-              Se déconnecter <span aria-hidden>⏻</span>
-            </button>
-          </form>
+          <div className="mt-2 flex flex-wrap gap-2 border-t border-line2 px-2 pt-3">
+            <Link href={CTA.href} className="btn-primary flex-1">{CTA.label}</Link>
+            <form action="/api/auth/logout" method="post" className="flex-1">
+              <button type="submit" className="btn-ghost w-full">Se déconnecter</button>
+            </form>
+          </div>
         </nav>
       )}
     </header>

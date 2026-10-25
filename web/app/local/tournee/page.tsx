@@ -44,13 +44,13 @@ export default async function Tournee({ searchParams }: { searchParams: Promise<
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Tournée" kicker="01 — Sur le terrain"
+      <PageHeader title="Tournée"
         intro="Les entreprises à contacter, dans un ordre de passage court. Passer en personne marche souvent mieux qu'un e-mail : après ta visite, marque « contacté » sur la fiche.">
         <Link href="/local/contact" className="btn-ghost btn-sm">← À contacter</Link>
       </PageHeader>
       {!camp ? <div className="card text-center text-sm text-muted">Aucune campagne géolocalisée. <Link href="/local/campagnes" className="underline">Lance une campagne</Link>.</div> : (
         <>
-          <form className="mb-8 flex flex-wrap items-end gap-3">
+          <form className="panel flex flex-wrap items-end gap-3">
             <label className="flex min-w-0 max-w-full flex-col gap-1.5 text-sm"><span className="mono">Départ (centre de la campagne)</span>
               <select name="c" defaultValue={String(camp.id)} className="field">{camps.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.city}</option>)}</select></label>
             <label className="flex flex-col gap-1.5 text-sm"><span className="mono">Arrêts</span>
@@ -59,17 +59,17 @@ export default async function Tournee({ searchParams }: { searchParams: Promise<
           </form>
           {stops.length === 0 ? <div className="card text-center text-sm text-muted">Aucune entreprise à contacter (et localisée) dans cette campagne.</div> : (
             <>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-t border-ink py-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <span className="text-sm">{stops.length} arrêts · environ <b>{Math.round(total)} km</b> à vol d'oiseau, retour compris</span>
                 {mapsUrl && <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="btn-primary btn-sm">Ouvrir l'itinéraire dans Google Maps</a>}
               </div>
-              <ol className="border-t border-line">{stops.map((p, i) => (
-                <li key={p.id} className="flex gap-4 border-b border-line py-5">
-                  <span className="big-number w-12 shrink-0 pt-0.5 text-3xl text-accent">{String(i + 1).padStart(2, "0")}</span>
+              <ol className="row-list">{stops.map((p, i) => (
+                <li key={p.id} className="row-item flex gap-4 py-4">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-paper text-sm font-semibold tabular-nums">{i + 1}</span>
                   <div className="min-w-0 flex-1 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Link href={`/local/${p.id}`} className="font-display text-lg font-bold uppercase tracking-[-0.01em] hover:text-accent">{(p.trade_name || p.company_name).replace(/\s+/g, " ")}</Link>
-                      <span className="text-xs text-muted">{siteInfo(p).label}</span>
+                      <Link href={`/local/${p.id}`} className="text-base font-semibold hover:text-accent">{(p.trade_name || p.company_name).replace(/\s+/g, " ")}</Link>
+                      <span className="chip">{siteInfo(p).label}</span>
                     </div>
                     <div className="text-ink/80">{p.address ?? p.city} · {p.leg.toFixed(1).replace(".", ",")} km depuis l'arrêt précédent</div>
                     <div className="text-xs text-muted">{p.activity_label ?? "Activité non classée"} · passer {bestTime(p.activity_key)}{p.phone ? <> · <a href={`tel:${p.phone}`} className="font-medium text-accent">☎ {formatPhone(p.phone)}</a></> : null}</div>

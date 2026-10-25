@@ -22,7 +22,7 @@ export default async function CampaignsPage() {
   ]);
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Campagnes" kicker="04 — Recherche"
+      <PageHeader title="Campagnes"
         intro="Une campagne cherche les entreprises d'une zone (données officielles SIRENE), vérifie si elles ont un site et trouve un moyen de les contacter. Elle avance toute seule, quelques entreprises toutes les 15 minutes." />
       <CampaignPanel campaigns={JSON.parse(JSON.stringify(campaigns))} home={home} presets={presets} />
     </div>

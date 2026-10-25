@@ -44,7 +44,7 @@ export default function ProspectActions({ id, status, notes, doNotContact, websi
   const current = status === "QUALIFIED" ? "TO_CONTACT" : status;
 
   return (
-    <section className="panel mb-12">
+    <section className="panel">
       <h2 className="section-title">Où j'en suis</h2>
       {doNotContact ? (
         <p className="mb-3 text-sm font-medium text-red-700">Cette entreprise a demandé à ne plus être contactée : exclue de toute campagne.</p>
