@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CompanyRow, PageHeader, RowList, StatCard } from "@/components/LocalUI";
 import { CONTACT_QUEUE_SQL, LIST_COLUMNS, safeRows } from "@/lib/localdb";
 import ExportButton from "@/components/ExportButton";
-import { LocalRow, READY_SQL, bestTime, followupDue, formatPhone } from "@/lib/local";
+import { LocalRow, READY_SQL, bestTime, followupDue, formatPhone, splitByTrigger } from "@/lib/local";
 import FollowupButtons from "@/components/FollowupButtons";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +23,7 @@ export default async function ContactQueue() {
   const due = contacted.map((p) => ({ p: JSON.parse(JSON.stringify(p)) as LocalRow, d: followupDue({ status: p.status, contacted_at: p.contacted_at ? String(p.contacted_at) : null, followups: p.followups }) }))
     .filter((x) => x.d);
   const toReview = Number(review?.n ?? 0);
+  const { triggered, others } = splitByTrigger(rows);
   return (
     <div className="max-w-4xl">
       <PageHeader title={greeting()} intro="Voici qui contacter aujourd'hui. Tu contactes toi-même, puis tu cliques « Marquer contacté ».">
@@ -31,7 +32,8 @@ export default async function ContactQueue() {
       </PageHeader>
 
       <div className="stat-grid mb-8 grid-cols-3 !gap-2 sm:!gap-4">
-        <StatCard featured label="À contacter" value={rows.length} hint={Number(pending?.n) > 0 ? `+ ${pending.n} en cours de vérification` : "prêtes, avec un contact"} />
+        <StatCard featured label="À contacter" value={rows.length} hint={triggered.length ? `dont ${triggered.length} avec un déclencheur fort`
+          : Number(pending?.n) > 0 ? `+ ${pending.n} en cours de vérification` : "prêtes, avec un contact"} />
         <StatCard label="À relancer aujourd'hui" value={due.length} hint={due.length ? "voir ci-dessous" : "rien à relancer"} />
         <StatCard label="Sites à vérifier" value={toReview} hint={toReview ? "à trancher en un clic →" : "rien à vérifier"} href={toReview ? "/local?view=review" : undefined} />
       </div>
@@ -52,12 +54,21 @@ export default async function ContactQueue() {
         </section>
       )}
 
+      {triggered.length > 0 && (
+        <section className="mb-8">
+          <h2 className="section-title !mb-1">⚡ Avec un déclencheur fort · {triggered.length}</h2>
+          <p className="mb-3 text-sm text-muted">Une raison d'acheter maintenant (reprise, ouverture récente sans site, site en panne, changement de nom…) : à contacter en premier.</p>
+          <RowList>{triggered.map((p) => <CompanyRow key={p.id} p={JSON.parse(JSON.stringify(p))} actions />)}</RowList>
+        </section>
+      )}
+
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="section-title !mb-0">Entreprises à contacter</h2>
+        <h2 className="section-title !mb-0">{triggered.length ? `Les autres entreprises à contacter · ${others.length}` : "Entreprises à contacter"}</h2>
         {rows.length > 0 && <ExportButton params={{ list: "contact" }} />}
       </div>
       <RowList>
-        {rows.map((p) => <CompanyRow key={p.id} p={JSON.parse(JSON.stringify(p))} actions />)}
+        {others.map((p) => <CompanyRow key={p.id} p={JSON.parse(JSON.stringify(p))} actions />)}
+        {rows.length > 0 && others.length === 0 && <div className="px-6 py-8 text-center text-sm text-muted">Toutes les entreprises prêtes ont un déclencheur fort : elles sont listées ci-dessus.</div>}
         {rows.length === 0 && <div className="px-6 py-12 text-center text-sm text-muted">
           Personne à contacter pour l'instant. <Link href="/local/campagnes" className="font-medium text-ink underline">Lance une campagne</Link> : les entreprises arrivent ici au fil des passages (toutes les 15 min).</div>}
       </RowList>

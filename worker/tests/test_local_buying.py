@@ -264,3 +264,25 @@ def test_franchise_reconnue_par_l_enseigne_a_la_meme_adresse():
     assert osm.brand_at_address(mbe, places)["brand"] == "subway"                                         # « M.B.E.SUB » = un Subway (réel)
     assert osm.brand_at_address({**mbe, "naf_code": "96.02A"}, places) is None                             # voisin d'un autre métier : jamais
     assert osm.brand_at_address({"latitude": 48.29750, "longitude": 4.07400, "naf_code": "56.10C"}, places) is None   # 55 m : un voisin
+
+
+# ── Déclencheurs forts : file « À contacter », alertes et résumé du matin ────────────────────────────────
+def test_declencheur_fort_seuil_et_exclusions():
+    sigs = [{"code": "no_contact_way", "label": "Site sans formulaire", "strength": 0.4},
+            {"code": "site_builder", "label": "Wix", "strength": 0.35},
+            {"code": "socials_only", "label": "Réseaux sans site", "strength": 0.5},
+            {"code": "takeover", "label": "Reprise", "strength": 1.0}]
+    assert [x["code"] for x in signals.strong(sigs)] == ["takeover", "socials_only"]            # le plus fort en tête, seuil inclus
+    assert signals.strong([{"code": "no_contact_way", "label": "x", "strength": 0.9}]) == []      # jamais une raison d'acheter maintenant
+    assert signals.strong(None) == [] and signals.strong(["texte", {"code": "move"}]) == []      # illisible ou sans force : aucun déclencheur
+    old_takeover = signals.detect({"bodacc": {"events": [{"kind": "takeover", "published": "2025-12-01"}]}}, TODAY)
+    old_rename = signals.detect({"bodacc": {"events": [{"kind": "rename", "published": "2025-12-01"}]}}, TODAY)
+    assert signals.strong(old_takeover) and not signals.strong(old_rename)                       # 0,5 reste fort, 0,4 non
+
+
+def test_declencheurs_forts_en_tete_ordre_garde_sinon():
+    from worker.local import today
+    rows = [{"id": 1, "buy_signals": "[]"}, {"id": 2, "buy_signals": '[{"code": "site_down", "label": "Site en panne", "strength": 0.8}]'},
+            {"id": 3, "buy_signals": None}, {"id": 4, "buy_signals": [{"code": "takeover", "label": "Reprise", "strength": 1.0}]},
+            {"id": 5, "buy_signals": "{pas du json"}, {"id": 6, "buy_signals": [{"code": "site_builder", "label": "Wix", "strength": 0.35}]}]
+    assert [r["id"] for r in today.trigger_first(rows)] == [4, 2, 1, 3, 5, 6]

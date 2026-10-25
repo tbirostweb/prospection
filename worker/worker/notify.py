@@ -7,11 +7,13 @@ Une alerte = un prospect « À contacter » ou « Très bon » (jamais un contac
 from __future__ import annotations
 
 import html
+import json
 import re
 
 import httpx
 
 from .config import APP_URL, TELEGRAM_API_BASE, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, log
+from .local import signals
 
 # Dernière erreur renvoyée par Telegram (lue par `worker.telegram_check`).
 LAST_ERROR: str | None = None
@@ -76,6 +78,17 @@ def send_text(text: str, disable_preview: bool = True, reply_markup: dict | None
     return ok
 
 
+def trigger(p: dict) -> dict | None:
+    """Le déclencheur FORT le plus net d'une ligne `local_prospects` (`buy_signals` en JSON ou déjà décodé), ou None."""
+    raw = p.get("buy_signals")
+    try:
+        sigs = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+    except ValueError:
+        return None
+    top = signals.strong(sigs if isinstance(sigs, list) else [])
+    return top[0] if top else None
+
+
 def format_prospect(p: dict, issues: list[dict] | None = None, summary: list[str] | None = None) -> str:
     """Message d'alerte : qui, où, site + confiance, pourquoi, problèmes objectifs, contact. Jamais « cherche un développeur » : c'est un prospect à froid."""
     name = (p.get("trade_name") or p.get("company_name") or "").strip().title()
@@ -89,6 +102,8 @@ def format_prospect(p: dict, issues: list[dict] | None = None, summary: list[str
     if p.get("website_status") == "NOT_FOUND":
         site += " — ne prouve pas l'absence de site"
     lines.append(f"🌐 {esc(site)}")
+    if trig := trigger(p):
+        lines.append(f"⚡ <b>Déclencheur</b> : {esc(trig['label'])}" + (f" — {esc(trig['detail'])}" if trig.get("detail") else ""))
     for s in (summary or [])[:2]:
         lines.append(f"• {esc(s)}")
     bad = [i["label"] for i in (issues or []) if i.get("severity") in ("high", "medium")][:2]

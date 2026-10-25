@@ -33,6 +33,7 @@ BONUS_MAX = 12            # points ajoutés au score brut par les signaux d'acha
 SITE_OK = ("CONFIRMED", "PROBABLE")
 DIY_CODES = ("free_subdomain", "directory_site")
 REAL_SIGNAL_MIN = 0.5      # un signal faible (site fait avec Wix sur son propre domaine…) ne suffit pas à garder une activité bruitée
+STRONG_MIN = REAL_SIGNAL_MIN   # « déclencheur fort » : file dédiée dans « À contacter », alertes et résumé du matin (même règle : web/lib/local.ts)
 
 
 def _months(d, today: date) -> int | None:
@@ -96,13 +97,19 @@ def bonus(signals: list[dict]) -> float:
     return min(1.0, s[0] + 0.25 * sum(s[1:]))
 
 
+def strong(sigs: list[dict] | None) -> list[dict]:
+    """Les déclencheurs FORTS parmi des signaux déjà calculés (`buy_signals` décodé) : force ≥ STRONG_MIN, hors « sans formulaire »
+    (pas une raison d'acheter maintenant), du plus fort au plus faible. Signaux absents ou illisibles = aucun déclencheur."""
+    ok = [x for x in sigs or [] if isinstance(x, dict) and x.get("code") != "no_contact_way" and float(x.get("strength") or 0) >= STRONG_MIN]
+    return sorted(ok, key=lambda x: -float(x["strength"]))
+
+
 def real_signal(p: dict, sigs: list[dict], today: date | None = None) -> str | None:
     """Un VRAI signal d'intérêt (exigé pour les activités bruitées : restaurants, bars, boulangeries, commerces…), ou None."""
     today = today or date.today()
     status = p.get("website_status")
-    strong = [x for x in sigs if x["code"] != "no_contact_way" and x["strength"] >= REAL_SIGNAL_MIN]
-    if strong:
-        return strong[0]["label"].lower()
+    if top := strong(sigs):
+        return top[0]["label"].lower()
     if status == "NOT_FOUND" and float(p.get("website_absence_confidence") or 0) >= ABSENCE_MIN:
         return "aucun site trouvé après une vraie recherche"
     if status == "UNREACHABLE":

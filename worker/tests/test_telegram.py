@@ -171,3 +171,12 @@ def test_message_sans_identifiant_ne_fait_rien(monkeypatch):
     calls = _calls(monkeypatch)
     telegram_poll._after({}, "no", 5)
     assert calls == []
+
+
+def test_declencheur_fort_mis_en_avant_et_echappe():
+    sig = '[{"code": "takeover", "label": "Reprise d\'un commerce (BODACC)", "strength": 1.0, "detail": "publié le 2026-07-10 <b>"}]'
+    msg = notify.format_prospect({**NASTY, "buy_signals": sig})
+    assert "⚡ <b>Déclencheur</b> : Reprise d'un commerce (BODACC) — publié le 2026-07-10 &lt;b&gt;" in msg
+    weak = '[{"code": "no_contact_way", "label": "Site sans formulaire", "strength": 0.4}]'
+    assert "Déclencheur" not in notify.format_prospect({**NASTY, "buy_signals": weak})
+    assert "Déclencheur" not in notify.format_prospect({**NASTY, "buy_signals": "{illisible"})

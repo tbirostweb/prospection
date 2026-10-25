@@ -5,6 +5,7 @@ import json
 
 from .. import db, notify
 from ..config import APP_URL, log
+from . import today
 
 MAX_PER_RUN = 8
 
@@ -14,12 +15,14 @@ def _j(v):
 
 
 def notify_qualified(conn, limit: int = MAX_PER_RUN, send=None) -> dict:
-    """Envoie les prospects FINAUX « Très bon » / « À contacter » pas encore notifiés (les meilleurs d'abord, `limit` par passage, puis UN récapitulatif).
+    """Envoie les prospects FINAUX « Très bon » / « À contacter » pas encore notifiés (ceux qui ont un déclencheur fort d'abord, puis les meilleurs,
+    `limit` par passage, puis UN récapitulatif).
     Un prospect n'est marqué notifié que si Telegram a ACCEPTÉ le message : Telegram non configuré ou en panne = rien n'est perdu, tout partira plus tard."""
     send = send or notify.send_prospect
     rows = db.fetch_all(conn, """SELECT * FROM local_prospects WHERE score_stage='FINAL' AND category IN ('TRES_BON','A_CONTACTER') AND notified_at IS NULL
                                  AND do_not_contact=0 AND excluded_reason IS NULL AND status IN ('DISCOVERED','ENRICHED','AUDITED','QUALIFIED')
                                  ORDER BY prospect_score DESC, id LIMIT %s""", (limit + 50,))
+    rows = today.trigger_first(rows)
     sent = failed = 0
     for r in rows[:limit]:
         sd = _j(r.get("score_details")) or {}

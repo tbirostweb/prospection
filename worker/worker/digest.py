@@ -54,7 +54,7 @@ def daily() -> None:
                 how = f"☎ appeler · {today.best_time(r['activity_key'])}" if r.get("phone") else ("✉ e-mail" if r.get("email") else "passer sur place")
                 page, city = _link(f"/local/{r['id']}", _name(r)), notify.esc((r["city"] or "").title())
                 lines.append(f"• {page} ({city}) — {r['prospect_score']}/100"
-                             + (f"\n   {notify.esc(r['signal'])}" if r.get("signal") else "") + f"\n   {notify.esc(how)}")
+                             + (f"\n   {'⚡ ' if r.get('trigger') else ''}{notify.esc(r['signal'])}" if r.get("signal") else "") + f"\n   {notify.esc(how)}")
         elif todo:
             lines.append(f"\n⭐ Aucun nouveau prospect depuis le dernier résumé : ceux déjà présentés restent dans {_link('/local/contact', 'À contacter')}.")
         if tour:

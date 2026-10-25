@@ -199,3 +199,4 @@ def test_activites_favorisees_et_bruitees_identiques_web_et_worker():
         assert set(re.findall(r'"(\w+)"', block)) == expected
     from worker.local import signals
     assert f"ABSENCE_MIN = {signals.ABSENCE_MIN}" in ts
+    assert f"STRONG_SIGNAL_MIN = {signals.STRONG_MIN}" in ts and 'x.code !== "no_contact_way"' in ts

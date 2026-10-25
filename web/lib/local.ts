@@ -206,6 +206,22 @@ export const SIGNAL_ICONS: Record<string, string> = {
   takeover: "🔑", new_no_site: "🆕", rename: "🏷️", site_down: "💥", move: "📦", site_diy: "🧱", new_establishment: "🏪", socials_only: "📱", no_contact_way: "✉️", site_builder: "🧩",
 };
 export function asList(v: any): any[] { return  Array.isArray(v) ? v : typeof v === "string" ? (() => { try { return JSON.parse(v) ?? []; } catch { return []; } })() : []; }
+// DÉCLENCHEUR FORT (miroir de signals.strong) : une raison d'acheter MAINTENANT, assez forte pour passer en tête de la file « À contacter ».
+export const STRONG_SIGNAL_MIN = 0.5;
+export interface BuySignal { code: string; label: string; strength: number; detail?: string }
+export function strongSignals(p: { buy_signals?: any }): BuySignal[] {
+  return asList(p.buy_signals)
+    .filter((x) => x && typeof x === "object" && x.code !== "no_contact_way" && Number(x.strength) >= STRONG_SIGNAL_MIN)
+    .sort((a, b) => Number(b.strength) - Number(a.strength));
+}
+/** File « À contacter » : d'abord les fiches avec un déclencheur fort (le plus fort en tête, l'ordre d'origine à force égale), puis les autres, ordre inchangé. */
+export function splitByTrigger<T extends { buy_signals?: any }>(rows: T[]): { triggered: T[]; others: T[] } {
+  const top = new Map(rows.map((p) => [p, Number(strongSignals(p)[0]?.strength ?? 0)]));
+  return {
+    triggered: rows.filter((p) => top.get(p)! > 0).sort((a, b) => top.get(b)! - top.get(a)!),
+    others: rows.filter((p) => top.get(p) === 0),
+  };
+}
 export const BODACC_EVENT_LABELS: Record<string, string> = {
   creation: "création", takeover: "reprise", move: "déménagement", rename: "changement de nom", new_establishment: "nouvel établissement", closure: "cessation", change: "modification",
 };

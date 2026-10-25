@@ -66,3 +66,6 @@ coverage/
 **/logs/
 **/backups/
 .test-dist/
+
+# Founder Skill : stratégie, prix et guide tiers (dépôt public), gardés en local
+founder/

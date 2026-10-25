@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LocalRow, SITE_KIND_DOT, formatPhone, simpleStatus, siteInfo, verifiedSocials } from "@/lib/local";
+import { LocalRow, SIGNAL_ICONS, SITE_KIND_DOT, formatPhone, simpleStatus, siteInfo, strongSignals, verifiedSocials } from "@/lib/local";
 import { safeHref } from "@/lib/security";
 
 const name = (p: LocalRow) => (p.trade_name || p.company_name).replace(/\s+/g, " ");
@@ -32,7 +32,19 @@ export function ContactLinks({ p }: { p: LocalRow }) {
   return <div className="flex flex-wrap gap-1.5">{items}</div>;
 }
 
-/** Une entreprise sur une ligne : nom, activité et ville, site oui/non, contacts en 1 clic, statut, actions rapides facultatives. */
+/** Le déclencheur fort le plus net (reprise, ouverture récente sans site, site en panne…) : pourquoi écrire MAINTENANT. Rien sinon. */
+export function TriggerLine({ p }: { p: LocalRow }) {
+  const s = strongSignals(p)[0];
+  if (!s) return null;
+  return (
+    <div className="mt-2 text-sm font-medium text-accent">
+      <span aria-hidden>{SIGNAL_ICONS[s.code] ?? "⚡"} </span>{s.label}
+      {s.detail && <span className="font-normal text-muted"> · {s.detail}</span>}
+    </div>
+  );
+}
+
+/** Une entreprise sur une ligne : nom, activité et ville, déclencheur fort, site oui/non, contacts en 1 clic, statut, actions rapides facultatives. */
 export function CompanyRow({ p, actions = false }: { p: LocalRow; actions?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -53,6 +65,7 @@ export function CompanyRow({ p, actions = false }: { p: LocalRow; actions?: bool
             <span className="chip">{done ?? status}</span>
           </div>
           <div className="mt-0.5 text-sm text-muted">{[p.activity_label ?? "Activité non classée", p.city].filter(Boolean).join(" · ")}</div>
+          <TriggerLine p={p} />
           <div className="mt-2.5"><SiteBadge p={p} /></div>
           <div className="mt-3"><ContactLinks p={p} /></div>
           {actions && !done && !p.do_not_contact && (

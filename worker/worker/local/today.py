@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 from .. import db
+from . import signals
 from .zone import haversine_km
 
 FOLLOWUP_DAYS = (3, 10)
@@ -61,16 +62,35 @@ def followups(conn, now: datetime | None = None) -> list[dict]:
     return [{**r, "due": d} for r in rows if (d := followup_due(r, now))]
 
 
+def _signals(r: dict) -> list:
+    raw = r.get("buy_signals")
+    try:
+        sigs = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+    except ValueError:
+        return []
+    return sigs if isinstance(sigs, list) else []
+
+
+def trigger_first(rows: list[dict]) -> list[dict]:
+    """Les lignes avec un déclencheur FORT d'abord (le plus fort en tête), puis les autres ; l'ordre d'origine est gardé à égalité."""
+    def key(r: dict) -> float:
+        top = signals.strong(_signals(r))
+        return -float(top[0]["strength"]) if top else 0.0
+    return sorted(rows, key=key)
+
+
 def top_prospects(conn, n: int = 3, fresh_only: bool = False) -> list[dict]:
-    """Les meilleurs pas encore contactés : les plus récents d'abord à score égal (la nouveauté est un signal).
-    `fresh_only` (résumé du matin) : seulement ceux qui n'y ont JAMAIS été présentés (digest_featured_at IS NULL)."""
+    """Les meilleurs pas encore contactés : ceux qui ont un déclencheur fort d'abord, puis le score, les plus récents d'abord à score égal
+    (la nouveauté est un signal). `fresh_only` (résumé du matin) : seulement ceux qui n'y ont JAMAIS été présentés (digest_featured_at IS NULL)."""
     fresh = " AND p.digest_featured_at IS NULL" if fresh_only else ""
     rows = db.fetch_all(conn, f"""SELECT id, company_name, trade_name, city, phone, email, activity_key, prospect_score, buy_signals, category
                                   FROM local_prospects p WHERE category IN {GOOD} AND status IN {OPEN_STATUSES} AND {CLEAN} AND {READY}{fresh}
-                                  ORDER BY prospect_score DESC, discovered_at DESC LIMIT %s""", (n,))
+                                  ORDER BY prospect_score DESC, discovered_at DESC LIMIT %s""", (n + 50,))
+    rows = trigger_first(rows)[:n]
     for r in rows:
-        sigs = json.loads(r["buy_signals"]) if isinstance(r.get("buy_signals"), (str, bytes)) else (r.get("buy_signals") or [])
-        r["signal"] = sigs[0]["label"] if sigs else None
+        sigs, top = _signals(r), signals.strong(_signals(r))
+        r["trigger"] = bool(top)
+        r["signal"] = (top or sigs or [{}])[0].get("label")
     return rows
 
 
