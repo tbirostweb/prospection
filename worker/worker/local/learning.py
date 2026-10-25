@@ -2,7 +2,7 @@
 
 Chaque prospect que tu as jugé ou contacté devient un exemple :
   réussite   🏆 client obtenu (1) · intéressé (0,8) · réponse reçue (0,5)
-  échec      perdu / pas intéressé / 🚫 pas adapté / « sans réponse » / contacté il y a plus de 21 jours sans suite (0)
+  échec      perdu / pas intéressé / 🚫 pas adapté / « sans réponse » / contacté il y a plus de 14 jours sans suite (0)
   ignoré     « mauvais site » et « chaîne » (erreurs de données, pas un verdict commercial), prospects jamais jugés
 Pour chaque caractéristique (métier, ville, signal d'achat, état du site), on compare son taux de réussite au taux moyen, LISSÉ (quelques
 exemples ne suffisent pas à conclure : un métier à 1/1 n'est pas « 100 % »). L'écart donne au plus ±5 points par caractéristique et ±10 au
@@ -28,7 +28,7 @@ MIN_N = 4                  # exemples minimum pour qu'une caractéristique compt
 PSEUDO = 4                 # lissage : chaque caractéristique part de 4 exemples « moyens »
 PER_FEATURE_MAX = 5.0
 TOTAL_MAX = 10.0
-NO_REPLY_DAYS = 21
+NO_REPLY_DAYS = 14
 IGNORED_REASONS = ("wrong_site", "chain")
 KIND_LABELS = {"metier": "métier", "ville": "ville", "signal": "signal", "site": "site"}
 SITE_LABELS = {"CONFIRMED": "site confirmé", "PROBABLE": "site probable", "UNCERTAIN": "site incertain", "NOT_FOUND": "sans site trouvé", "UNREACHABLE": "site en panne"}

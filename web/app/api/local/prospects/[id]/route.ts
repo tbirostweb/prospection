@@ -79,7 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await query(`UPDATE local_campaigns SET status='queued', enabled=1 WHERE id IN (SELECT campaign_id FROM local_prospect_campaigns WHERE prospect_id=?)`, [id]);
     return NextResponse.json({ ok: true, requeued: true });
   }
-  // Relances : « Relancé » (J+3, J+10) et « Sans réponse » (tu arrêtes : compté comme un échec par l'apprentissage).
+  // Relances : « Relancé » (J+3, J+7) et « Sans réponse » (tu arrêtes : compté comme un échec par l'apprentissage).
   if (b.action === "followed_up" || b.action === "no_answer") {
     if (p.do_not_contact) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
     if (b.action === "followed_up")

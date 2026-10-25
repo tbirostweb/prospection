@@ -114,7 +114,7 @@ export function salesBrief(p: any, sender: Sender = {}): Brief {
   else if (p.status === "REPLIED" || p.status === "INTERESTED") action = { label: "Rappeler pour fixer un rendez-vous", detail: phone ? `appeler ${when}` : "répondre à son message" };
   else if (p.status === "CONTACTED") action = due
     ? { label: due.kind === "followup" ? due.label : "Clore : marquer « sans réponse »", detail: due.kind === "followup" ? (phone ? `par téléphone, ${when}` : "par e-mail, en répondant au premier message") : null }
-    : { label: "Attendre la réponse", detail: "relance prévue à J+3 puis J+10" };
+    : { label: "Attendre la réponse", detail: "relance prévue à J+3 puis J+7" };
   else if (phone && email) action = { label: "Appel + e-mail", detail: `appeler ${when}, puis envoyer le message pour garder une trace` };
   else if (phone) action = { label: "Appeler", detail: when };
   else if (STOREFRONT.has(p.activity_key) && p.distance_km != null && Number(p.distance_km) <= 15) action = { label: email ? "Passer sur place (ou e-mail)" : "Passer sur place", detail: `${p.address ?? city ?? ""}${p.address || city ? " · " : ""}${when}` };

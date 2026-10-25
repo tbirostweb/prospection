@@ -78,7 +78,7 @@ def test_resume_du_matin_relances_dues_meilleurs_et_tournee(env, conn, monkeypat
         pid = db.execute(conn, f"INSERT INTO local_prospects ({', '.join(row)}) VALUES ({', '.join(['%s'] * len(row))})", tuple(row.values()))
         db.execute(conn, "INSERT INTO local_prospect_campaigns VALUES (%s,%s)", (pid, camp["id"]))
     add("1", "PLOMBERIE A", status="CONTACTED", contacted_at=now - timedelta(days=4), phone="0325000000")          # relance 1 due
-    add("2", "PLOMBERIE B", status="CONTACTED", contacted_at=now - timedelta(days=4), followups=1)                  # relance 2 à J+10 : pas encore
+    add("2", "PLOMBERIE B", status="CONTACTED", contacted_at=now - timedelta(days=4), followups=1)                  # relance 2 à J+7 : pas encore
     add("3", "PLOMBERIE C", status="CONTACTED", contacted_at=now - timedelta(days=25), followups=2)                 # à clore
     ready = dict(pipeline_stage="DONE", deep_enriched_at=now, phone="0325111111", website_status="CONFIRMED")
     add("4", "COUVERTURE D", prospect_score=82, category="TRES_BON", buy_signals=json.dumps([{"code": "takeover", "label": "Reprise d'un commerce (BODACC)"}]), **ready)
@@ -159,4 +159,4 @@ def test_creneaux_d_appel_identiques_web_et_worker():
     ts = (Path(__file__).resolve().parents[3] / "web/lib/local.ts").read_text(encoding="utf-8")
     for keys, when in today.TIME_BY_ACTIVITY:
         assert f'"{when}"' in ts and all(f'"{k}"' in ts for k in keys)
-    assert f'"{today.DEFAULT_TIME}"' in ts and "FOLLOWUP_DAYS = [3, 10]" in ts and "NO_REPLY_DAYS = 21" in ts
+    assert f'"{today.DEFAULT_TIME}"' in ts and "FOLLOWUP_DAYS = [3, 7]" in ts and "NO_REPLY_DAYS = 14" in ts

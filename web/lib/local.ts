@@ -244,9 +244,9 @@ export function bestTime(activityKey: string | null | undefined): string {
   return TIME_BY_ACTIVITY.find(([keys]) => keys.includes(activityKey ?? ""))?.[1] ?? "mardi à jeudi, 9 h 30 – 11 h 30 ou 14 h – 16 h 30";
 }
 
-// Relances : J+3 puis J+10 après le premier contact, puis « sans réponse » à J+21.
-export const FOLLOWUP_DAYS = [3, 10] as const;
-export const NO_REPLY_DAYS = 21;
+// Relances : J+3 puis J+7 après le premier contact, puis « sans réponse » à J+14 (ensuite on ne recontacte plus).
+export const FOLLOWUP_DAYS = [3, 7] as const;
+export const NO_REPLY_DAYS = 14;
 export function followupDue(p: { status: string; contacted_at: string | null; followups?: number | null }): { label: string; kind: "followup" | "no_reply" } | null {
   if (p.status !== "CONTACTED" || !p.contacted_at) return null;
   const days = (Date.now() - new Date(p.contacted_at).getTime()) / 86_400_000;

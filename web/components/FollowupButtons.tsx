@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-/** Relance due : « Relancé » (J+3, J+10), « Réponse reçue » ou « Sans réponse » (compté comme un échec par l'apprentissage). Rien n'est envoyé. */
+/** Relance due : « Relancé » (J+3, J+7), « Réponse reçue » ou « Sans réponse » (compté comme un échec par l'apprentissage). Rien n'est envoyé. */
 export default function FollowupButtons({ id, kind }: { id: number; kind: "followup" | "no_reply" }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);

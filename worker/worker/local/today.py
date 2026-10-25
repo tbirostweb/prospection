@@ -1,6 +1,6 @@
 """« Quoi faire aujourd'hui » : relances dues, meilleurs prospects, tournée — calculé depuis la base, sans réseau ni IA.
 
-Mêmes règles que l'application (miroir de `web/lib/local.ts`, vérifié par un test) : relance à J+3 puis J+10, « sans réponse » à J+21,
+Mêmes règles que l'application (miroir de `web/lib/local.ts`, vérifié par un test) : relance à J+3 puis J+7, « sans réponse » à J+14 (ensuite on ne recontacte plus),
 créneaux d'appel par métier, tournée = les meilleurs prospects pas encore contactés, dans l'ordre du plus proche voisin.
 """
 from __future__ import annotations
@@ -13,8 +13,8 @@ from .. import db
 from . import signals
 from .zone import haversine_km
 
-FOLLOWUP_DAYS = (3, 10)
-NO_REPLY_DAYS = 21
+FOLLOWUP_DAYS = (3, 7)
+NO_REPLY_DAYS = 14
 TIME_BY_ACTIVITY: list[tuple[tuple[str, ...], str]] = [
     (("restaurants", "bars", "traiteurs"), "entre 15 h et 17 h 30 (entre les deux services), jamais pendant le rush"),
     (("boulangeries",), "entre 14 h et 16 h (après le rush de midi)"),
@@ -43,7 +43,7 @@ def best_time(activity_key: str | None) -> str:
 
 
 def followup_due(p: dict, now: datetime | None = None) -> str | None:
-    """« Relance 1 (J+3) », « Relance 2 (J+10) », « Sans réponse depuis N jours » ou None."""
+    """« Relance 1 (J+3) », « Relance 2 (J+7) », « Sans réponse depuis N jours » ou None."""
     if p.get("status") != "CONTACTED" or not p.get("contacted_at"):
         return None
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
