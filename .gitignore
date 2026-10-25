@@ -56,7 +56,8 @@ coverage/
 .cache/
 .gradle/
 .idea/
-.claude/
+.claude/*
+!.claude/skills/
 .DS_Store
 **/storage/
 **/tmp/

@@ -12,7 +12,7 @@ export async function GET() {
 
 // Seules ces clés de configuration sont acceptées (évite de polluer la table).
 // `learned_adjustments` est calculé par le worker : lecture seule.
-const ALLOWED_KEYS = ["local_home", "local_weights", "local_thresholds", "local_options", "local_presets", "local_sender", "local_banned_brands"];
+const ALLOWED_KEYS = ["local_home", "local_weights", "local_thresholds", "local_options", "local_presets", "local_sender", "local_offer", "local_banned_brands"];
 
 const num = (v: unknown, lo: number, hi: number): number | null => {
   const n = Number(v);
@@ -72,6 +72,14 @@ function sanitize(key: string, value: any): any | null {
       const privacyOk = !privacy || /^https?:\/\/[^\s]+\.[^\s]+$/i.test(privacy);
       if (!privacyOk) return null;
       return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400), privacy_url: privacy };
+    }
+    case "local_offer": {
+      // Ton offre « clé en main » citée dans les brouillons : le texte est fixe (lib/draft.ts), seuls ces chiffres et ta zone sont réglables.
+      if (!value || typeof value !== "object") return null;
+      const price = (k: string) => (value[k] === null || value[k] === "" || value[k] === undefined ? null : num(value[k], 0, 100000));
+      const slots = num(value.launch_slots_left ?? 0, 0, 20);
+      return { enabled: !!value.enabled, area: String(value.area ?? "").trim().slice(0, 80), launch_price: price("launch_price"),
+        normal_price: price("normal_price"), launch_slots_left: slots === null ? 0 : Math.floor(slots) };
     }
     case "local_banned_brands": {
       // Tes enseignes à bannir en plus de la liste intégrée (franchises, chaînes locales…) : 300 au plus, 3 caractères minimum.

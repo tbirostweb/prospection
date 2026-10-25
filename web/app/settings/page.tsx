@@ -39,6 +39,9 @@ export default function SettingsPage() {
   const setK = (key: string, sub: string, v: number) => setS({ ...s, [key]: { ...(s[key] ?? {}), [sub]: v } });
   const sender = s.local_sender ?? {};
   const setSender = (k: string, v: string) => setS({ ...s, local_sender: { ...sender, [k]: v } });
+  const offer = s.local_offer ?? { enabled: false, area: "", launch_price: null, normal_price: null, launch_slots_left: 0 };
+  const setOffer = (k: string, v: any) => setS({ ...s, local_offer: { ...offer, [k]: v } });
+  const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
   const presets: any[] = Array.isArray(s.local_presets) ? s.local_presets : [];
 
   return (
@@ -66,6 +69,26 @@ export default function SettingsPage() {
         </div>
         <p className="mt-2 text-xs text-muted">Utilisé uniquement pour signer les brouillons que tu crées depuis une fiche. Rien n'est jamais envoyé par l'application.
           La notice d'information (source des données, finalité, droits, opposition) est citée dans chaque brouillon : sans elle, le bouton « Ouvrir dans ma messagerie » reste désactivé.</p>
+      </section>
+
+      <section className="panel">
+        <h2 className="section-title">Mon offre (dans les brouillons)</h2>
+        <label className="flex min-h-[44px] items-center gap-3 text-sm">
+          <input type="checkbox" checked={!!offer.enabled} onChange={(e) => setOffer("enabled", e.target.checked)} />
+          <span>Présenter mon offre « clé en main » dans les brouillons (visite photos, textes écrits pour le client, rien à payer avant la mise en ligne, sans abonnement obligatoire, bilan à 3 mois)</span>
+        </label>
+        <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <label className="flex flex-col gap-1 sm:col-span-2"><span className="mono">Où tu es (après « Je suis … »)</span>
+            <input value={offer.area ?? ""} placeholder="basé près de Troyes" onChange={(e) => setOffer("area", e.target.value)} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Prix normal du site (€)</span>
+            <input type="number" min={0} value={offer.normal_price ?? ""} onChange={(e) => setOffer("normal_price", numOrNull(e.target.value))} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Prix de lancement (€)</span>
+            <input type="number" min={0} value={offer.launch_price ?? ""} onChange={(e) => setOffer("launch_price", numOrNull(e.target.value))} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Places de lancement restantes</span>
+            <input type="number" min={0} max={20} value={offer.launch_slots_left ?? 0} onChange={(e) => setOffer("launch_slots_left", Number(e.target.value) || 0)} className="field" /></label>
+        </div>
+        <p className="mt-2 text-xs text-muted">Places restantes au-dessus de 0 : le brouillon dit franchement que tu n'as pas encore d'avis client et cite le prix de lancement.
+          Passe-les à 0 dès que tes premiers clients ont signé. Sans prix, aucune phrase de prix n'est écrite.</p>
       </section>
 
       <section className="panel">
