@@ -24,8 +24,8 @@ test("brouillon v2 : offre présente si activée, ancien texte sinon ; cœur sé
   const v2 = buildDraft(P, SENDER, OFFER)!;
   assert.match(v2.body, /Je suis Théo Birost, développeur web, basé près de Troyes\./);
   assert.match(v2.body, /appeler 15 minutes ou passer vous voir/);
-  assert.ok(!v2.core.includes("Paul Durand") && !v2.core.includes("ne souhaitez pas"), "le cœur ne contient ni le gérant ni l'opposition");
-  assert.ok(v2.body.startsWith("Bonjour Paul Durand,") && v2.body.includes("ne souhaitez pas être recontacté"));
+  assert.ok(!v2.core.includes("Paul Durand") && !v2.core.includes("ne souhaitez"), "le cœur ne contient ni le gérant ni l'opposition");
+  assert.ok(v2.body.startsWith("Bonjour Paul Durand,") && v2.body.includes("ne souhaitez plus de message de ma part"));
   const v1 = buildDraft(P, SENDER)!;
   assert.match(v1.body, /échange de 10 minutes/);
   assert.doesNotMatch(v1.body, /abonnement obligatoire/);
@@ -48,7 +48,10 @@ test("garde-fous /rediger : chiffres et liens limités à la référence, mentio
 test("enveloppe : salutation, opposition, signature et notice toujours ajoutées par le code", () => {
   const body = wrapDraft(P, SENDER, "Cœur du message.");
   assert.ok(body.startsWith("Bonjour Paul Durand,\n\nCœur du message."));
-  assert.match(body, /ne souhaitez pas être recontacté/);
+  assert.match(body, /ne souhaitez plus de message de ma part/);
+  const tail = body.slice(body.indexOf("Théo Birost"));
+  assert.match(tail, /\n\n--\nCoordonnées trouvées sur des sources publiques .*En savoir plus : https:\/\/moi\.test\/confidentialite$/, "une seule ligne, sous la signature");
+  assert.doesNotMatch(body.slice(0, body.indexOf("Bien cordialement")), /sources publiques|ne souhaitez/, "rien dans le corps du message");
   assert.match(body, /Théo Birost/);
   assert.match(body, /https:\/\/moi\.test\/confidentialite/);
 });

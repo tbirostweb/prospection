@@ -10,9 +10,9 @@ const PROSPECT = {
 test("brouillon : information art. 14 (source + lien de la notice) toujours présente", () => {
   const d = buildDraft(PROSPECT, { name: "Prénom Nom", privacy_url: "https://moi.test/confidentialite" })!;
   assert.ok(d);
-  assert.match(d.body, /proviennent de sources publiques \(notamment exemple\.test\)/);
+  assert.match(d.body, /sources publiques \(notamment exemple\.test\)/);
   assert.match(d.body, /https:\/\/moi\.test\/confidentialite/);
-  assert.match(d.body, /ne souhaitez pas être recontacté/);
+  assert.match(d.body, /ne souhaitez plus de message de ma part/);
   assert.equal(draftIncomplete(d.body), false);
 });
 
@@ -26,7 +26,7 @@ test("brouillon : notice ou identité manquante -> marqueur explicite et envoi b
 });
 
 test("notice : source inconnue -> mention générique, jamais inventée", () => {
-  assert.match(informationNotice({}, { privacy_url: "https://x.test/p" }), /sources publiques \(annuaires officiels/);
+  assert.match(informationNotice({}, { privacy_url: "https://x.test/p" }), /sources publiques \(annuaire officiel/);
 });
 
 test("mailto : CR/LF et caractères spéciaux encodés (pas d'injection d'en-tête)", () => {

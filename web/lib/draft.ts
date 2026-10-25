@@ -11,13 +11,14 @@ export const MISSING_NOTICE = "[LIEN VERS VOTRE NOTICE D'INFORMATION À RENSEIGN
 export const MISSING_NAME = "[Votre prénom et nom]";
 export const draftIncomplete = (text: string | null | undefined) => !!text && (text.includes(MISSING_NOTICE) || text.includes(MISSING_NAME));
 
-/** Information des personnes dont les coordonnées n'ont pas été collectées auprès d'elles (art. 14 RGPD) : source + lien vers la notice. */
+/** Information des personnes dont les coordonnées n'ont pas été collectées auprès d'elles (art. 14 RGPD) et moyen simple de refuser les
+ *  messages suivants (art. L34-5 CPCE) : UNE ligne discrète, sous la signature, avec la source et le lien vers la notice détaillée. */
 export function informationNotice(p: any, sender: Sender = {}): string {
   let source = "";
   try { source = p.contact_source_url ? new URL(p.contact_source_url).hostname.replace(/^www\./, "") : ""; } catch { /* URL illisible */ }
-  const origin = source ? `de sources publiques (notamment ${source})` : "de sources publiques (annuaires officiels des entreprises, site internet)";
+  const origin = source ? `(notamment ${source})` : "(annuaire officiel des entreprises, site internet)";
   const url = sender.privacy_url?.trim() || MISSING_NOTICE;
-  return `Vos coordonnées professionnelles proviennent ${origin}. Pour savoir comment elles sont utilisées et exercer vos droits (accès, rectification, effacement, opposition) : ${url}`;
+  return `Coordonnées trouvées sur des sources publiques ${origin}. Si vous ne souhaitez plus de message de ma part, dites-le-moi simplement. En savoir plus : ${url}`;
 }
 export interface Draft { subject: string; body: string; core: string; facts: string[]; kind: string }
 
@@ -161,17 +162,16 @@ export function checkWrittenCore(core: string, subject: string, ref: Draft): str
   if (/\[[^\]]*\]/.test(text)) problems.push("mention entre crochets à remplacer");
   if (/garanti/i.test(text)) problems.push("aucune garantie de résultat ne peut être promise");
   if (/cherch\w* (un |une )?(développeur|prestataire|agence)/i.test(text)) problems.push("ne jamais laisser entendre que l'entreprise cherche un prestataire");
-  if (/ne souhaitez pas être recontacté|Vos coordonnées professionnelles proviennent/i.test(core)) problems.push("la phrase d'opposition et la notice sont ajoutées par l'application : ne pas les écrire");
+  if (/ne souhaitez (pas être recontacté|plus de message)|sources publiques|proviennent de/i.test(core)) problems.push("la phrase d'opposition et la notice sont ajoutées par l'application : ne pas les écrire");
   return problems;
 }
 
-/** Ce que le CODE ajoute toujours autour du cœur du message (écrit par le modèle ou par /rediger) : salutation, phrase d'opposition,
- *  signature et notice d'information (art. 14 RGPD). Le nom du gérant et les coordonnées ne sortent donc jamais de l'application. */
+/** Ce que le CODE ajoute toujours autour du cœur du message (écrit par le modèle ou par /rediger) : salutation, signature, puis UNE ligne
+ *  discrète (source, refus des messages suivants, lien vers la notice). Le nom du gérant et les coordonnées ne sortent donc jamais de l'application. */
 export function wrapDraft(p: any, sender: Sender, core: string): string {
   const signature = [sender.name || MISSING_NAME, sender.company, sender.phone, sender.email, sender.website].filter(Boolean).join("\n");
   const hello = p.manager_name ? `Bonjour ${p.manager_name},` : "Bonjour,";
   return `${hello}\n\n${core.trim()}\n\n`
-    + "Si vous ne souhaitez pas être recontacté(e), dites-le-moi simplement et je ne vous écrirai plus.\n\n"
     + `Bien cordialement,\n${signature}\n\n--\n${informationNotice(p, sender)}`;
 }
 
