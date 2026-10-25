@@ -70,3 +70,6 @@ coverage/
 
 # Founder Skill : stratégie, prix et guide tiers (dépôt public), gardés en local
 founder/
+
+# Cache de compilation TypeScript (régénéré à chaque build)
+*.tsbuildinfo

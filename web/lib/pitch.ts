@@ -146,7 +146,7 @@ export function salesBrief(p: any, sender: Sender = {}): Brief {
     } else messageNote = "déjà contacté : attendre la prochaine relance";
   } else if (!cold) messageNote = "échange en cours : pas de message type, réponds-lui personnellement";
   if (cold && !blocked && fact) {
-    const offer = status === "NOT_FOUND" ? `Je crée des sites simples pour ${activity ? `les ${activity}` : "les entreprises"} de la région, pour être trouvé sur Google et joignable depuis un téléphone.`
+    const offer = status === "NOT_FOUND" ? `Je crée des sites simples pour les indépendants et les petites entreprises de la région, pour être trouvé sur Google et joignable depuis un téléphone.`
       : status === "UNREACHABLE" ? "Je peux vous aider à le remettre en ligne rapidement."
       : `Je peux corriger ${issueCodes.length > 1 ? "ces points" : "ce point"} ou moderniser votre site, selon ce qui a du sens pour vous.`;
     const body = [hello, "", [opening, fact].filter(Boolean).join(" "), offer,

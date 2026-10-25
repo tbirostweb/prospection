@@ -103,7 +103,7 @@ function monthsSince(d?: string | null): number | null {
 }
 
 /** `p` : ligne `local_prospects`. Renvoie null quand AUCUN fait objectif ne justifie un message (on n'invente jamais une faiblesse). */
-/** « de Le Petit Bistrot » → « du Petit Bistrot », « de Les Délices » → « des Délices », « de L'Atelier » → « de l'Atelier », « de Elio » → « d'Elio ». */
+/** « de Le Petit Bistrot » → « du Petit Bistrot », « de Les Délices » → « des Délices », « de L'Atelier » → « de l'Atelier », « de Atelier Exemple » → « d'Atelier Exemple ». */
 export const deName = (name: string) => /^le\s/i.test(name) ? `du ${name.slice(3)}` : /^les\s/i.test(name) ? `des ${name.slice(4)}` : /^la\s/i.test(name) ? `de la ${name.slice(3)}` : /^l['’]/i.test(name) ? `de l'${name.slice(2)}` : /^[aeiouyàâéèêëîïôöûüœæ]/i.test(name) ? `d'${name}` : `de ${name}`;
 
 export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draft | null {
@@ -150,7 +150,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const activity = p.activity_label ? p.activity_label.split(",")[0].toLowerCase() : null;
   const pitch = sender.pitch?.trim()
     || (kind === "sans_site"
-      ? `Je crée des sites simples et efficaces pour les ${activity ?? "entreprises"} de la région : être trouvé sur Google, présenter vos services et être joignable facilement depuis un téléphone.`
+      ? `Je crée des sites simples et efficaces pour les indépendants et les petites entreprises de la région : être trouvé sur Google, présenter vos services et être joignable facilement depuis un téléphone.`   // jamais de spécialisation inventée par métier
       : kind === "site_inaccessible"
         ? "Je peux vous aider à le remettre en ligne rapidement, et si besoin à le moderniser pour qu'il soit trouvé et consultable sur téléphone."
         : "Je peux corriger ces points, ou vous proposer une version plus moderne de votre site, selon ce qui a du sens pour vous.");

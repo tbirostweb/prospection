@@ -58,11 +58,11 @@ test("garde-fous /rediger : chiffres et liens limités à la référence, mentio
   assert.ok(checkWrittenCore(ok + " Si vous ne souhaitez pas être recontacté, dites-le.", "x", ref).some((x) => x.includes("ajoutées par l'application")));
 });
 
-test("élision devant une voyelle : « le lancement d'Elio », jamais « de Elio »", () => {
-  const p = { company_name: "ELIO IMMOBILIER", city: "FONTAINE-LES-GRES", website_status: "NOT_FOUND", website_absence_confidence: 0.85,
+test("élision devant une voyelle : « le lancement d'Atelier Exemple », jamais « de Atelier »", () => {
+  const p = { company_name: "ATELIER EXEMPLE", city: "VILLE-TEST", website_status: "NOT_FOUND", website_absence_confidence: 0.85,
     website_search_tried: 8, website_search_total: 10, company_created_at: new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10), issues: "[]" };
   const d = buildDraft(p, SENDER, OFFER)!;
-  assert.match(d.body, /lancement d'Elio Immobilier/);
+  assert.match(d.body, /lancement d'Atelier Exemple/);
   assert.match(d.body, /sauf erreur de ma part\./);
   assert.doesNotMatch(d.body, /ignorez|ne tenez pas compte/);
 });
