@@ -156,3 +156,78 @@ def test_revérification_des_fiches_sans_site_utilise_places(env, conn, monkeypa
     assert stats["found"] >= 1 and p["website_status"] == "CONFIRMED" and p["website_url"] == f"https://www.{SITE}/"
     assert p["email"] == "contact@pains-d-antan.fr" and "places" in p["provenance"] and SITE not in json.dumps(json.loads(p["provenance"])["places"])
     assert len([c for c in calls if b"DUPONT" in c.content]) == 1
+
+
+# ── Passage « Google Places sur les fiches déjà trouvées » (bouton de la page Statistiques) ─────────────────────────
+def _backfill_setup(conn, monkeypatch, enabled=True, **kw):
+    """Fiche DUPONT « sans site », déjà revérifiée AVANT la clé Places (provenance site_recheck, aucune provenance places)."""
+    install_api(monkeypatch)
+    web, search = web_and_search()
+    runner.run_campaign(conn, add_campaign(conn), search=search, fetch=web)                   # Places inactif : NOT_FOUND
+    assert prospect(conn, DUPONT)["website_status"] == "NOT_FOUND"
+    db.execute(conn, "UPDATE local_prospects SET provenance=JSON_SET(COALESCE(provenance, JSON_OBJECT()), '$.site_recheck', JSON_OBJECT('checked_at', '2026-10-01T00:00:00Z')) "
+                     "WHERE siret=%s", (DUPONT,))
+    db.execute(conn, "DELETE FROM settings WHERE skey='local_places_backfill'")
+    db.execute(conn, "INSERT INTO settings (user_id, skey, value_json) SELECT id, 'local_places_backfill', %s FROM users ORDER BY id LIMIT 1",
+               (json.dumps({"enabled": enabled}),))
+    if not db.fetch_one(conn, "SELECT 1 AS x FROM settings WHERE skey='local_places_backfill'"):     # aucun utilisateur dans la base de test
+        db.execute(conn, "INSERT INTO users (email, password_hash) VALUES ('t@t.fr', 'x')")
+        db.execute(conn, "INSERT INTO settings (user_id, skey, value_json) SELECT id, 'local_places_backfill', %s FROM users ORDER BY id LIMIT 1", (json.dumps({"enabled": enabled}),))
+    conn.commit()
+    calls = install_places(monkeypatch, **kw)
+    _web(web)
+
+    def no_engine(q):
+        raise AssertionError(f"requête moteur interdite : {q}")
+    return calls, web, no_engine
+
+
+def _enabled(conn) -> bool:
+    v = db.fetch_one(conn, "SELECT value_json FROM settings WHERE skey='local_places_backfill'")["value_json"]
+    return json.loads(v)["enabled"]
+
+
+def test_backfill_selection_site_recheck_sans_places_pris_avec_places_ou_contacte_ignore(env, conn, monkeypatch):
+    _backfill_setup(conn, monkeypatch)
+    pid = prospect(conn, DUPONT)["id"]
+    assert pid not in [r["id"] for r in siterecheck.candidates(conn, 50)]                       # déjà site_recheck : hors revérification
+    ids = lambda: [r["id"] for r in siterecheck.candidates(conn, 50, siterecheck.NO_PLACES)]    # noqa: E731
+    assert pid in ids()
+    store_prov = "UPDATE local_prospects SET provenance=JSON_SET(provenance, '$.places', JSON_OBJECT('checked_at', '2026-10-02T00:00:00Z')) WHERE id=%s"
+    db.execute(conn, store_prov, (pid,))
+    assert pid not in ids()                                                                      # déjà interrogée : ignorée
+    db.execute(conn, "UPDATE local_prospects SET provenance=JSON_REMOVE(provenance, '$.places'), contacted_at='2026-10-21 09:00:00' WHERE id=%s", (pid,))
+    assert pid not in ids()                                                                      # contactée : ignorée
+
+
+def test_backfill_site_confirme_sans_requete_moteur_puis_reglage_eteint(env, conn, monkeypatch):
+    calls, web, no_engine = _backfill_setup(conn, monkeypatch)
+    db.execute(conn, "UPDATE local_prospects SET draft_message='Bonjour, pas de site', draft_kind='sans_site', auto_state='queued' WHERE siret=%s", (DUPONT,))
+    conn.commit()
+    monkeypatch.setattr(siterecheck, "_no_search", no_engine)                                    # le moindre appel moteur ferait échouer le test
+    stats = siterecheck.places_backfill(conn, fetch=web, limit=50)
+    p = prospect(conn, DUPONT)
+    assert stats["found"] == 1 and p["website_status"] == "CONFIRMED" and p["website_url"] == f"https://www.{SITE}/"
+    assert p["email"] == "contact@pains-d-antan.fr" and p["draft_message"] is None and p["auto_state"] is None
+    assert json.loads(p["provenance"])["places"]["place_id"] == "ChIJdupont" and SITE not in json.dumps(json.loads(p["provenance"])["places"])
+    assert len([c for c in calls if b"DUPONT" in c.content]) == 1
+    assert _enabled(conn) is True                                                                # toutes les fiches ne sont pas encore vues : réglage conservé
+    siterecheck.places_backfill(conn, fetch=web, limit=50)                                       # plus rien à faire : le réglage s'éteint seul
+    assert _enabled(conn) is False
+
+
+def test_backfill_inactif_sans_reglage_ou_sans_cle_aucun_appel(env, conn, monkeypatch):
+    calls, web, _ne = _backfill_setup(conn, monkeypatch, enabled=False)
+    assert siterecheck.places_backfill(conn, fetch=web, limit=50)["asked"] == 0 and not calls
+    db.execute(conn, "UPDATE settings SET value_json=%s WHERE skey='local_places_backfill'", (json.dumps({"enabled": True}),))
+    conn.commit()
+    monkeypatch.setattr(places, "API_KEY", "")
+    assert siterecheck.places_backfill(conn, fetch=web, limit=50)["asked"] == 0 and not calls
+    assert _enabled(conn) is True
+
+
+def test_backfill_budget_atteint_arret_sans_erreur_reglage_conserve(env, conn, monkeypatch):
+    calls, web, _ne = _backfill_setup(conn, monkeypatch, budget=1)
+    places.reserve(conn)                                                                         # le mois est épuisé
+    stats = siterecheck.places_backfill(conn, fetch=web, limit=50)
+    assert stats["asked"] == 0 and not calls and _enabled(conn) is True

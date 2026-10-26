@@ -28,18 +28,24 @@ from . import contacts, engines, runner, sitefinder, socials as socials_mod, sto
 from .errors import SearchUnavailable
 
 PER_RUN = int(env("LOCAL_SITE_RECHECK_PER_RUN", "10") or 10)
+PLACES_PER_RUN = int(env("LOCAL_PLACES_BACKFILL_PER_RUN", "1") or 1)    # 2 passages/heure × 13 h ≈ 26 fiches/jour, sous le quota Google de 30/jour
+PLACES_SETTING = "local_places_backfill"
 RECHECK_STRATEGIES = 2                 # recherches au plus par fiche : nom + ville, puis la suivante (les 6 d'origine n'avaient rien donné)
 UNTOUCHABLE = "p.contacted_at IS NULL AND (p.auto_state IS NULL OR p.auto_state = 'queued')"
 
 
-def candidates(conn, limit: int) -> list[dict]:
-    """Fiches « sans site » jamais revérifiées et jamais contactées : brouillon déjà rédigé d'abord (il serait faux), puis les plus prometteuses."""
-    return db.fetch_all(conn, f"""SELECT p.* FROM local_prospects p
-        WHERE p.website_status IN ('NOT_FOUND','UNCERTAIN') AND {UNTOUCHABLE}
+NO_SITE_FILTER = f"""p.website_status IN ('NOT_FOUND','UNCERTAIN') AND {UNTOUCHABLE}
           AND p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.is_chain = 0 AND p.pipeline_stage = 'DONE'
           AND (p.category IS NULL OR p.category <> 'IGNORER') AND p.status NOT IN ('LOST','WON','DO_NOT_CONTACT','CONTACTED')
-          AND JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.site_recheck') IS NULL
-          AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)
+          AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)"""   # critères communs à la revérification et au passage Google Places
+NO_PLACES = "JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.places') IS NULL"
+
+
+def candidates(conn, limit: int, where: str = "JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.site_recheck') IS NULL") -> list[dict]:
+    """Fiches « sans site » jamais revérifiées et jamais contactées : brouillon déjà rédigé d'abord (il serait faux), puis les plus prometteuses.
+    `where` : condition de provenance en plus des critères communs (par défaut : pas encore revérifiée ; le passage Google Places pose NO_PLACES)."""
+    return db.fetch_all(conn, f"""SELECT p.* FROM local_prospects p
+        WHERE {NO_SITE_FILTER} AND {where}
         ORDER BY (p.draft_message IS NOT NULL) DESC, FIELD(p.category, 'A_EXAMINER', 'A_CONTACTER', 'TRES_BON') DESC, p.prospect_score DESC, p.id
         LIMIT %s""", (limit,))
 
@@ -79,18 +85,24 @@ def _drop_no_site_draft(conn, pid: int) -> bool:
 
 def recheck(conn, row: dict, search, fetch) -> tuple[str, bool]:
     """UNE nouvelle résolution pour ce prospect. Renvoie (niveau trouvé, site enregistré ?). SearchUnavailable remonte (rien n'est écrit)."""
-    pid = row["id"]
-    camp = _campaign(conn, pid)
-    ctx = runner.Ctx(conn, camp)
+    ctx = runner.Ctx(conn, _campaign(conn, row["id"]))
     company = runner._company(conn, row)
     res = sitefinder.resolve(company, search, fetch, ctx.site_thresholds, strategy_budget=RECHECK_STRATEGIES,
                              known_urls=runner._known_urls(conn, row), dns=ctx.dns,
                              candidate_urls=runner._places_urls(conn, row))
+    return _conclude(conn, row, ctx, company, res, fetch)
+
+
+def _conclude(conn, row: dict, ctx, company: dict, res, fetch, only_if_found: bool = False) -> tuple[str, bool]:
+    """Suite d'une résolution (revérification ou passage Google Places) : site accepté = enregistré + contacts ajoutés + traitement du runner +
+    brouillon « sans site » effacé. `only_if_found` : sans site sûr, aucune provenance `site_recheck` n'est posée (la fiche n'a pas été revérifiée)."""
+    pid = row["id"]
     flag = {"checked_at": runner._now_iso(), "previous": row.get("website_status"), "status": res.status, "confidence": round(res.confidence, 2),
             "url": res.url if res.accepted else None}
     fresh = db.fetch_one(conn, f"SELECT p.* FROM local_prospects p WHERE p.id=%s AND {UNTOUCHABLE}", (pid,))
     if not res.accepted or fresh is None:                             # rien de sûr (ou contacté entre-temps) : l'ancienne résolution reste
-        store.set_provenance(conn, pid, "site_recheck", flag)
+        if not only_if_found:
+            store.set_provenance(conn, pid, "site_recheck", flag)
         return res.status, False
     known = fresh.get("social_links")
     known = json.loads(known) if isinstance(known, (str, bytes)) else (known or [])
@@ -127,6 +139,60 @@ def run(conn, search, fetch=None, limit: int = PER_RUN) -> dict:
         stats["rechecked"] += 1
         if saved:
             stats["found"] += 1
+        conn.commit()
+    return stats
+
+
+def _no_search(_query: str) -> list:
+    """Passage Google Places : AUCUNE requête vers les moteurs de recherche (seule l'URL de la fiche Google est candidate)."""
+    return []
+
+
+def places_backfill_active(conn) -> bool:
+    row = db.fetch_one(conn, "SELECT value_json FROM settings WHERE skey=%s LIMIT 1", (PLACES_SETTING,))
+    v = row["value_json"] if row else None
+    v = json.loads(v) if isinstance(v, (str, bytes)) else v
+    return bool(isinstance(v, dict) and v.get("enabled") is True)
+
+
+def places_backfill(conn, fetch=None, limit: int = PLACES_PER_RUN) -> dict:
+    """Google Places sur les fiches « sans site » DÉJÀ revérifiées avant que la clé existe (bouton de la page Statistiques, réglage `local_places_backfill`).
+    Mêmes critères que `candidates`, sans le filtre `site_recheck`, SANS provenance `places` ; brouillon rédigé d'abord. Pour chacune : l'URL de la fiche
+    Google, vérifiée sur le site lui-même (aucune requête moteur), puis la même suite que `recheck`. Plus aucune fiche : le réglage s'éteint tout seul.
+    Clé refusée ou budget du mois atteint : le passage s'arrête sans erreur (réglage conservé)."""
+    stats = {"asked": 0, "found": 0, "done": False}
+    from . import places
+    if limit <= 0 or not places.enabled() or not places_backfill_active(conn):
+        return stats
+    rows = candidates(conn, limit, NO_PLACES)
+    if not rows:
+        db.execute(conn, "UPDATE settings SET value_json=%s WHERE skey=%s", (json.dumps({"enabled": False}), PLACES_SETTING))
+        conn.commit()
+        stats["done"] = True
+        log.info("[local] Google Places sur les fiches déjà trouvées : terminé, réglage désactivé")
+        return stats
+    from . import fetch as fetch_mod
+    fetch = fetch or fetch_mod.Fetcher()
+    for row in rows:
+        if not places.enabled() or places.month_used(conn) >= places.MONTHLY_BUDGET:
+            break                                              # clé refusée ou plafond du mois : la suite au prochain mois / à la prochaine clé
+        try:
+            ctx = runner.Ctx(conn, _campaign(conn, row["id"]))
+            company = runner._company(conn, row)
+            urls = runner._places_urls(conn, row)
+            if not urls:
+                conn.commit()                                  # aucun site chez Google (provenance `places` posée) : rien d'autre à faire
+                stats["asked"] += 1
+                continue
+            res = sitefinder.resolve(company, _no_search, fetch, ctx.site_thresholds, strategy_budget=0,
+                                     known_urls=runner._known_urls(conn, row), candidate_urls=urls)
+            _status, saved = _conclude(conn, row, ctx, company, res, fetch, only_if_found=True)
+        except Exception as exc:  # noqa: BLE001 — une fiche en échec n'arrête pas les autres ; `places` est déjà posée : pas de boucle
+            conn.rollback()
+            log.warning("[local] Google Places sur la fiche #%s en échec : %s", row["id"], exc)
+            continue
+        stats["asked"] += 1
+        stats["found"] += int(saved)
         conn.commit()
     return stats
 

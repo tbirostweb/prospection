@@ -60,6 +60,15 @@ export async function getPlacesStats() {
       FROM local_prospects WHERE JSON_EXTRACT(provenance, '$.places') IS NOT NULL`);
   const [ever] = await safeRows<any>(`SELECT COALESCE(SUM(requests),0) AS n FROM local_places_usage`);
   const asked = Number(c?.asked ?? 0);
-  return { requests: Number(u?.requests ?? 0), budget: Number(b?.budget ?? 900), asked, hadSite: Number(c?.had_site ?? 0), verified: Number(c?.verified ?? 0),
+  // mêmes critères que worker/local/siterecheck.py (NO_SITE_FILTER + sans provenance `places`)
+  const [t] = await safeRows<any>(`SELECT COUNT(*) AS n FROM local_prospects p
+      WHERE p.website_status IN ('NOT_FOUND','UNCERTAIN') AND p.contacted_at IS NULL AND (p.auto_state IS NULL OR p.auto_state = 'queued')
+        AND p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.is_chain = 0 AND p.pipeline_stage = 'DONE'
+        AND (p.category IS NULL OR p.category <> 'IGNORER') AND p.status NOT IN ('LOST','WON','DO_NOT_CONTACT','CONTACTED')
+        AND JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.places') IS NULL
+        AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)`);
+  const backfill = await getSetting<{ enabled?: boolean }>("local_places_backfill", {});
+  return { pending: Number(t?.n ?? 0), backfillOn: backfill?.enabled === true,
+     requests: Number(u?.requests ?? 0), budget: Number(b?.budget ?? 900), asked, hadSite: Number(c?.had_site ?? 0), verified: Number(c?.verified ?? 0),
     ever: asked > 0 || Number(ever?.n ?? 0) > 0 };
 }

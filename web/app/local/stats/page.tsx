@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
+import PlacesBackfillButton from "@/components/PlacesBackfillButton";
 import { getPlacesStats, getSetting, safeRows } from "@/lib/localdb";
 import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engineTier } from "@/lib/local";
 
@@ -138,6 +139,11 @@ export default async function LocalStats() {
             <p className="mt-1 text-xs text-muted">Une seule requête par prospect, puis pas avant 90 jours. Seul l'identifiant de la fiche est conservé, jamais son contenu.</p>
           </>
         )}
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="text-sm">{places.pending} fiche(s) sans site pas encore interrogée(s){places.backfillOn ? " — passage en cours." : "."}</p>
+          {(places.pending > 0 || places.backfillOn) && <div className="mt-2"><PlacesBackfillButton on={places.backfillOn} /></div>}
+          <p className="mt-1 text-xs text-muted">Au plus ~26 fiches par jour (quota Google de 30/jour) ; s'arrête seul quand toutes sont faites ou au plafond mensuel.</p>
+        </div>
       </section>
       <Table title="Répartition par activité et taux de réponse" rows={byActivity} cols={[["Entreprises", (r) => r.n], ["Sans site", (r) => r.no_site],
         ["Contactés", (r) => r.contacted], ["Réponses", (r) => `${r.replied} · ${pct(Number(r.replied), Number(r.contacted))}`], ["Clients", (r) => r.won]]} />

@@ -13,7 +13,7 @@ export async function GET() {
 
 // Seules ces clés de configuration sont acceptées (évite de polluer la table).
 // `learned_adjustments` est calculé par le worker : lecture seule.
-const ALLOWED_KEYS = ["local_home", "local_weights", "local_thresholds", "local_options", "local_presets", "local_sender", "local_offer", "local_banned_brands", "local_auto_send"];
+const ALLOWED_KEYS = ["local_home", "local_weights", "local_thresholds", "local_options", "local_presets", "local_sender", "local_offer", "local_banned_brands", "local_auto_send", "local_places_backfill"];
 
 const num = (v: unknown, lo: number, hi: number): number | null => {
   const n = Number(v);
@@ -98,6 +98,7 @@ function sanitize(key: string, value: any): any | null {
       return { city: String(value.city ?? "").trim().slice(0, 128), postalCode: String(value.postalCode ?? "").trim().slice(0, 10), defaultRadius: radius };
     }
     case "local_auto_send": return sanitizeAutoSend(value);   // envoi automatique : désactivé tant que enabled !== true
+    case "local_places_backfill": return value && typeof value === "object" ? { enabled: value.enabled === true } : null;   // passage Google Places sur les fiches déjà trouvées (le worker l'éteint à la fin)
     default: return null;
   }
 }

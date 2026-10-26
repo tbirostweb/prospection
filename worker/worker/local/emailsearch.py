@@ -87,6 +87,9 @@ def main() -> int:
                 sites = siterecheck.run(conn, pool)
                 if sites["rechecked"]:
                     log.info("[local] nouvelle recherche de sites : %s", json.dumps(sites))
+                places_stats = siterecheck.places_backfill(conn)
+                if places_stats["asked"]:
+                    log.info("[local] Google Places sur les fiches déjà trouvées : %s", json.dumps(places_stats))
             except Exception as exc:  # noqa: BLE001 — n'empêche jamais la recherche d'e-mails
                 conn.rollback()
                 log.warning("[local] nouvelle recherche de sites en échec : %s", exc)
