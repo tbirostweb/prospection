@@ -3,8 +3,11 @@ import { query, queryOne } from "@/lib/db";
 import { Offer, Sender, buildDraft, checkWrittenCore, wrapDraft } from "@/lib/draft";
 import { getSetting } from "@/lib/localdb";
 import { readJson, routeId } from "@/lib/api";
+import { AUTO_DEFAULTS, AutoSend, autoIneligible } from "@/lib/autosend";
 
-/** « Créer un brouillon » : construit un e-mail personnalisé à partir des faits détectés et l'enregistre (modifiable). N'ENVOIE RIEN.
+/** « Créer un brouillon » : construit un e-mail personnalisé à partir des faits détectés et l'enregistre (modifiable). N'envoie rien ici.
+ *  Avec `{ auto: true }` : le brouillon est aussi mis en file d'envoi automatique si le prospect est éligible (adresse professionnelle,
+ *  jamais contacté) ; c'est le worker (worker/local/outbox.py) qui envoie, seulement si l'envoi automatique est activé dans Réglages.
  *  Avec `{ source: "rediger", subject, core }` : enregistre le cœur rédigé par la commande Claude Code /rediger, après les mêmes garde-fous
  *  (chiffres et liens limités aux faits du brouillon de référence) ; salutation, opposition, signature et notice sont ajoutées ici. */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -32,6 +35,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     kind = `ai_${d.kind}`;
   }
   await query("UPDATE local_prospects SET draft_subject=?, draft_message=?, draft_kind=?, draft_created_at=UTC_TIMESTAMP() WHERE id=?", [subject, body, kind.slice(0, 24), id]);
+  // Mise en file : jamais pour une séquence déjà en cours ou terminée (réponse, refus, adresse invalide…).
+  let queued = false, notQueued: string | null = null;
+  if (b.auto === true) {
+    notQueued = autoIneligible({ ...p, draft_message: body }) ?? (p.auto_state && p.auto_state !== "queued" && p.auto_state !== "stopped" ? "séquence automatique déjà en cours ou terminée" : null);
+    if (!notQueued) {
+      await query("UPDATE local_prospects SET auto_queued_at=IF(auto_state='queued' AND auto_queued_at IS NOT NULL, auto_queued_at, UTC_TIMESTAMP()), auto_state='queued' WHERE id=?", [id]);
+      queued = true;
+    }
+  }
+  const auto = { ...AUTO_DEFAULTS, ...(await getSetting<Partial<AutoSend>>("local_auto_send", {})) };
   return NextResponse.json({ subject, body, facts: d.facts, kind, senderMissing: !sender.name, noticeMissing: !sender.privacy_url,
-    emailUncertain: !!p.email && p.email_kind === "UNCERTAIN" });
+    emailUncertain: !!p.email && p.email_kind === "UNCERTAIN", queued, notQueued, autoEnabled: auto.enabled === true });
 }

@@ -58,7 +58,8 @@ def followup_due(p: dict, now: datetime | None = None) -> str | None:
 
 def followups(conn, now: datetime | None = None) -> list[dict]:
     rows = db.fetch_all(conn, f"""SELECT id, company_name, trade_name, city, phone, email, activity_key, status, contacted_at, followups
-                                  FROM local_prospects WHERE status='CONTACTED' AND contacted_at IS NOT NULL AND do_not_contact=0 ORDER BY contacted_at""")
+                                  FROM local_prospects WHERE status='CONTACTED' AND contacted_at IS NOT NULL AND do_not_contact=0
+                                  AND (auto_state IS NULL OR auto_state <> 'active') ORDER BY contacted_at""")   # relances auto : gérées par l'envoi
     return [{**r, "due": d} for r in rows if (d := followup_due(r, now))]
 
 

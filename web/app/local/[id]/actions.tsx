@@ -13,7 +13,7 @@ const STEPS: { status: string; label: string; response?: string }[] = [
   { status: "LOST", label: "Pas intéressant", response: "NOT_A_FIT" },
 ];
 
-/** Suivi commercial : tout est fait PAR TOI. Aucun envoi automatique. « Ne plus contacter » est définitif depuis l'interface. */
+/** Suivi commercial : tout est fait PAR TOI. Aucun envoi depuis ces boutons. « Ne plus contacter » est définitif depuis l'interface. */
 export default function ProspectActions({ id, status, notes, doNotContact, websiteUrl, siteAccepted, feedbackReason }: { id: number; status: string; notes: string | null; doNotContact: boolean; websiteUrl: string | null; siteAccepted: boolean; feedbackReason: string | null }) {
   const router = useRouter();
   const [text, setText] = useState(notes ?? "");

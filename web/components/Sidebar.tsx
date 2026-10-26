@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 const NAV = [
   { href: "/local/contact", label: "À contacter", also: ["/local/tournee", "/local/import"] },
   { href: "/local/suivi", label: "Suivi", also: [] },
+  { href: "/local/envois", label: "Envois", also: [] },
   { href: "/local", label: "Entreprises", also: ["/local/carte"] },
   { href: "/local/campagnes", label: "Campagnes", also: [] },
   { href: "/settings", label: "Réglages", also: ["/local/stats"] },

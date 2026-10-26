@@ -12,14 +12,15 @@ function greeting(): string {
   return h >= 18 || h < 5 ? "Bonsoir" : "Bonjour";
 }
 
-/** Écran principal : les entreprises prêtes à être contactées (site tranché + au moins un contact). Rien n'est jamais envoyé automatiquement. */
+/** Écran principal : les entreprises prêtes à être contactées (site tranché + au moins un contact). Rien n'est envoyé d'ici (envoi automatique : onglet Envois). */
 export default async function ContactQueue() {
   const rows = await safeRows<LocalRow>(`SELECT ${LIST_COLUMNS} ${CONTACT_QUEUE_SQL}`);
   const [pending] = await safeRows<any>(`SELECT COUNT(*) AS n FROM local_prospects p WHERE p.category IN ('TRES_BON','A_CONTACTER') AND p.do_not_contact = 0
     AND p.excluded_reason IS NULL AND p.status IN ('QUALIFIED','AUDITED','ENRICHED','DISCOVERED') AND NOT (${READY_SQL})`);
   const [review] = await safeRows<any>(`SELECT COUNT(*) AS n FROM local_prospects p WHERE p.site_review = 'PENDING' AND p.do_not_contact = 0`);
   const contacted = await safeRows<LocalRow>(`SELECT ${LIST_COLUMNS} FROM local_prospects p
-    WHERE p.status = 'CONTACTED' AND p.do_not_contact = 0 AND p.contacted_at IS NOT NULL ORDER BY p.contacted_at LIMIT 300`);
+    WHERE p.status = 'CONTACTED' AND p.do_not_contact = 0 AND p.contacted_at IS NOT NULL
+    AND (p.auto_state IS NULL OR p.auto_state <> 'active') ORDER BY p.contacted_at LIMIT 300`);   // relances automatiques : onglet Envois
   const due = contacted.map((p) => ({ p: JSON.parse(JSON.stringify(p)) as LocalRow, d: followupDue({ status: p.status, contacted_at: p.contacted_at ? String(p.contacted_at) : null, followups: p.followups }) }))
     .filter((x) => x.d);
   const toReview = Number(review?.n ?? 0);

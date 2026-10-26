@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { draftIncomplete, mailtoLink } from "@/lib/draft";
 
-/** Brouillon d'e-mail : créé UNIQUEMENT sur clic, modifiable, jamais envoyé par l'application. « Ouvrir dans ma messagerie » prépare le mail : c'est toi qui l'envoies. */
+/** Brouillon d'e-mail : créé UNIQUEMENT sur clic, modifiable, envoyé par l'application seulement s'il est mis en file d'envoi automatique (activé dans Réglages). « Ouvrir dans ma messagerie » prépare le mail : c'est toi qui l'envoies. */
 export default function DraftBox({ id, email, subject, body, createdAt, doNotContact }: {
   id: number; email: string | null; subject: string | null; body: string | null; createdAt: string | null; doNotContact: boolean;
 }) {

@@ -12,6 +12,7 @@ OLD_CRONTAB = {
     ("*/5 * * * *", "worker.telegram_poll"), ("*/15 6-22 * * *", "worker.local.run"), ("10 7 * * *", "worker.local.watch"),
     ("* * * * *", "worker.reset"), ("5 * * * *", "worker.local.monitor"), ("15 7 * * *", "worker.digest"),
     ("0 8 * * 1", "worker.digest"), ("30 4 * * *", "worker.local.retention"), ("0 4 * * *", None),
+    ("*/10 * * * *", "worker.local.outbox"),             # ajout : envoi automatique (désactivé par défaut)
 }
 
 
@@ -60,9 +61,9 @@ def test_lancement_des_taches_dues_et_rotation(tmp_path, monkeypatch):
 
     monkeypatch.setattr(scheduler, "APP_DIR", tmp_path)
     s = scheduler.Scheduler(log_dir=tmp_path, popen=FakeProc)
-    started = s.run_due(dt.datetime(2026, 10, 5, 4, 0))                   # 04:00 : rotation + reset + telegram (minute 0)
+    started = s.run_due(dt.datetime(2026, 10, 5, 4, 0))                   # 04:00 : rotation + reset + telegram + envoi (minute 0)
     mods = sorted(a[1] for a in started if a)
-    assert mods == ["worker.reset", "worker.telegram_poll"] and None in started
+    assert mods == ["worker.local.outbox", "worker.reset", "worker.telegram_poll"] and None in started
     assert all("APP_PASSWORD" not in kw["env"] for _, kw in calls)
     assert (tmp_path / "local.log").exists() and (tmp_path / "telegram.log").exists()
     assert s.children == []                                               # processus terminés récoltés (pas de zombies)

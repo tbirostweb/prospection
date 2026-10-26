@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           footer={
             <footer className="px-4 pb-8 sm:px-6 md:px-10">
               <div className="mx-auto flex max-w-content flex-wrap justify-between gap-x-6 gap-y-1 text-xs text-muted">
-                <span>Rien n&apos;est jamais envoyé automatiquement : tu contactes toi-même.</span>
+                <span>Rien ne part sans toi : l&apos;envoi automatique d&apos;e-mails ne fonctionne que si tu l&apos;actives dans Réglages.</span>
                 <span>Campagnes mises à jour toutes les 15 min</span>
               </div>
             </footer>

@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { queryOne, query } from "@/lib/db";
 import { CHAIN_KIND_LABELS, EMAIL_KIND_LABELS, ERROR_LABELS, ISSUE_SEVERITY_CLASS, SITE_KIND_CLASS, SITE_OK, WEBSITE_LABELS, bestTime, distanceLabel, followupDue, formatPhone, recentSite, simpleStatus, siteInfo, verifiedSocials } from "@/lib/local";
 import FollowupButtons from "@/components/FollowupButtons";
+import AutoSendButton from "@/components/AutoSendButton";
+import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
 import { salesBrief } from "@/lib/pitch";
 import { getSetting } from "@/lib/localdb";
 import type { Sender } from "@/lib/draft";
-import { dateFr } from "@/lib/format";
+import { dateFr, dateTimeFr } from "@/lib/format";
 import { parseId, safeHref } from "@/lib/security";
 import ProspectActions from "./actions";
 import SiteReview from "./site-review";
@@ -39,7 +41,10 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
   const evLabel = (e: any) => (typeof e === "string" ? e : `${e.label}${e.weight ? ` (${e.weight > 0 ? "+" : ""}${e.weight})` : ""}`);
   const socials = verifiedSocials(p);
   const brief = salesBrief(JSON.parse(JSON.stringify(p)), await getSetting<Sender>("local_sender", {}));
-  const due = followupDue({ status: p.status, contacted_at: p.contacted_at ? String(p.contacted_at) : null, followups: p.followups });
+  const autoActive = p.auto_state === "active";
+  const due = autoActive ? null : followupDue({ status: p.status, contacted_at: p.contacted_at ? String(p.contacted_at) : null, followups: p.followups });
+  const emails = await query<any>("SELECT kind, to_email, subject, status, error, sent_at FROM local_emails WHERE prospect_id=? ORDER BY sent_at", [p.id]).catch(() => []);
+  const canQueue = !autoIneligible(p) && (!p.auto_state || p.auto_state === "stopped");
 
   return (
     <div className="max-w-3xl">
@@ -100,6 +105,19 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
       </section>
 
       <ProspectActions id={p.id} status={p.status} notes={p.notes} doNotContact={!!p.do_not_contact} websiteUrl={p.website_url} siteAccepted={siteOk} feedbackReason={p.feedback_reason} />
+      {(p.auto_state || emails.length > 0 || canQueue) && (
+        <section className="panel text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span><b>Envoi automatique</b> · {p.auto_state ? AUTO_STATES[p.auto_state] ?? p.auto_state : "pas en file"}</span>
+            {canQueue && p.draft_message && <AutoSendButton id={p.id} action="auto_queue" />}
+            {["queued", "active"].includes(p.auto_state) && <AutoSendButton id={p.id} action="auto_stop" />}
+          </div>
+          {emails.length > 0 && <ul className="mt-3 space-y-1 text-muted">{emails.map((e: any, i: number) => (
+            <li key={i}>{dateTimeFr(e.sent_at)} · {EMAIL_KINDS[e.kind] ?? e.kind} à {e.to_email}{e.status !== "sent" ? ` · ${e.status === "bounced" ? "revenu (adresse invalide)" : `échec${e.error ? ` : ${e.error}` : ""}`}` : ""}</li>))}</ul>}
+          {canQueue && !p.draft_message && <p className="mt-2 text-xs text-muted">Crée d'abord le brouillon ci-dessous : c'est lui qui partira.</p>}
+        </section>
+      )}
+
       <DraftBox id={p.id} email={p.email} subject={p.draft_subject} body={p.draft_message} createdAt={p.draft_created_at ? String(p.draft_created_at) : null} doNotContact={!!p.do_not_contact} />
 
       <details className="panel">

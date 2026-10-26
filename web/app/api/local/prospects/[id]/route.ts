@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, transaction } from "@/lib/db";
 import { readJson, routeId } from "@/lib/api";
 import { DISLIKE_REASONS, MANUAL_STATUSES, isImported } from "@/lib/local";
+import { autoIneligible } from "@/lib/autosend";
 
 const RESPONSES = ["", "REPLIED", "INTERESTED", "NOT_INTERESTED", "NO_ANSWER", "NOT_A_FIT", "WON"];
 
-/** Suivi commercial d'un prospect : statut, réponse, notes, « ne plus contacter ». Aucun envoi automatique, jamais. */
+/** Suivi commercial d'un prospect : statut, réponse, notes, « ne plus contacter », mise en file d'envoi automatique (l'envoi lui-même : worker). */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const r = await routeId(params);
   if ("error" in r) return r.error;
@@ -79,6 +80,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await query(`UPDATE local_campaigns SET status='queued', enabled=1 WHERE id IN (SELECT campaign_id FROM local_prospect_campaigns WHERE prospect_id=?)`, [id]);
     return NextResponse.json({ ok: true, requeued: true });
   }
+  // Envoi automatique : mettre en file, retirer de la file, ou arrêter une séquence en cours (plus aucune relance).
+  if (b.action === "auto_queue") {
+    const why = autoIneligible(p) ?? (p.auto_state && p.auto_state !== "stopped" ? "séquence automatique déjà en cours ou terminée" : null);
+    if (why) return NextResponse.json({ error: why }, { status: 409 });
+    await query("UPDATE local_prospects SET auto_state='queued', auto_queued_at=UTC_TIMESTAMP() WHERE id=?", [id]);
+    return NextResponse.json({ ok: true });
+  }
+  if (b.action === "auto_stop") {
+    if (!["queued", "active"].includes(p.auto_state)) return NextResponse.json({ error: "aucun envoi automatique en cours" }, { status: 409 });
+    await query("UPDATE local_prospects SET auto_state=IF(auto_state='queued', NULL, 'stopped') WHERE id=?", [id]);
+    return NextResponse.json({ ok: true });
+  }
   // Relances : « Relancé » (J+3, J+7) et « Sans réponse » (tu arrêtes : compté comme un échec par l'apprentissage).
   if (b.action === "followed_up" || b.action === "no_answer") {
     if (p.do_not_contact) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
@@ -103,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await transaction(async (q) => {
         await q("INSERT INTO local_do_not_contact (siret, siren, domain, email, reason) VALUES (?,?,?,?,?)",
           [p.siret, p.siren, domain, p.email, String(b.reason ?? "demande de ne plus être contacté").slice(0, 255)]);
-        await q("UPDATE local_prospects SET do_not_contact=1, status='DO_NOT_CONTACT' WHERE id=?", [id]);
+        await q("UPDATE local_prospects SET do_not_contact=1, status='DO_NOT_CONTACT', auto_state=IF(auto_state IN ('queued','active'), 'stopped', auto_state) WHERE id=?", [id]);
       });
     } else {
       await query(`UPDATE local_prospects SET status=?,

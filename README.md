@@ -4,7 +4,7 @@ Application **self-hosted** qui trouve, autour d'une ville, les commerces, artis
 HTTPS, mobile, performance), et te les présente **classés, expliqués et avec leur niveau de confiance**. Aucune IA : découverte par données ouvertes,
 recherche du site officiel vérifiée par preuves, contacts publics, score par règles explicables (audit passif du site en option : `LOCAL_AUDIT=1`).
 
-**Ce sont des prospects à froid** : ils n'ont rien demandé. L'app ne dit jamais qu'ils « cherchent un développeur » et n'envoie **jamais** de message à leur place.
+**Ce sont des prospects à froid** : ils n'ont rien demandé. L'app ne dit jamais qu'ils « cherchent un développeur ». Elle n'envoie rien à leur place, sauf si tu actives l'**envoi automatique des e-mails** (désactivé par défaut, voir plus bas).
 **Coût :** VPS + nom de domaine. Par défaut, aucune API payante ; un moteur payant (Serper) peut être ajouté en dernier recours, avec un budget plafonné (voir [docs/GUIDE_CONNEXION.md](docs/GUIDE_CONNEXION.md)).
 
 ---
@@ -14,7 +14,7 @@ recherche du site officiel vérifiée par preuves, contacts publics, score par r
 - Un **dashboard privé** : campagnes (ville + rayon + activités, ou **pré-recherches** prêtes à l'emploi : « Beauté & bien-être », « Artisans du bâtiment »… et les tiennes), liste de prospects filtrable et triable, fiche expliquée, file « À contacter », statistiques et **santé du système**.
 - Une **carte interactive** : zone et rayon au choix (clic ou point déplaçable), pastilles de couleur « où j'en suis » (à contacter, contacté, réponse, intéressé, gagné, perdu…), filtres, actions rapides, campagne lancée depuis un point.
 - Un **pipeline commercial** (Kanban, glisser-déposer) avec taux de conversion et « à relancer » après 7 jours sans réponse.
-- Des **brouillons d'e-mail personnalisés** créés à la demande (bouton « Créer un brouillon »), à partir des faits détectés, signés avec ton identité — jamais envoyés par l'application.
+- Des **brouillons d'e-mail personnalisés** créés à la demande (bouton « Créer un brouillon »), à partir des faits détectés, signés avec ton identité, et un **envoi automatique facultatif** (onglet Envois) : premier e-mail, relances J+3 et J+7, arrêt dès une réponse.
 - Une **veille des nouvelles entreprises** (BODACC + SIRENE) par campagne, chaque semaine ou chaque mois, annoncée sur Telegram.
 - Des **alertes Telegram** pour chaque prospect « À contacter » ou mieux, avec des boutons pour le **classer depuis ton téléphone** : ⭐ bon prospect · 📞 contacté · 🚫 pas intéressé (+ la raison) · ❌ mauvais site.
 - Un **résumé du matin** (07:15 : relances du jour, jusqu'à 3 meilleurs NOUVEAUX prospects — un prospect déjà présenté n'y revient jamais, il reste dans « À contacter » —, tournée proposée avec l'itinéraire ; aucun message si tout est vide) et un **bilan hebdomadaire** (lundi 08:00) sur Telegram, et des **alertes techniques** en cas de dégradation.
@@ -193,6 +193,25 @@ L'app limite les échecs de connexion par adresse (en-tête `X-Real-Ip` posé pa
 - **Réseau dédié** : ne brancher sur le même réseau que `web` QUE Traefik (réseau externe propre au projet, par exemple `prospection-proxy`, auquel Traefik est rattaché ; `traefik.docker.network` mis à jour), plutôt que `dokploy-network` partagé avec les autres applications.
 
 ---
+
+## Envoi automatique des e-mails (facultatif, désactivé par défaut)
+
+Les messages mis en file (par `/rediger` dans Claude Code, ou « Mettre en file d'envoi » sur une fiche) partent par **ta** boîte e-mail, au rythme
+réglé : un e-mail toutes les 10 minutes au plus, 10 par jour par défaut, jours ouvrés hors fériés, de 9 h à 17 h. Relance J+3 puis J+7, en réponse
+au premier message ; sans réponse à J+14, le prospect passe en « Perdu » et n'est plus contacté. La boîte de réception est lue en lecture seule :
+une réponse arrête les relances (alerte Telegram), un refus inscrit l'entreprise dans « ne plus contacter », un e-mail revenu marque l'adresse
+invalide. Seules les adresses professionnelles reçoivent un e-mail (jamais Gmail, Orange…), jamais par formulaire ni Facebook. Chaque message
+contient la ligne d'opposition et un lien de désinscription (`List-Unsubscribe`).
+
+1. **DNS du domaine d'envoi** : un seul enregistrement SPF, **un seul** enregistrement DMARC (deux = DMARC ignoré), DKIM activé chez OVH.
+   L'envoi est bloqué tant que ce n'est pas le cas (l'onglet **Envois** dit quoi corriger).
+2. **Dokploy**, service *worker* : `LOCAL_SMTP_HOST`, `LOCAL_SMTP_PORT` (587, ou 465), `LOCAL_SMTP_USER` (l'adresse complète), `LOCAL_SMTP_PASSWORD`,
+   et si besoin `LOCAL_MAIL_FROM`, `LOCAL_MAIL_FROM_NAME`, `LOCAL_IMAP_HOST`, `LOCAL_DKIM_SELECTOR` (voir `.env.example`). Redéployer le worker.
+3. **Réglages** : ton identité (nom, téléphone, site, notice d'information, logo en `https://`), puis « Envoi automatique » : cocher, plafond, heures.
+   Conseil : 3 par jour la première semaine, pour vérifier que les messages arrivent bien en boîte de réception.
+4. **Envois** : prérequis, aperçu de la signature, file, séquences en cours, réponses et derniers e-mails. « Arrêter l'envoi » retire un prospect.
+
+Le journal est `logs/mail.log` (worker). Les e-mails envoyés sont aussi copiés dans le dossier « Envoyés » de ta boîte.
 
 ## Dépannage
 

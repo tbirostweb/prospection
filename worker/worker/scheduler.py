@@ -34,6 +34,8 @@ JOBS: list[tuple[str, list[str] | None, str | None]] = [
     ("10 7 * * *", ["-m", "worker.local.watch"], "local.log"),
     # Remise à zéro demandée depuis l'interface.
     ("* * * * *", ["-m", "worker.reset", "--pending"], "local.log"),
+    # Envoi automatique des e-mails (désactivé par défaut, Réglages) : lit les réponses puis envoie au plus UN e-mail par passage.
+    ("*/10 * * * *", ["-m", "worker.local.outbox"], "mail.log"),
     # Surveillance des dégradations : alerte Telegram throttlée.
     ("5 * * * *", ["-m", "worker.local.monitor"], "local.log"),
     ("15 7 * * *", ["-m", "worker.digest", "daily"], "digest.log"),

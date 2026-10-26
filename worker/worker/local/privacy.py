@@ -50,6 +50,8 @@ def export(conn, siret: str | None = None, email: str | None = None) -> dict:
     else:
         out["site_feedback"] = []
     out["bad_sites"] = db.fetch_all(conn, f"SELECT * FROM local_bad_sites WHERE siret IN ({','.join(['%s'] * len(sirets))})", tuple(sirets)) if sirets else []
+    # e-mails envoyés automatiquement (effacés avec le prospect : clé étrangère ON DELETE CASCADE)
+    out["emails"] = db.fetch_all(conn, f"SELECT * FROM local_emails WHERE prospect_id IN ({','.join(['%s'] * len(ids))})", tuple(ids)) if ids else []
     return out
 
 

@@ -1,4 +1,4 @@
-// Brouillon d'e-mail PERSONNALISÉ, créé seulement quand tu cliques « Créer un brouillon » — jamais envoyé automatiquement.
+// Brouillon d'e-mail PERSONNALISÉ, créé seulement quand tu cliques « Créer un brouillon » — envoyé seulement s'il est mis en file ET que l'envoi automatique est activé (worker/local/outbox.py).
 // Construit UNIQUEMENT avec des faits réellement détectés sur l'entreprise (site non trouvé, problèmes objectifs du site, création récente…).
 // Ton : court, courtois, sans fausse affirmation (« sauf erreur de ma part »), toujours avec une ligne permettant de refuser tout nouveau contact.
 

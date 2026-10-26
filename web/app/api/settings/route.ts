@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import { LOCAL_ACTIVITIES } from "@/lib/local";
 import { readJson } from "@/lib/api";
+import { sanitizeAutoSend } from "@/lib/autosend";
 
 export async function GET() {
   const rows = await query<any>("SELECT skey, value_json FROM settings");
@@ -12,7 +13,7 @@ export async function GET() {
 
 // Seules ces clés de configuration sont acceptées (évite de polluer la table).
 // `learned_adjustments` est calculé par le worker : lecture seule.
-const ALLOWED_KEYS = ["local_home", "local_weights", "local_thresholds", "local_options", "local_presets", "local_sender", "local_offer", "local_banned_brands"];
+const ALLOWED_KEYS = ["local_home", "local_weights", "local_thresholds", "local_options", "local_presets", "local_sender", "local_offer", "local_banned_brands", "local_auto_send"];
 
 const num = (v: unknown, lo: number, hi: number): number | null => {
   const n = Number(v);
@@ -64,14 +65,16 @@ function sanitize(key: string, value: any): any | null {
       return out;
     }
     case "local_sender": {
-      // Ton identité pour signer les brouillons d'e-mail (jamais envoyés automatiquement).
+      // Ton identité pour signer les e-mails (brouillons et envoi automatique). logo_url : petit logo de la signature HTML, https uniquement.
       if (!value || typeof value !== "object") return null;
       const f = (k: string, n: number) => String(value[k] ?? "").trim().slice(0, n);
       // privacy_url : notice d'information (art. 14 RGPD) citée dans chaque brouillon ; http(s) uniquement.
       const privacy = f("privacy_url", 300);
       const privacyOk = !privacy || /^https?:\/\/[^\s]+\.[^\s]+$/i.test(privacy);
       if (!privacyOk) return null;
-      return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400), privacy_url: privacy };
+      const logo = f("logo_url", 300);
+      if (logo && !/^https:\/\/[^\s"<>]+\.[^\s"<>]+$/i.test(logo)) return null;
+      return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400), privacy_url: privacy, logo_url: logo };
     }
     case "local_offer": {
       // Ton offre « clé en main » citée dans les brouillons : le texte est fixe (lib/draft.ts), seuls ces chiffres et ta zone sont réglables.
@@ -94,6 +97,7 @@ function sanitize(key: string, value: any): any | null {
       if (radius === null) return null;
       return { city: String(value.city ?? "").trim().slice(0, 128), postalCode: String(value.postalCode ?? "").trim().slice(0, 10), defaultRadius: radius };
     }
+    case "local_auto_send": return sanitizeAutoSend(value);   // envoi automatique : désactivé tant que enabled !== true
     default: return null;
   }
 }

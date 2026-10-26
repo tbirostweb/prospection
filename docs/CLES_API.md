@@ -309,7 +309,8 @@ utilisés automatiquement.
   rien ; si elle est déjà dans Dokploy, tu peux la supprimer (avec `LOCAL_PAGESPEED_PER_RUN` et `LOCAL_DEEP_PER_RUN`, eux aussi abandonnés).
   Pour mémoire, si la mesure revenait un jour : clé gratuite à créer sur https://console.cloud.google.com/apis/credentials (projet Google Cloud,
   API « PageSpeed Insights » activée, puis « Créer des identifiants → Clé API », restreinte à cette API).
-- **SMTP / e-mail** : l'app n'envoie aucun e-mail (jamais de contact automatique des prospects) ; il n'existe aucune variable SMTP.
+- **SMTP / e-mail** : aucune clé à créer. L'envoi automatique (facultatif, désactivé par défaut) utilise ta boîte OVH : variables `LOCAL_SMTP_*`,
+  `LOCAL_IMAP_*`, `LOCAL_MAIL_FROM*`, `LOCAL_DKIM_SELECTOR` (voir README, « Envoi automatique des e-mails »).
 - **Compte INSEE / API Sirene** : non utilisé (voir 8.1).
 - `TELEGRAM_API_BASE`, `TEST_DATABASE_URL`, `DEV_NO_AUTH`, `ALERT_STATE`, `TELEGRAM_OFFSET_STATE`, `LOCAL_LOCK`, `MIGRATIONS_DIR`, `USER_AGENT` :
   réservés aux tests ou réglages internes, **à ne pas mettre** dans Dokploy.

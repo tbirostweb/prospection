@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ResetPanel from "@/components/ResetPanel";
+import { AUTO_DEFAULTS } from "@/lib/autosend";
 import { LOCAL_ACTIVITIES, LOCAL_SITE_DEFAULTS, LOCAL_THRESHOLDS, LOCAL_WEIGHTS, LOCAL_WEIGHT_LABELS, RADII } from "@/lib/local";
 
 export default function SettingsPage() {
@@ -41,6 +42,8 @@ export default function SettingsPage() {
   const setSender = (k: string, v: string) => setS({ ...s, local_sender: { ...sender, [k]: v } });
   const offer = s.local_offer ?? { enabled: false, area: "", launch_price: null, normal_price: null, launch_slots_left: 0 };
   const setOffer = (k: string, v: any) => setS({ ...s, local_offer: { ...offer, [k]: v } });
+  const auto = { ...AUTO_DEFAULTS, ...(s.local_auto_send ?? {}) };
+  const setAuto = (k: string, v: any) => setS({ ...s, local_auto_send: { ...auto, [k]: v } });
   const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
   const presets: any[] = Array.isArray(s.local_presets) ? s.local_presets : [];
 
@@ -59,7 +62,8 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           {([["name", "Prénom et nom", "Théo …"], ["company", "Entreprise / marque", "…"], ["role", "Activité", "développeur web indépendant"],
              ["phone", "Téléphone", "06 …"], ["email", "E-mail", "contact@…"], ["website", "Site / portfolio", "https://…"],
-             ["privacy_url", "Lien de ta notice d'information (données personnelles)", "https://…/confidentialite"]] as const).map(([k, label, ph]) => (
+             ["privacy_url", "Lien de ta notice d'information (données personnelles)", "https://…/confidentialite"],
+             ["logo_url", "Logo de la signature (image carrée, https)", "https://…/favicon.png"]] as const).map(([k, label, ph]) => (
             <label key={k} className="flex flex-col gap-1"><span className="mono">{label}</span>
               <input value={sender[k] ?? ""} placeholder={ph} onChange={(e) => setSender(k, e.target.value)} className="field" /></label>
           ))}
@@ -67,8 +71,27 @@ export default function SettingsPage() {
             <textarea value={sender.pitch ?? ""} rows={2} onChange={(e) => setSender("pitch", e.target.value)} className="field"
               placeholder="Laisse vide pour une phrase adaptée automatiquement à la situation (sans site, site à moderniser…)" /></label>
         </div>
-        <p className="mt-2 text-xs text-muted">Utilisé uniquement pour signer les brouillons que tu crées depuis une fiche. Rien n'est jamais envoyé par l'application.
+        <p className="mt-2 text-xs text-muted">Signe les brouillons et, si tu l'actives plus bas, les e-mails envoyés automatiquement (logo affiché en petit à gauche de la signature).
           La notice d'information (source des données, finalité, droits, opposition) est citée dans chaque brouillon : sans elle, le bouton « Ouvrir dans ma messagerie » reste désactivé.</p>
+      </section>
+
+      <section className="panel">
+        <h2 className="section-title">Envoi automatique des e-mails</h2>
+        <label className="flex min-h-[44px] items-center gap-3 text-sm">
+          <input type="checkbox" checked={!!auto.enabled} onChange={(e) => setAuto("enabled", e.target.checked)} />
+          <span><b>Envoyer automatiquement</b> les e-mails mis en file (par /rediger ou depuis une fiche), puis les relances J+3 et J+7. Sans réponse à J+14 : abandon, plus aucun contact.</span>
+        </label>
+        <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <label className="flex flex-col gap-1"><span className="mono">E-mails par jour (max)</span>
+            <input type="number" min={1} max={30} value={auto.daily_cap} onChange={(e) => setAuto("daily_cap", Number(e.target.value) || 1)} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">À partir de (heure)</span>
+            <input type="number" min={6} max={21} value={auto.start_hour} onChange={(e) => setAuto("start_hour", Number(e.target.value) || 9)} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Jusqu'à (heure)</span>
+            <input type="number" min={7} max={22} value={auto.end_hour} onChange={(e) => setAuto("end_hour", Number(e.target.value) || 17)} className="field" /></label>
+        </div>
+        <p className="mt-2 text-xs text-muted">Jours ouvrés seulement, hors jours fériés, un e-mail toutes les 10 minutes au plus. Uniquement vers des adresses professionnelles
+          (jamais Gmail, Orange…), jamais par formulaire ni Facebook. Une réponse arrête aussitôt les relances (alerte Telegram) ; un refus ajoute l'entreprise à « ne plus contacter ».
+          Rien ne part tant que la boîte d'envoi et le DNS ne sont pas prêts : voir <Link href="/local/envois" className="underline">Envois</Link>.</p>
       </section>
 
       <section className="panel">

@@ -1,7 +1,9 @@
-"""Pont entre la commande Claude Code /rediger et l'application (bibliothèque standard uniquement, aucun envoi d'e-mail).
+"""Pont entre la commande Claude Code /rediger et l'application (bibliothèque standard uniquement ; ce script n'envoie aucun e-mail).
 
     python3 scripts/rediger.py queue [--limit 5] [--include-drafted]   -> file de rédaction (faits vérifiés + brouillon de référence), en JSON
-    python3 scripts/rediger.py save ID fichier.json                    -> dépose {"subject", "core"} comme brouillon (refusé si un garde-fou échoue)
+    python3 scripts/rediger.py save ID fichier.json [--no-auto]        -> dépose {"subject", "core"} comme brouillon (refusé si un garde-fou échoue)
+                                                                          et le met en file d'envoi automatique si le prospect est éligible
+                                                                          (l'envoi est fait par le worker, seulement s'il est activé dans Réglages)
 
 Connexion : PROSPECTION_URL (ex. https://prospection.mondomaine.fr), PROSPECTION_USER et PROSPECTION_PASSWORD (= APP_USER / APP_PASSWORD),
 lus dans l'environnement ou dans ~/.config/prospection/rediger.env (lignes CLE=valeur, hors du dépôt). Le mot de passe n'est jamais affiché.
@@ -68,14 +70,21 @@ def main(argv: list[str]) -> int:
         status, data = call("GET", f"/api/local/agent/queue?limit={int(limit)}{extra}")
         print(json.dumps(data, ensure_ascii=False, indent=2))
         return 0 if status == 200 else 1
+    auto = "--no-auto" not in argv
+    argv = [a for a in argv if a != "--no-auto"]
     if len(argv) != 3:
-        print("usage : rediger.py save ID fichier.json", file=sys.stderr)
+        print("usage : rediger.py save ID fichier.json [--no-auto]", file=sys.stderr)
         return 2
     draft = json.loads(pathlib.Path(argv[2]).read_text(encoding="utf-8"))
     status, data = call("POST", f"/api/local/prospects/{int(argv[1])}/draft",
-                        {"source": "rediger", "subject": draft.get("subject", ""), "core": draft.get("core", "")})
+                        {"source": "rediger", "subject": draft.get("subject", ""), "core": draft.get("core", ""), "auto": auto})
     if status == 200:
-        print(f"brouillon enregistré pour le prospect {int(argv[1])} ({data.get('kind')}) : à relire dans l'application")
+        if data.get("queued"):
+            where = "envoi automatique activé" if data.get("autoEnabled") else "envoi automatique DÉSACTIVÉ dans Réglages : rien ne part pour l'instant"
+            print(f"brouillon enregistré pour le prospect {int(argv[1])} ({data.get('kind')}) et mis en file d'envoi ({where})")
+        else:
+            why = f" (pas d'envoi automatique : {data['notQueued']})" if data.get("notQueued") else ""
+            print(f"brouillon enregistré pour le prospect {int(argv[1])} ({data.get('kind')}) : à envoyer toi-même{why}")
         return 0
     print(json.dumps({"status": status, **data}, ensure_ascii=False, indent=2))
     return 1
