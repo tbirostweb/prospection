@@ -34,8 +34,8 @@ JOBS: list[tuple[str, list[str] | None, str | None]] = [
     ("10 7 * * *", ["-m", "worker.local.watch"], "local.log"),
     # Remise à zéro demandée depuis l'interface.
     ("* * * * *", ["-m", "worker.reset", "--pending"], "local.log"),
-    # Envoi automatique des e-mails (désactivé par défaut, Réglages) : lit les réponses puis envoie au plus UN e-mail par passage.
-    ("*/10 * * * *", ["-m", "worker.local.outbox"], "mail.log"),
+    # Envoi automatique des e-mails (désactivé par défaut, Réglages) : lit les réponses (toutes les 10 min, et avant chaque relance) puis envoie au plus UN e-mail par passage.
+    ("*/2 * * * *", ["-m", "worker.local.outbox"], "mail.log"),
     # Nouvelle recherche d'e-mail pour les prospects qui n'en ont pas (LOCAL_EMAIL_SEARCH_PER_RUN par passage, même verrou que les campagnes).
     ("20,50 8-20 * * *", ["-m", "worker.local.emailsearch"], "local.log"),
     # Surveillance des dégradations : alerte Telegram throttlée.

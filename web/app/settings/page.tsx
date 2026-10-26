@@ -93,7 +93,7 @@ export default function SettingsPage() {
           <label className="flex flex-col gap-1"><span className="mono">Jusqu'à (heure)</span>
             <input type="number" min={7} max={22} value={auto.end_hour} onChange={(e) => setAuto("end_hour", Number(e.target.value) || 17)} className="field" /></label>
         </div>
-        <p className="mt-2 text-xs text-muted">Jours ouvrés seulement, hors jours fériés, un e-mail toutes les 10 minutes au plus. Jamais par formulaire ni Facebook. Une réponse arrête aussitôt les relances (alerte Telegram) ; un refus ajoute l'entreprise à « ne plus contacter ».
+        <p className="mt-2 text-xs text-muted">Jours ouvrés seulement, hors jours fériés, un e-mail toutes les 2 minutes au plus. Jamais par formulaire ni Facebook. Une réponse arrête aussitôt les relances (alerte Telegram) ; un refus ajoute l'entreprise à « ne plus contacter ».
           Rien ne part tant que la boîte d'envoi et le DNS ne sont pas prêts : voir <Link href="/local/envois" className="underline">Envois</Link>.</p>
       </section>
 

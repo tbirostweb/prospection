@@ -1,10 +1,10 @@
-"""Envoi automatique des e-mails de prospection :  python -m worker.local.outbox   (toutes les 10 min)
+"""Envoi automatique des e-mails de prospection :  python -m worker.local.outbox   (toutes les 2 min)
 
 DÉSACTIVÉ par défaut : rien ne part tant que Réglages > Envoi automatique n'est pas activé. À chaque passage :
   1. la boîte de réception est lue (réponses, refus, adresses invalides) : une réponse arrête les relances AVANT tout nouvel envoi ;
   2. les séquences sans réponse depuis 14 jours sont abandonnées (plus aucun contact) ;
   3. si l'envoi est activé, dans les heures ouvrées (jours ouvrés, hors fériés), DNS vérifié et plafond du jour non atteint :
-     UN seul e-mail part — une relance due (J+3, puis J+7 en réponse au premier message), sinon le prochain premier message en file.
+     UN seul e-mail part (donc au plus un toutes les 2 min) — une relance due (J+3, puis J+7 en réponse au premier message), sinon le prochain premier message en file.
 Adresses de l'entreprise seulement (Gmail, Orange… publiées comme contact : réglage personal_emails, activé par défaut) ; chaque message contient la ligne d'opposition. Formulaires et Facebook : jamais.
 """
 from __future__ import annotations
@@ -21,6 +21,7 @@ from . import inbox, maildns, mailer
 from .store import is_do_not_contact
 
 DNS_TTL = dt.timedelta(hours=6)
+INBOX_EVERY = dt.timedelta(minutes=9)
 MAX_FAILURES = 3
 
 
@@ -204,7 +205,12 @@ def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg, out = mail_config(), {}
     missing = missing_config(cfg)
-    if not missing:
+    # Passage toutes les 2 min : la boîte est lue toutes les INBOX_EVERY au plus, et TOUJOURS avant une relance (jamais de relance à
+    # quelqu'un qui vient de répondre).
+    last = _state(conn).get("imap_at")
+    t = now.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    task = next_task(conn, now)
+    if not missing and (last is None or t - last >= INBOX_EVERY or t < last or (task and task[0] != "first")):
         try:
             out["inbox"] = inbox.poll(conn, cfg, factory=imap)
         except Exception as exc:     # noqa: BLE001 — une boîte illisible n'empêche pas d'abandonner les séquences, mais bloque les relances

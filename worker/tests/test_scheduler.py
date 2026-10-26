@@ -12,7 +12,7 @@ OLD_CRONTAB = {
     ("*/5 * * * *", "worker.telegram_poll"), ("*/15 6-22 * * *", "worker.local.run"), ("10 7 * * *", "worker.local.watch"),
     ("* * * * *", "worker.reset"), ("5 * * * *", "worker.local.monitor"), ("15 7 * * *", "worker.digest"),
     ("0 8 * * 1", "worker.digest"), ("30 4 * * *", "worker.local.retention"), ("0 4 * * *", None),
-    ("*/10 * * * *", "worker.local.outbox"),             # ajout : envoi automatique (désactivé par défaut)
+    ("*/2 * * * *", "worker.local.outbox"),             # ajout : envoi automatique (désactivé par défaut)
     ("20,50 8-20 * * *", "worker.local.emailsearch"),     # ajout : nouvelle recherche d'e-mail
 }
 

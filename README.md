@@ -197,7 +197,7 @@ L'app limite les échecs de connexion par adresse (en-tête `X-Real-Ip` posé pa
 ## Envoi automatique des e-mails (facultatif, désactivé par défaut)
 
 Les messages mis en file (par `/rediger` dans Claude Code, ou « Mettre en file d'envoi » sur une fiche) partent par **ta** boîte e-mail, au rythme
-réglé : un e-mail toutes les 10 minutes au plus, 10 par jour par défaut, jours ouvrés hors fériés, de 9 h à 17 h. Relance J+3 puis J+7, en réponse
+réglé : un e-mail toutes les 2 minutes au plus, 10 par jour par défaut, jours ouvrés hors fériés, de 9 h à 17 h. Relance J+3 puis J+7, en réponse
 au premier message ; sans réponse à J+14, le prospect passe en « Perdu » et n'est plus contacté. La boîte de réception est lue en lecture seule :
 une réponse arrête les relances (alerte Telegram), un refus inscrit l'entreprise dans « ne plus contacter », un e-mail revenu marque l'adresse
 invalide. Les adresses Gmail, Orange… publiées comme contact de l'entreprise sont incluses (désactivable dans Réglages) ; jamais par formulaire ni Facebook. Chaque message

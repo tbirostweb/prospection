@@ -264,3 +264,14 @@ def test_message_sans_site_bloque_si_le_domaine_de_l_adresse_a_un_site(mail, con
     gmail = add(conn, "20000000000011", email="metal.exemple@gmail.com", kind="UNCERTAIN", minutes=1)
     db.execute(conn, "UPDATE local_prospects SET draft_kind='ai_sans_site' WHERE id=%s", (gmail,))
     assert mail.run(T0 + dt.timedelta(minutes=10), site="https://gmail.com/")["status"] == "sent"   # messagerie gratuite : jamais vérifiée
+
+
+def test_boite_lue_toutes_les_10_min_et_toujours_avant_une_relance(mail, conn):
+    add(conn, "10000000000011")
+    mail.enable()
+    t = T0.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    db.execute(conn, "INSERT INTO local_mail_state (id, imap_at) VALUES (1, %s) ON DUPLICATE KEY UPDATE imap_at=VALUES(imap_at)", (t - dt.timedelta(minutes=1),))
+    r = mail.run(T0)
+    assert r["status"] == "sent" and "inbox" not in r                                # lue il y a 1 min : pas relue pour un premier message
+    db.execute(conn, "UPDATE local_mail_state SET imap_at=%s WHERE id=1", (t + dt.timedelta(days=3) - dt.timedelta(minutes=1),))
+    assert "inbox" in mail.run(T0 + dt.timedelta(days=3))                            # relance due : boîte relue d'abord
