@@ -169,6 +169,7 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
                             last_followup_at=NULL, auto_state='active' WHERE id=%s""", (t, t, p["id"]))
     else:
         db.execute(conn, "UPDATE local_prospects SET followups=followups+1, last_followup_at=%s, last_contacted_at=%s WHERE id=%s", (t, t, p["id"]))
+    db.execute(conn, "UPDATE local_mail_state SET last_error=NULL, last_error_at=NULL WHERE id=1")   # un envoi réussi efface l'erreur affichée
     conn.commit()
     log.info("[mail] %s envoyé au prospect %s", kind, p["id"])
     if sent_copy:

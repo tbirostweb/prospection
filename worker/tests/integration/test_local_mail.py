@@ -227,6 +227,7 @@ def test_dns_incorrect_bloque_et_erreur_smtp_reessayee(mail, conn):
     assert "mot de passe lu : 20 caractères" in err and "mot-de-passe-de-test" not in err   # longueur seulement, jamais la valeur
     mail.smtp.error = None
     assert mail.run(T0 + dt.timedelta(hours=6, minutes=10))["status"] == "sent"
+    assert db.fetch_one(conn, "SELECT last_error FROM local_mail_state WHERE id=1")["last_error"] is None   # erreur effacée par l'envoi réussi
 
 
 def test_premier_message_jamais_deux_fois_a_la_meme_adresse(mail, conn):
