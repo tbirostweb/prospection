@@ -17,7 +17,8 @@ from zoneinfo import ZoneInfo
 from .contacts import FREEMAIL
 
 PARIS = ZoneInfo("Europe/Paris")
-DEFAULTS = {"enabled": False, "daily_cap": 10, "start_hour": 9, "end_hour": 17}
+# personal_emails : envoyer aussi aux adresses Gmail, Orange… publiées comme contact de l'entreprise (choix de Théo, désactivable dans Réglages).
+DEFAULTS = {"enabled": False, "daily_cap": 10, "start_hour": 9, "end_hour": 17, "personal_emails": True}
 FOLLOWUP_DAYS = (3, 7)          # relances : J+3 puis J+7 (comme le suivi manuel)
 NO_REPLY_DAYS = 14              # sans réponse à J+14 : abandon, plus aucun contact
 AUTO_EMAIL_KINDS = ("GENERIC_BUSINESS", "PERSONAL_BUSINESS")
@@ -41,6 +42,7 @@ def settings(raw: dict | None) -> dict:
     out = dict(DEFAULTS)
     if isinstance(raw, dict):
         out["enabled"] = raw.get("enabled") is True
+        out["personal_emails"] = raw.get("personal_emails") is not False
         for k, lo, hi in (("daily_cap", 1, 30), ("start_hour", 6, 21), ("end_hour", 7, 22)):
             try:
                 out[k] = min(hi, max(lo, int(raw.get(k, out[k]))))
@@ -87,14 +89,18 @@ def email_domain(addr: str | None) -> str:
     return (addr or "").rpartition("@")[2].strip().lower()
 
 
-def ineligible(p: dict) -> str | None:
-    """Raison pour laquelle ce prospect ne reçoit PAS d'e-mail automatique (None = éligible). Revérifié juste avant chaque envoi."""
+def ineligible(p: dict, personal: bool = False) -> str | None:
+    """Raison pour laquelle ce prospect ne reçoit PAS d'e-mail automatique (None = éligible). Revérifié juste avant chaque envoi.
+    `personal` : adresses Gmail, Orange… et adresses incertaines acceptées (réglage personal_emails)."""
     email = (p.get("email") or "").strip()
     if p.get("do_not_contact"):
         return "ne plus contacter"
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", email, re.I):
         return "pas d'adresse e-mail"
-    if p.get("email_kind") not in AUTO_EMAIL_KINDS or email_domain(email) in FREEMAIL:
+    if personal:
+        if p.get("email_kind") not in (*AUTO_EMAIL_KINDS, "UNCERTAIN"):
+            return "adresse non vérifiée"
+    elif p.get("email_kind") not in AUTO_EMAIL_KINDS or email_domain(email) in FREEMAIL:
         return "adresse non professionnelle ou incertaine"
     body = p.get("draft_message") or ""
     if not body.strip() or not (p.get("draft_subject") or "").strip():

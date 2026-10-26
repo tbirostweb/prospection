@@ -1,6 +1,6 @@
 ---
 name: rediger
-description: Rédige des e-mails de prospection personnalisés pour les prospects prêts de l'app (déclencheurs forts d'abord), à partir des seuls faits vérifiés et de l'offre réglée dans l'app, puis les dépose et les met en file d'envoi automatique (adresses professionnelles seulement). L'envoi est fait par l'app, seulement s'il est activé dans Réglages.
+description: Rédige des e-mails de prospection personnalisés pour les prospects prêts de l'app (déclencheurs forts d'abord), à partir des seuls faits vérifiés et de l'offre réglée dans l'app, puis les dépose et les met en file d'envoi automatique (adresses professionnelles, et Gmail, Orange… si le réglage l'autorise). L'envoi est fait par l'app, seulement s'il est activé dans Réglages.
 argument-hint: "[nombre de prospects, 5 par défaut, 50 au plus] [avec prix] [sans envoi]"
 model: haiku
 disable-model-invocation: true
@@ -11,7 +11,7 @@ allowed-tools: Bash(python3 scripts/rediger.py *)
 
 Nombre de prospects demandé : `$ARGUMENTS` (5 si vide, 50 au plus).
 
-Cette commande tourne sur l'abonnement Claude Code (Haiku, pour ménager le quota ; pour une écriture plus fine, remplacer `model: haiku` par `model: sonnet` ci-dessus). Elle ne coûte aucune API payante et n'envoie rien elle-même : elle enregistre les messages dans l'app et met en file d'envoi ceux qui ont une adresse professionnelle. C'est l'app qui envoie ensuite, au rythme réglé (10 par jour par défaut, jours ouvrés), avec les relances J+3 et J+7, et seulement si Théo a activé l'envoi automatique dans Réglages. Les autres (téléphone, visite, adresse Gmail ou Orange…) restent des brouillons que Théo utilise lui-même. Avec « sans envoi » dans `$ARGUMENTS`, rien n'est mis en file.
+Cette commande tourne sur l'abonnement Claude Code (Haiku, pour ménager le quota ; pour une écriture plus fine, remplacer `model: haiku` par `model: sonnet` ci-dessus). Elle ne coûte aucune API payante et n'envoie rien elle-même : elle enregistre les messages dans l'app et met en file d'envoi ceux qui ont une adresse e-mail (Gmail, Orange… compris si Réglages l'autorise). C'est l'app qui envoie ensuite, au rythme réglé (10 par jour par défaut, jours ouvrés), avec les relances J+3 et J+7, et seulement si Théo a activé l'envoi automatique dans Réglages. Les autres (téléphone, visite) restent des brouillons que Théo utilise lui-même. Avec « sans envoi » dans `$ARGUMENTS`, rien n'est mis en file.
 
 ## 1. Lire la file
 

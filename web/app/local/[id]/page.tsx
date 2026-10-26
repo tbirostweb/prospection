@@ -6,7 +6,7 @@ import FollowupButtons from "@/components/FollowupButtons";
 import AutoSendButton from "@/components/AutoSendButton";
 import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
 import { salesBrief } from "@/lib/pitch";
-import { getSetting } from "@/lib/localdb";
+import { getAutoSend, getSetting } from "@/lib/localdb";
 import type { Sender } from "@/lib/draft";
 import { dateFr, dateTimeFr } from "@/lib/format";
 import { parseId, safeHref } from "@/lib/security";
@@ -44,7 +44,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
   const autoActive = p.auto_state === "active";
   const due = autoActive ? null : followupDue({ status: p.status, contacted_at: p.contacted_at ? String(p.contacted_at) : null, followups: p.followups });
   const emails = await query<any>("SELECT kind, to_email, subject, status, error, sent_at FROM local_emails WHERE prospect_id=? ORDER BY sent_at", [p.id]).catch(() => []);
-  const canQueue = !autoIneligible(p) && (!p.auto_state || p.auto_state === "stopped");
+  const canQueue = !autoIneligible(p, (await getAutoSend()).personal_emails) && (!p.auto_state || p.auto_state === "stopped");
 
   return (
     <div className="max-w-3xl">

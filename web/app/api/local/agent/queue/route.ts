@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Offer, Sender, buildDraft, cap, photosOffered } from "@/lib/draft";
-import { CONTACT_QUEUE_SQL, LIST_COLUMNS, getSetting, safeRows } from "@/lib/localdb";
+import { CONTACT_QUEUE_SQL, LIST_COLUMNS, getAutoSend, getSetting, safeRows } from "@/lib/localdb";
 import { splitByTrigger, strongSignals } from "@/lib/local";
 import { autoIneligible } from "@/lib/autosend";
 
@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
   const withDrafts = req.nextUrl.searchParams.get("include_drafted") === "1";
   const sender = await getSetting<Sender>("local_sender", {});
   const offer = await getSetting<Offer>("local_offer", {});
+  const auto = await getAutoSend();
   const rows = (await safeRows<any>(`SELECT ${LIST_COLUMNS}, p.website_evidence, p.contact_source_url, p.draft_message ${CONTACT_QUEUE_SQL}`))
     .filter((p) => withDrafts || !p.draft_message);
   const { triggered, others } = splitByTrigger(rows);
@@ -29,8 +30,8 @@ export async function GET(req: NextRequest) {
       activite: p.activity_label ? String(p.activity_label).split(",")[0] : null,
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,
       faits: d.facts, type: d.kind, photos_en_option: photosOffered(p, offer), canal: p.email ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
-      // envoi automatique possible (adresse professionnelle, jamais contacté) ; sinon Théo contacte lui-même
-      envoi_auto: autoIneligible({ ...p, draft_message: "-" }) === null,
+      // envoi automatique possible (adresse e-mail acceptée par le réglage, jamais contacté) ; sinon Théo contacte lui-même
+      envoi_auto: autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null,
       reference: { objet: d.subject, coeur: d.core }, fiche: `/local/${p.id}`,
     });
   }

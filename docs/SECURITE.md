@@ -89,7 +89,7 @@ tile.openstreetmap.org (fonds de carte), geo.api.gouv.fr (recherche de commune).
   / « téléphone disponible sur la fiche », sans l'adresse ni le numéro (`worker/worker/notify.py`) ; le message de veille contient des indicateurs ☎/✉
   (`worker/worker/local/notify.py`) ; le résumé quotidien contient un indicateur « ☎ appeler », sans le numéro, et un lien d'itinéraire (`worker/worker/digest.py`).
 - **E-mail** : envoi automatique FACULTATIF, désactivé par défaut (réglage `local_auto_send`). Activé, le worker envoie par la boîte SMTP de l'utilisateur
-  (`worker/worker/local/outbox.py`) : adresses professionnelles seulement, plafond quotidien, jours ouvrés, ligne d'opposition et `List-Unsubscribe` dans
+  (`worker/worker/local/outbox.py`) : adresses de l'entreprise (Gmail, Orange… publiées comme contact incluses, désactivable : `personal_emails`), plafond quotidien, jours ouvrés, ligne d'opposition et `List-Unsubscribe` dans
   chaque message, DNS (SPF, DMARC unique, DKIM si sélecteur) vérifié avant tout envoi. La boîte de réception est lue en IMAP **en lecture seule**
   (EXAMINE + BODY.PEEK, `inbox.py`) : une réponse arrête les relances, un refus inscrit l'adresse dans `local_do_not_contact`. Le mot de passe
   (`LOCAL_SMTP_PASSWORD`) reste dans l'environnement du worker, masqué dans les journaux. Les e-mails envoyés (`local_emails`) sont exportés et

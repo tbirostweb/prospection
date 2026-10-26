@@ -204,7 +204,7 @@ def test_plafond_heures_et_adresses_ecartees(mail, conn):
     a = add(conn, "10000000000011", minutes=0)
     gmail = add(conn, "20000000000011", email="garage.exemple@gmail.com", kind="UNCERTAIN", minutes=1)
     c = add(conn, "30000000000011", email="contact@autre-exemple.fr", minutes=2)
-    mail.enable(daily_cap=1)
+    mail.enable(daily_cap=1, personal_emails=False)
     assert mail.run(T0.replace(hour=8))["status"] == "hours"
     assert mail.run(T0)["status"] == "sent" and row(conn, a)["auto_state"] == "active"
     assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "cap"
@@ -243,3 +243,10 @@ def test_message_parti_lisible(mail, conn):
     mail.run(T0)
     parsed = message_from_bytes(mail.smtp.sent[0].as_bytes(), policy=default_policy)
     assert "Théo Exemple" in parsed.get_body(("html",)).get_content() and parsed["List-Unsubscribe"]
+
+
+def test_adresse_perso_envoyee_par_defaut(mail, conn):
+    pid = add(conn, "20000000000011", email="garage.exemple@gmail.com", kind="UNCERTAIN")
+    mail.enable()
+    assert mail.run(T0)["status"] == "sent" and row(conn, pid)["auto_state"] == "active"
+    assert mail.smtp.sent[0]["To"] == "garage.exemple@gmail.com"

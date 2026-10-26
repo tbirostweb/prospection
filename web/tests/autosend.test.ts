@@ -9,20 +9,29 @@ const P = { email: "contact@garage-exemple.fr", email_kind: "GENERIC_BUSINESS", 
 test("envoi automatique désactivé par défaut et réglage borné", () => {
   assert.equal(AUTO_DEFAULTS.enabled, false);
   assert.equal(sanitizeAutoSend({ enabled: "true" })!.enabled, false);          // seul un vrai booléen active
-  assert.deepEqual(sanitizeAutoSend({ enabled: true, daily_cap: 500, start_hour: 9, end_hour: 17 }), { enabled: true, daily_cap: 30, start_hour: 9, end_hour: 17 });
+  assert.deepEqual(sanitizeAutoSend({ enabled: true, daily_cap: 500, start_hour: 9, end_hour: 17 }), { enabled: true, personal_emails: true, daily_cap: 30, start_hour: 9, end_hour: 17 });
   assert.equal(sanitizeAutoSend({ enabled: true, start_hour: 17, end_hour: 9 }), null);
   assert.equal(sanitizeAutoSend(null), null);
 });
 
 test("seules les adresses professionnelles jamais contactées sont mises en file", () => {
-  assert.equal(autoIneligible(P), null);
-  assert.equal(autoIneligible({ ...P, email_kind: "PERSONAL_BUSINESS", email: "jean.dupont@garage-exemple.fr" }), null);
-  assert.match(autoIneligible({ ...P, email: "garage@gmail.com", email_kind: "UNCERTAIN" })!, /non professionnelle/);
-  assert.match(autoIneligible({ ...P, email: "garage@orange.fr" })!, /non professionnelle/);
-  assert.match(autoIneligible({ ...P, do_not_contact: 1 })!, /ne plus contacter/);
-  assert.equal(autoIneligible({ ...P, contacted_at: "2026-10-01" }), "déjà contacté");
-  assert.equal(autoIneligible({ ...P, draft_message: null }), "pas de brouillon");
-  assert.equal(autoIneligible({ ...P, email: null }), "pas d'adresse e-mail");
+  assert.equal(autoIneligible(P, false), null);
+  assert.equal(autoIneligible({ ...P, email_kind: "PERSONAL_BUSINESS", email: "jean.dupont@garage-exemple.fr" }, false), null);
+  assert.match(autoIneligible({ ...P, email: "garage@gmail.com", email_kind: "UNCERTAIN" }, false)!, /non professionnelle/);
+  assert.match(autoIneligible({ ...P, email: "garage@orange.fr" }, false)!, /non professionnelle/);
+  assert.match(autoIneligible({ ...P, do_not_contact: 1 }, false)!, /ne plus contacter/);
+  assert.equal(autoIneligible({ ...P, contacted_at: "2026-10-01" }, false), "déjà contacté");
+  assert.equal(autoIneligible({ ...P, draft_message: null }, false), "pas de brouillon");
+  assert.equal(autoIneligible({ ...P, email: null }, false), "pas d'adresse e-mail");
+});
+
+test("adresses Gmail, Orange… acceptées avec le réglage personal_emails (activé par défaut)", () => {
+  assert.equal(AUTO_DEFAULTS.personal_emails, true);
+  assert.equal(sanitizeAutoSend({ enabled: true, personal_emails: false })!.personal_emails, false);
+  assert.equal(autoIneligible({ ...P, email: "garage@gmail.com", email_kind: "UNCERTAIN" }, true), null);
+  assert.equal(autoIneligible({ ...P, email: "garage@orange.fr", email_kind: "GENERIC_BUSINESS" }, true), null);
+  assert.match(autoIneligible({ ...P, email: "garage@gmail.com", email_kind: null }, true)!, /non vérifiée/);
+  assert.equal(autoIneligible({ ...P, email: null }, true), "pas d'adresse e-mail");
 });
 
 test("même liste de messageries gratuites que le worker", () => {

@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { READY_SQL } from "@/lib/local";
+import { AUTO_DEFAULTS, AutoSend } from "@/lib/autosend";
 
 /** Colonnes d'une ligne de liste (pas les gros champs JSON de l'audit). */
 export const LIST_COLUMNS = `p.id, p.siret, p.company_name, p.trade_name, p.activity_key, p.activity_label, p.city, p.postal_code, p.distance_km,
@@ -28,6 +29,11 @@ export async function getLocalHome(): Promise<{ city?: string; postalCode?: stri
     const v = rows[0]?.value_json;
     return typeof v === "string" ? JSON.parse(v) : v ?? {};
   } catch { return {}; }
+}
+
+/** Réglage d'envoi automatique complet (valeurs par défaut pour les clés absentes). */
+export async function getAutoSend(): Promise<AutoSend> {
+  return { ...AUTO_DEFAULTS, ...(await getSetting<Partial<AutoSend>>("local_auto_send", {})) };
 }
 
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {

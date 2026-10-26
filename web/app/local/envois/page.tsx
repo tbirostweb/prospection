@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { PageHeader, StatCard } from "@/components/LocalUI";
 import AutoSendButton from "@/components/AutoSendButton";
-import { getSetting, safeRows } from "@/lib/localdb";
-import { AUTO_DEFAULTS, AUTO_STATES, AutoSend, EMAIL_KINDS } from "@/lib/autosend";
+import BulkQueueButton from "@/components/BulkQueueButton";
+import { getAutoSend, getSetting, safeRows } from "@/lib/localdb";
+import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
+import { formatPhone } from "@/lib/local";
 import type { Sender } from "@/lib/draft";
 import { dateTimeFr } from "@/lib/format";
 
@@ -62,14 +64,23 @@ function SignaturePreview({ s, logo }: { s: Sender & { logo_url?: string }; logo
   );
 }
 
-/** Suivi de l'envoi automatique : ce qui est parti, ce qui va partir, qui a répondu, et si tout est prêt pour envoyer. */
-export default async function Envois() {
-  const auto = { ...AUTO_DEFAULTS, ...(await getSetting<Partial<AutoSend>>("local_auto_send", {})) };
+/** Suivi de l'envoi automatique : ce qui est parti, ce qui va partir, qui a répondu, et si tout est prêt pour envoyer.
+ *  En bas, deux onglets : les brouillons prêts à envoyer (en file, à mettre en file, ou à envoyer soi-même) et les e-mails déjà envoyés. */
+export default async function Envois({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const tab = (await searchParams).tab === "envoyes" ? "envoyes" : "prets";
+  const auto = await getAutoSend();
   const sender = await getSetting<Sender & { logo_url?: string }>("local_sender", {});
   const [state] = await safeRows<any>("SELECT * FROM local_mail_state WHERE id=1");
   const checks = j(state?.checks) ?? {};
-  const queued = await safeRows<any>(`SELECT id, company_name, trade_name, city, email, auto_queued_at FROM local_prospects
-    WHERE auto_state='queued' ORDER BY auto_queued_at, id LIMIT 200`);
+  // Brouillons pas encore partis : jamais contactés, ni écartés ni « ne plus contacter », hors séquence en cours ou terminée.
+  const drafts = await safeRows<any>(`SELECT id, company_name, trade_name, city, email, email_kind, phone, do_not_contact, contacted_at, draft_subject,
+    draft_created_at, auto_state, auto_queued_at FROM local_prospects WHERE draft_message IS NOT NULL AND contacted_at IS NULL AND do_not_contact = 0
+    AND excluded_reason IS NULL AND (category IS NULL OR category <> 'IGNORER') AND status NOT IN ('LOST','WON','DO_NOT_CONTACT')
+    AND (auto_state IS NULL OR auto_state IN ('queued','stopped')) ORDER BY draft_created_at DESC LIMIT 300`);
+  const ready = drafts.map((p) => ({ ...p, why: p.auto_state === "queued" ? null : autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) }))
+    .sort((a, b) => Number(b.auto_state === "queued") - Number(a.auto_state === "queued") || Number(a.why !== null) - Number(b.why !== null));
+  const queued = ready.filter((p) => p.auto_state === "queued");
+  const toQueue = ready.filter((p) => p.auto_state !== "queued" && p.why === null);
   const active = await safeRows<any>(`SELECT id, company_name, trade_name, city, email, contacted_at, followups FROM local_prospects
     WHERE auto_state='active' ORDER BY contacted_at LIMIT 200`);
   const ended = await safeRows<any>(`SELECT id, company_name, trade_name, city, auto_state, last_prospect_contact_at, last_contacted_at FROM local_prospects
@@ -120,17 +131,6 @@ export default async function Envois() {
         </div>
       </section>
 
-      {queued.length > 0 && (
-        <section className="mb-8">
-          <h2 className="section-title">En file · {queued.length}</h2>
-          <div className="row-list">{queued.map((p) => (
-            <div key={p.id} className="row-item flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-              <div className="min-w-0"><Link href={`/local/${p.id}`} className="font-semibold hover:text-accent">{name(p)}</Link>
-                <span className="text-muted"> · {p.email} · en file depuis le {dateTimeFr(p.auto_queued_at)}</span></div>
-              <AutoSendButton id={p.id} action="auto_stop" />
-            </div>))}</div>
-        </section>
-      )}
 
       {active.length > 0 && (
         <section className="mb-8">
@@ -156,8 +156,32 @@ export default async function Envois() {
       )}
 
       <section className="mb-8">
-        <h2 className="section-title">Derniers e-mails</h2>
-        <div className="row-list">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <nav className="flex gap-1 rounded-full bg-surface p-1 shadow-soft" aria-label="E-mails">
+            {([["prets", `Prêts à envoyer · ${ready.length}`], ["envoyes", `Déjà envoyés · ${emails.length}`]] as const).map(([k, label]) => (
+              <Link key={k} href={k === "prets" ? "/local/envois" : "/local/envois?tab=envoyes"} scroll={false} aria-current={tab === k ? "page" : undefined}
+                className={`rounded-full px-4 py-2 text-sm font-medium ${tab === k ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>{label}</Link>))}
+          </nav>
+          {tab === "prets" && toQueue.length > 0 && <BulkQueueButton ids={toQueue.map((p) => p.id)} />}
+        </div>
+
+        {tab === "prets" && <div className="row-list">
+          {ready.map((p) => (
+            <div key={p.id} className="row-item flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+              <div className="min-w-0">
+                <Link href={`/local/${p.id}`} className="font-semibold hover:text-accent">{name(p)}</Link>
+                <span className="text-muted"> · {p.email || (p.phone ? `☎ ${formatPhone(p.phone)}` : "pas de contact")}</span>
+                {p.draft_subject && <div className="truncate text-xs text-muted">Objet : {p.draft_subject}</div>}
+              </div>
+              {p.auto_state === "queued"
+                ? <span className="inline-flex items-center gap-2"><span className="chip">En file{auto.enabled ? "" : " (envoi désactivé)"}</span><AutoSendButton id={p.id} action="auto_stop" /></span>
+                : p.why === null ? <AutoSendButton id={p.id} action="auto_queue" />
+                : <span className="text-xs text-muted">À envoyer toi-même : {p.why.replace(/ : à contacter toi-même$/, "")}</span>}
+            </div>))}
+          {ready.length === 0 && <div className="px-6 py-10 text-center text-muted">Aucun brouillon en attente. Lance <code>/rediger</code> dans Claude Code pour en préparer.</div>}
+        </div>}
+
+        {tab === "envoyes" && <div className="row-list">
           {emails.map((e, i) => (
             <div key={i} className="row-item py-3 text-sm">
               <span className="text-muted">{dateTimeFr(e.sent_at)} · </span>
@@ -165,8 +189,8 @@ export default async function Envois() {
               <span className="text-muted"> · {EMAIL_KINDS[e.kind] ?? e.kind} · {e.to_email}</span>
               {e.status !== "sent" && <span className="text-red-700"> · {e.status === "bounced" ? "revenu (adresse invalide)" : `échec${e.error ? ` : ${e.error}` : ""}`}</span>}
             </div>))}
-          {emails.length === 0 && <div className="px-6 py-10 text-center text-muted">Aucun e-mail envoyé pour l'instant. Lance <code>/rediger</code> dans Claude Code pour remplir la file.</div>}
-        </div>
+          {emails.length === 0 && <div className="px-6 py-10 text-center text-muted">Aucun e-mail envoyé pour l'instant : ceux de l'onglet « Prêts à envoyer » mis en file partiront en semaine, aux heures réglées.</div>}
+        </div>}
       </section>
     </div>
   );

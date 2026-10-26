@@ -58,6 +58,17 @@ def test_eligibilite(change, reason):
     assert mailer.ineligible({**P, **change}) == reason
 
 
+@pytest.mark.parametrize("change,reason", [
+    ({"email": "garage@gmail.com", "email_kind": "UNCERTAIN"}, None),
+    ({"email": "garage@orange.fr", "email_kind": "GENERIC_BUSINESS"}, None),
+    ({"email": "garage@gmail.com", "email_kind": None}, "adresse non vérifiée"),
+    ({"do_not_contact": 1}, "ne plus contacter"),
+])
+def test_eligibilite_adresses_perso_acceptees(change, reason):
+    assert mailer.ineligible({**P, **change}, personal=True) == reason
+    assert mailer.settings(None)["personal_emails"] is True and mailer.settings({"personal_emails": False})["personal_emails"] is False
+
+
 def test_premier_message_texte_identique_et_html_avec_signature():
     msg = mailer.build_message(from_addr="contact@exemple-web.fr", from_name="Théo Exemple", to=P["email"], subject="Votre garage",
                                text=BODY, sender=SENDER)

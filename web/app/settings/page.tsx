@@ -81,6 +81,10 @@ export default function SettingsPage() {
           <input type="checkbox" checked={!!auto.enabled} onChange={(e) => setAuto("enabled", e.target.checked)} />
           <span><b>Envoyer automatiquement</b> les e-mails mis en file (par /rediger ou depuis une fiche), puis les relances J+3 et J+7. Sans réponse à J+14 : abandon, plus aucun contact.</span>
         </label>
+        <label className="flex min-h-[44px] items-center gap-3 text-sm">
+          <input type="checkbox" checked={auto.personal_emails !== false} onChange={(e) => setAuto("personal_emails", e.target.checked)} />
+          <span>Envoyer aussi aux adresses Gmail, Orange, iCloud… publiées comme contact de l'entreprise (beaucoup d'artisans n'ont que celle-là).</span>
+        </label>
         <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
           <label className="flex flex-col gap-1"><span className="mono">E-mails par jour (max)</span>
             <input type="number" min={1} max={30} value={auto.daily_cap} onChange={(e) => setAuto("daily_cap", Number(e.target.value) || 1)} className="field" /></label>
@@ -89,8 +93,7 @@ export default function SettingsPage() {
           <label className="flex flex-col gap-1"><span className="mono">Jusqu'à (heure)</span>
             <input type="number" min={7} max={22} value={auto.end_hour} onChange={(e) => setAuto("end_hour", Number(e.target.value) || 17)} className="field" /></label>
         </div>
-        <p className="mt-2 text-xs text-muted">Jours ouvrés seulement, hors jours fériés, un e-mail toutes les 10 minutes au plus. Uniquement vers des adresses professionnelles
-          (jamais Gmail, Orange…), jamais par formulaire ni Facebook. Une réponse arrête aussitôt les relances (alerte Telegram) ; un refus ajoute l'entreprise à « ne plus contacter ».
+        <p className="mt-2 text-xs text-muted">Jours ouvrés seulement, hors jours fériés, un e-mail toutes les 10 minutes au plus. Jamais par formulaire ni Facebook. Une réponse arrête aussitôt les relances (alerte Telegram) ; un refus ajoute l'entreprise à « ne plus contacter ».
           Rien ne part tant que la boîte d'envoi et le DNS ne sont pas prêts : voir <Link href="/local/envois" className="underline">Envois</Link>.</p>
       </section>
 

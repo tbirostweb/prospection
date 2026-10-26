@@ -5,7 +5,7 @@ DÉSACTIVÉ par défaut : rien ne part tant que Réglages > Envoi automatique n'
   2. les séquences sans réponse depuis 14 jours sont abandonnées (plus aucun contact) ;
   3. si l'envoi est activé, dans les heures ouvrées (jours ouvrés, hors fériés), DNS vérifié et plafond du jour non atteint :
      UN seul e-mail part — une relance due (J+3, puis J+7 en réponse au premier message), sinon le prochain premier message en file.
-Seules les adresses professionnelles reçoivent un e-mail ; chaque message contient la ligne d'opposition. Formulaires et Facebook : jamais.
+Adresses de l'entreprise seulement (Gmail, Orange… publiées comme contact : réglage personal_emails, activé par défaut) ; chaque message contient la ligne d'opposition. Formulaires et Facebook : jamais.
 """
 from __future__ import annotations
 
@@ -114,11 +114,11 @@ def _stop(conn, p: dict, reason: str, state: str = "stopped") -> None:
     conn.commit()
 
 
-def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None) -> str:
+def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None, personal: bool = False) -> str:
     """Envoie UN e-mail. Renvoie 'sent', 'skipped' (prospect retiré) ou 'error' (problème du serveur : on réessaiera)."""
     from_name = cfg["from_name"] or sender.get("name") or ""
     if kind == "first":
-        reason = mailer.ineligible(p)
+        reason = mailer.ineligible(p, personal)
         email = (p.get("email") or "").strip().lower()
         if not reason and is_do_not_contact(conn, p.get("siret"), p.get("siren"), p.get("canonical_domain"), email):
             reason = "ne plus contacter"
@@ -220,7 +220,7 @@ def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect
         if not task:
             return {**out, "status": "idle"}
         result = send_one(conn, task[0], task[1], cfg, sender, now, send=send,
-                          sent_copy=lambda m: inbox.append_sent(cfg, m.as_bytes(), factory=imap))
+                          sent_copy=lambda m: inbox.append_sent(cfg, m.as_bytes(), factory=imap), personal=auto["personal_emails"])
         if result != "skipped":
             return {**out, "status": result, "kind": task[0]}
     return {**out, "status": "idle"}

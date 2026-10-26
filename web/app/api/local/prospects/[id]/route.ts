@@ -3,6 +3,7 @@ import { query, queryOne, transaction } from "@/lib/db";
 import { readJson, routeId } from "@/lib/api";
 import { DISLIKE_REASONS, MANUAL_STATUSES, isImported } from "@/lib/local";
 import { autoIneligible } from "@/lib/autosend";
+import { getAutoSend } from "@/lib/localdb";
 
 const RESPONSES = ["", "REPLIED", "INTERESTED", "NOT_INTERESTED", "NO_ANSWER", "NOT_A_FIT", "WON"];
 
@@ -82,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   // Envoi automatique : mettre en file, retirer de la file, ou arrêter une séquence en cours (plus aucune relance).
   if (b.action === "auto_queue") {
-    const why = autoIneligible(p) ?? (p.auto_state && p.auto_state !== "stopped" ? "séquence automatique déjà en cours ou terminée" : null);
+    const why = autoIneligible(p, (await getAutoSend()).personal_emails) ?? (p.auto_state && p.auto_state !== "stopped" ? "séquence automatique déjà en cours ou terminée" : null);
     if (why) return NextResponse.json({ error: why }, { status: 409 });
     await query("UPDATE local_prospects SET auto_state='queued', auto_queued_at=UTC_TIMESTAMP() WHERE id=?", [id]);
     return NextResponse.json({ ok: true });
