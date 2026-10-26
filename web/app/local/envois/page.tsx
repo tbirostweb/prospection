@@ -95,6 +95,9 @@ export default async function Envois() {
         {!blockers.length && <p>Boîte d'envoi configurée, DNS vérifié{checks.dns?.at ? ` (${dateTimeFr(checks.dns.at)})` : ""}.</p>}
         {warnings.length > 0 && <ul className="mt-2 space-y-1 text-muted">{warnings.map((w) => <li key={w}>· {w}</li>)}</ul>}
         {state?.last_error && <p className="mt-2 text-red-700">Dernière erreur ({dateTimeFr(state.last_error_at)}) : {state.last_error}</p>}
+        <p className="mt-2 text-xs text-muted">{state?.checks_at
+          ? <>Dernier contrôle du worker : {dateTimeFr(state.checks_at)} (toutes les 10 min). Une variable ajoutée dans Dokploy n'est vue qu'après le redéploiement du worker.</>
+          : "Le worker n'a encore fait aucun contrôle (il passe toutes les 10 min)."}</p>
         {state?.imap_at && <p className="mt-2 text-xs text-muted">Boîte de réception lue le {dateTimeFr(state.imap_at)} (lecture seule).</p>}
         <div className="mt-4 border-t border-line pt-4">
           <span className="mono mb-2 block">Aperçu de la signature</span>
