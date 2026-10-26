@@ -68,7 +68,8 @@ def reserve(conn) -> bool:
     m = _month(conn)
     db.execute(conn, "INSERT IGNORE INTO local_places_usage (month, requests) VALUES (%s, 0)", (m,))
     with conn.cursor() as cur:
-        n = cur.execute("UPDATE local_places_usage SET requests = requests + 1 WHERE month=%s AND requests < %s", (m, MONTHLY_BUDGET))
+        n = cur.execute("UPDATE local_places_usage SET requests = requests + 1, budget = %s WHERE month=%s AND requests < %s",
+                       (MONTHLY_BUDGET, m, MONTHLY_BUDGET))     # le plafond est écrit pour la page Statistiques (migration 031)
     conn.commit()
     return bool(n)
 

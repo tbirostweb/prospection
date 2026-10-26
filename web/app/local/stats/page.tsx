@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
-import { getSetting, safeRows } from "@/lib/localdb";
+import { getPlacesStats, getSetting, safeRows } from "@/lib/localdb";
 import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engineTier } from "@/lib/local";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +65,7 @@ export default async function LocalStats() {
   const sources = await safeRows<any>(`SELECT s.source, COUNT(*) AS n, MAX(s.seen_at) AS last_at,
       (SELECT COUNT(*) FROM local_events e WHERE e.source = IF(s.source='websearch','search',s.source) AND e.at >= UTC_TIMESTAMP() - INTERVAL 7 DAY) AS errs
       FROM local_prospect_sources s GROUP BY s.source`);
+  const places = await getPlacesStats();
   const learn = await getSetting<any>("local_learning", null);
   const learned = learn ? Object.values(learn.features ?? {}).filter((f: any) => f.n >= 4).sort((a: any, b: any) => b.points - a.points) as any[] : [];
   const cards: [string, any, string?][] = [
@@ -125,6 +126,16 @@ export default async function LocalStats() {
                 <td className={`px-2 font-mono text-xs ${f.points > 0 ? "text-emerald-700" : f.points < 0 ? "text-red-700" : "text-muted"}`}>{f.points > 0 ? "+" : ""}{f.points || "0 (pas assez marqué)"}</td></tr>)}</tbody></table></div>}
             {Object.keys(learn.messages ?? {}).length > 0 && <div className="mt-4"><div className="mono mb-1">Quel message obtient des réponses ?</div>
               {Object.entries(learn.messages).map(([k, m]: any) => <div key={k} className="flex justify-between gap-3 border-b border-line py-2 text-sm"><span>Brouillon {messageLabel(k)}</span><span className="font-mono text-xs">{m.wins}/{m.n} · {pct(m.wins, m.n)}</span></div>)}</div>}
+          </>
+        )}
+      </section>
+      <section className="panel mb-10 min-w-0">
+        <h2 className="section-title">Google Places</h2>
+        {!places.ever ? <p className="text-sm text-muted">Pas encore utilisé (clé absente ou aucun appel).</p> : (
+          <>
+            <p className="text-sm">{places.requests} / {places.budget} requêtes ce mois-ci</p>
+            <p className="mt-1 text-sm">{places.asked} prospect(s) interrogé(s), dont {places.hadSite} avec un site sur leur fiche Google, dont {places.verified} avec un site vérifié en base.</p>
+            <p className="mt-1 text-xs text-muted">Une seule requête par prospect, puis pas avant 90 jours. Seul l'identifiant de la fiche est conservé, jamais son contenu.</p>
           </>
         )}
       </section>

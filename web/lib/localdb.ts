@@ -49,3 +49,17 @@ export async function safeRows<T = any>(sql: string, params: any[] = []): Promis
   // Journal minimal : code d'erreur seulement (le texte d'une erreur MySQL peut contenir des valeurs de la requête, donc des données personnelles).
   try { return await query<T>(sql, params); } catch (e: any) { console.error("[local] requête en échec :", e?.code ?? "erreur", e?.errno ?? ""); return []; }
 }
+
+/** Google Places (facultatif) : requêtes du mois UTC (comme le worker), plafond écrit par le worker (migration 031, 900 si NULL), prospects interrogés
+ *  (provenance `places`), dont fiche avec site (`had_website`), dont site vérifié en base. `ever` = au moins un appel un jour. */
+export async function getPlacesStats() {
+  const [u] = await safeRows<any>(`SELECT requests FROM local_places_usage WHERE month = DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m')`);
+  const [b] = await safeRows<any>(`SELECT budget FROM local_places_usage WHERE budget IS NOT NULL ORDER BY month DESC LIMIT 1`);   // colonne absente avant la migration 031 : [] -> 900
+  const [c] = await safeRows<any>(`SELECT COUNT(*) AS asked, COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(provenance, '$.places.had_website')) = 'true'),0) AS had_site,
+      COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(provenance, '$.places.had_website')) = 'true' AND website_status IN ('CONFIRMED','PROBABLE')),0) AS verified
+      FROM local_prospects WHERE JSON_EXTRACT(provenance, '$.places') IS NOT NULL`);
+  const [ever] = await safeRows<any>(`SELECT COALESCE(SUM(requests),0) AS n FROM local_places_usage`);
+  const asked = Number(c?.asked ?? 0);
+  return { requests: Number(u?.requests ?? 0), budget: Number(b?.budget ?? 900), asked, hadSite: Number(c?.had_site ?? 0), verified: Number(c?.verified ?? 0),
+    ever: asked > 0 || Number(ever?.n ?? 0) > 0 };
+}

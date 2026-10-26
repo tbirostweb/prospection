@@ -114,6 +114,13 @@ def test_le_plafond_est_applique_en_cours_de_passage_et_remis_a_zero_au_mois_sui
     assert places.month_used(conn) == 0 and places.reserve(conn) and places.month_used(conn) == 1
 
 
+def test_le_plafond_du_worker_est_ecrit_pour_la_page_statistiques(env, conn, monkeypatch):
+    install_places(monkeypatch, budget=7)
+    assert places.reserve(conn)
+    row = db.fetch_one(conn, "SELECT requests, budget FROM local_places_usage")
+    assert row["requests"] == 1 and row["budget"] == 7
+
+
 def test_sans_cle_ou_budget_zero_aucun_appel(env, conn, monkeypatch):
     for key, budget in (("", 900), ("cle", 0)):
         calls, _w, _s = _run(conn, monkeypatch, key=key, budget=budget)
