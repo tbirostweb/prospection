@@ -26,7 +26,7 @@ recherche du site officiel vérifiée par preuves, contacts publics, score par r
 
 ```
 Campagne (ville + rayon + activités)
-  → SIRENE (entreprises actives) → exclusions / chaînes → OSM (complément)
+  → SIRENE (entreprises actives) [+ Google Places si clé : mot-clé × commune, chaque résultat rattaché à SIRENE] → exclusions / chaînes → OSM (complément)
   → recherche du site officiel (SearXNG, puis API Brave / Tavily, puis Serper payant ; preuves pondérées, vérification inversée)
   → [audit passif, sauf LOCAL_AUDIT=0] → contacts publics
   → score explicable → alerte Telegram → classement (toi)
@@ -148,6 +148,8 @@ cd /app && python -m worker.telegram_check
 - **Suivi** : « À contacter » liste les relances dues (J+3, J+7, sans réponse à J+14, puis plus de contact) ; chaque fiche indique le dirigeant s'il est connu (il n'est plus recherché automatiquement), quand appeler selon le métier et les horaires OSM ; « Tournée » propose les meilleurs prospects dans un ordre de passage court, avec l'itinéraire Google Maps.
 - **Contacts** : uniquement publics et professionnels, avec leur source (site officiel, OpenStreetMap, ou **extrait d'un résultat de recherche** citant le nom ET la ville — les annuaires ne sont jamais ouverts, les numéros surtaxés 08 refusés) ; jamais d'adresse devinée.
 - **Audit** (actif par défaut, `LOCAL_AUDIT=0` pour le couper ; les sites déjà identifiés des campagnes terminées sont audités à leur tour, 10 par passage) : passif et léger (jamais de scan de sécurité) ; « aucun problème majeur détecté », « bases SEO manquantes », « SEO technique améliorable » — jamais « mauvais référencement » sans donnée réelle. Page rendue en JavaScript ou protégée par anti-bot : SEO « non évaluable ».
+
+Google Places (facultatif, `LOCAL_GOOGLE_PLACES_API_KEY`) sert de **source** dès le départ : pour chaque activité × commune de la zone (≥ `LOCAL_PLACES_MIN_POPULATION` habitants), une recherche Text Search paginée (≤ 60 résultats) ; chaque résultat est rattaché à son entreprise SIRENE (nom + code postal + distance) et la fiche est créée avec les données SIRENE, mêmes exclusions que SIRENE ; sans correspondance sûre, il est ignoré. De Google, seul le `place_id` est gardé ; le site de la fiche Google est vérifié sur le site lui-même. Même requête pas refaite avant 90 jours, `LOCAL_PLACES_DISCOVERY_PER_RUN` pages par passage, plafond `LOCAL_GOOGLE_PLACES_MONTHLY_BUDGET`, arrêt net sur 403/429.
 
 Règles détaillées : `.claude/skills/local-prospecting/SKILL.md` · sources et mesures réelles : [docs/SOURCES.md](docs/SOURCES.md).
 

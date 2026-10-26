@@ -1,4 +1,5 @@
 """Google Places (New) « Text Search » : DÉCOUVRIR l'URL du site d'un prospect « sans site », jamais une source de contenu.
+La découverte d'ENTREPRISES par Google Places (source des campagnes, rattachée à SIRENE) est dans `placesdiscovery.py`, avec le même budget.
 
 Beaucoup de petites entreprises n'ont pas de site trouvé par nos recherches alors que leur fiche Google Maps en donne un. Le `websiteUri` renvoyé
 sert UNIQUEMENT de candidat : il est passé au résolveur (`sitefinder.resolve(candidate_urls=…)`), qui le VÉRIFIE (SIRET, adresse, mentions légales)
@@ -95,28 +96,38 @@ def build_body(company: dict) -> dict:
     return body
 
 
-def search_text(company: dict, key: str | None = None) -> tuple[list[dict] | None, str | None]:
-    """(résultats, erreur). `None` = l'appel a échoué (réseau, clé refusée, quota) : ce n'est PAS « aucune fiche »."""
+def post_search(body: dict, field_mask: str = FIELD_MASK, key: str | None = None) -> tuple[dict | None, str | None, int | None]:
+    """UN appel Text Search : (réponse JSON, erreur, code HTTP). `None` = l'appel a échoué (réseau, clé refusée, quota) : ce n'est PAS « aucune fiche ».
+    Ne réserve rien : l'appelant réserve (`reserve`) avant et rend (`_refund`) après un échec."""
     t0 = time.monotonic()
     try:
         with httpx.Client(timeout=15, transport=_transport) as c:
-            r = c.post(PLACES_URL, json=build_body(company), headers={"X-Goog-Api-Key": key or API_KEY, "X-Goog-FieldMask": FIELD_MASK,
-                                                                       "Content-Type": "application/json", "User-Agent": USER_AGENT})
+            r = c.post(PLACES_URL, json=body, headers={"X-Goog-Api-Key": key or API_KEY, "X-Goog-FieldMask": field_mask,
+                                                       "Content-Type": "application/json", "User-Agent": USER_AGENT})
     except httpx.TimeoutException:
-        return None, "Google Places : délai dépassé"
+        return None, "Google Places : délai dépassé", None
     except httpx.HTTPError as exc:
-        return None, f"Google Places injoignable : {exc.__class__.__name__}"
-    if r.status_code in (401, 403, 429):
-        return None, f"Google Places : clé refusée ou quota atteint (HTTP {r.status_code}) — vérifie LOCAL_GOOGLE_PLACES_API_KEY"
-    if r.status_code != 200:
-        return None, f"Google Places HTTP {r.status_code}"
-    try:
-        places = (r.json() or {}).get("places") or []
-        return [p for p in places if isinstance(p, dict)], None
-    except (ValueError, TypeError, AttributeError):
-        return None, "Google Places : réponse illisible"
+        return None, f"Google Places injoignable : {exc.__class__.__name__}", None
     finally:
         log.debug("[local] Google Places : %d ms", int((time.monotonic() - t0) * 1000))
+    if r.status_code in (401, 403, 429):
+        return None, f"Google Places : clé refusée ou quota atteint (HTTP {r.status_code}) — vérifie LOCAL_GOOGLE_PLACES_API_KEY", r.status_code
+    if r.status_code != 200:
+        return None, f"Google Places HTTP {r.status_code}", r.status_code
+    try:
+        data = r.json()
+        return (data if isinstance(data, dict) else {}), None, 200
+    except ValueError:
+        return None, "Google Places : réponse illisible", 200
+
+
+def search_text(company: dict, key: str | None = None) -> tuple[list[dict] | None, str | None]:
+    """(résultats, erreur). `None` = l'appel a échoué (réseau, clé refusée, quota) : ce n'est PAS « aucune fiche »."""
+    data, err, _status = post_search(build_body(company), key=key)
+    if data is None:
+        return None, err
+    places = data.get("places") or []
+    return ([p for p in places if isinstance(p, dict)] if isinstance(places, list) else []), None
 
 
 # ── Rapprochement ───────────────────────────────────────────────────────────────────────────────────

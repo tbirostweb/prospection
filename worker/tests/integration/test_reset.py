@@ -44,7 +44,7 @@ def test_remise_a_zero_garde_les_decisions_et_la_configuration(env, conn):
     max_id = db.fetch_one(conn, "SELECT MAX(id) AS m FROM local_prospects")["m"]
     deleted = reset.reset_database(conn)
     assert deleted["local_prospects"] == 1
-    assert [_n(conn, t) for t in reset.LOCAL_TABLES + reset.TECH_TABLES] == [0] * 8
+    assert [_n(conn, t) for t in reset.LOCAL_TABLES + reset.TECH_TABLES] == [0] * len(reset.LOCAL_TABLES + reset.TECH_TABLES)
     assert _n(conn, "local_do_not_contact") == 1 and _n(conn, "local_bad_sites") == 1 and _n(conn, "local_site_feedback") == 1     # tes décisions : JAMAIS effacées
     c = db.fetch_one(conn, "SELECT status, stats, coverage, name FROM local_campaigns WHERE id=%s", (cid,))
     assert (c["status"], c["stats"], c["coverage"], c["name"]) == ("idle", None, None, "Troyes")                              # configuration gardée

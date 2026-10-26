@@ -7,6 +7,7 @@ depuis le terminal du conteneur `worker` du VPS.
 | Source | Fonction | État |
 |---|---|---|
 | **API Recherche d'Entreprises (SIRENE)** | Découverte des entreprises actives et diffusables autour d'un point (`near_point`), dédup SIRET | Testée en réel. Les résultats arrivent classés par taille (chaînes d'abord) : seuls les indépendants comptent pour le plafond. Import bulk (CSV officiel) **testé seulement sur fixture** |
+| **Google Places (New) Text Search** — facultatif, clé | Source de découverte (mot-clé × commune, 3 pages au plus) et site candidat d'un prospect ; chaque résultat rattaché à SIRENE, seul le `place_id` conservé | **Testé seulement sur fixture** (transport simulé) |
 | **geo.api.gouv.fr** | Géocodage ville → coordonnées ; commune homonyme sans code postal refusée avec les alternatives | Testé en réel (jamais Nominatim) |
 | **BODACC** (OpenDataSoft) | Veille des créations récentes (signal, pas une preuve de besoin) | Testé en réel. **N'est plus interrogé par SIREN pendant les campagnes** (radiations, reprises, changements de nom ne sont donc plus relevés pour les fiches de campagne) |
 | **OpenStreetMap (Overpass)** | Complément : site, téléphone, e-mail publics — une requête par campagne, cache 7 jours, correspondance ≤ 120 m et nom ≥ 75 % | Testé en réel ; réponse plafonnée à 5 000 objets (zone dense = couverture partielle **signalée**). `LOCAL_OSM=0` désactive |

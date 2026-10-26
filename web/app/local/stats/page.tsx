@@ -137,6 +137,9 @@ export default async function LocalStats() {
             <p className="text-sm">{places.requests} / {places.budget} requêtes ce mois-ci</p>
             <p className="mt-1 text-sm">{places.asked} prospect(s) interrogé(s), dont {places.hadSite} avec un site sur leur fiche Google, dont {places.verified} avec un site vérifié en base.</p>
             <p className="mt-1 text-xs text-muted">Une seule requête par prospect, puis pas avant 90 jours. Seul l'identifiant de la fiche est conservé, jamais son contenu.</p>
+            {places.queries > 0 && (
+              <p className="mt-2 text-sm">Découverte des campagnes : {places.queries} recherche(s) (activité × commune), {places.found} fiche(s) rattachée(s) à une entreprise SIRENE, dont {places.onlyPlaces} trouvée(s) seulement par Google ; {places.unmatched} résultat(s) ignoré(s) faute de correspondance SIRENE sûre.</p>
+            )}
           </>
         )}
         <div className="mt-3 border-t border-line pt-3">

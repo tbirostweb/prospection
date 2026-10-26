@@ -35,6 +35,7 @@ description: Règles de la prospection LOCALE proactive de l'app Prospection (co
 
 ## Sources
 - SIRENE (Recherche d'Entreprises) : actifs et diffusables seulement, dédup SIRET. BODACC : signal de nouvelle entreprise, jamais un besoin de site. OSM : complémentaire, jamais Nominatim public en masse.
+- Google Places (`placesdiscovery.py`, si clé) : source de découverte par mot-clé × commune ; chaque résultat est RATTACHÉ à son entreprise SIRENE (sinon ignoré) et la fiche porte les données SIRENE, mêmes filtres (chaînes, NAF exclus, un établissement par entreprise, ne plus contacter). Seul le `place_id` est stocké (provenance `places`, `local_prospect_sources`) ; le site Google n'est qu'un candidat vérifié sur le site. Mémoire `local_places_queries` (90 jours), plafonds mensuel et par passage, arrêt sur 403/429.
 - Contacts : uniquement publics et professionnels, avec `contactSourceUrl` et `contactDiscoveredAt`. Pas de particuliers.
 - Ne jamais contourner captcha, connexion, anti-bot ni limite d'API.
 

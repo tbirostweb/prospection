@@ -125,12 +125,14 @@ LARGE_EMPLOYEE_CODES = {"21", "22", "31", "32", "41", "42", "51", "52", "53"}   
 
 
 def load_catalog(custom: dict | None = None) -> dict[str, dict]:
-    """Catalogue de départ + entrées ajoutées dans les réglages (`{"cle": {"label", "naf": [...], "web": 0.7}}`)."""
+    """Catalogue de départ + entrées ajoutées dans les réglages (`{"cle": {"label", "naf": [...], "web": 0.7, "places": ["mot-clé"]}}`)."""
     out = {k: dict(v) for k, v in CATALOG.items()}
     for key, v in (custom or {}).items():
         if isinstance(v, dict) and v.get("naf"):
             out[str(key)] = {"label": str(v.get("label") or key), "naf": [str(c).upper() for c in v["naf"]],
                              "web": float(v.get("web", 0.6))}
+            if isinstance(v.get("places"), list):                     # mots-clés Google Places de l'activité (placesdiscovery.KEYWORDS sinon)
+                out[str(key)]["places"] = [str(w).strip() for w in v["places"] if str(w).strip()][:5]
     return out
 
 

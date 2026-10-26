@@ -25,12 +25,15 @@ comment obtenir la valeur, dans quelle variable la coller, et comment vérifier 
 | **Tavily** | Palier 1, secours à quota | 1 000 crédits gratuits / mois, sans carte (1 recherche « basic » = 1 crédit) | `LOCAL_TAVILY_API_KEY` (+ budgets) | Non |
 | **API Recherche d'entreprises** (data.gouv / DINUM) | Découverte des entreprises autour d'un point (données SIRENE) | Gratuit, **sans clé ni compte** (limite 7 appels/s) | aucune | Utilisée automatiquement |
 | **Export SIRENE en masse** (data.gouv.fr) | Import d'un département entier (`python -m worker.local.bulk`) | Gratuit, sans compte | aucune | Non |
+| **Google Places API (New)** | Source de découverte des campagnes (entreprises connues de Google, rattachées à SIRENE) et site candidat des fiches « sans site » | Text Search avec le site web : SKU « Enterprise », facturé à la page de 20 résultats (vérifier le tarif et le quota gratuit sur la page de tarification Google) ; crédit d'essai Google Cloud utilisable | `LOCAL_GOOGLE_PLACES_API_KEY`, `LOCAL_GOOGLE_PLACES_MONTHLY_BUDGET`, `LOCAL_PLACES_DISCOVERY_PER_RUN`, `LOCAL_PLACES_MIN_POPULATION` | Non |
 | **geo.api.gouv.fr**, **BODACC** | Géocodage des villes ; veille des nouvelles entreprises | Gratuit, sans clé | aucune | Utilisées automatiquement |
 | **OpenStreetMap / Overpass** | Complément : site, téléphone, e-mail publics | Gratuit, sans clé | `LOCAL_OSM`, `LOCAL_OSM_URL` | Non (actif par défaut) |
 | **PageSpeed Insights** (Google) | **Plus utilisé** : le code existe mais n'est appelé nulle part | Gratuit | `PAGESPEED_API_KEY` | **Non — ne pas créer** |
 
 Il n'y a **pas** d'envoi d'e-mail (aucun SMTP dans le code), **pas** de clé INSEE (l'app n'utilise pas l'API Sirene de l'INSEE, seulement l'API
-Recherche d'entreprises et l'export data.gouv), et **pas** de compte Google Maps.
+Recherche d'entreprises et l'export data.gouv). Google Places est facultatif : sans `LOCAL_GOOGLE_PLACES_API_KEY`, aucun appel. Avec la clé, chaque page de
+résultats compte pour une requête dans `LOCAL_GOOGLE_PLACES_MONTHLY_BUDGET` (pour ~3 000 / mois : `3000`, `LOCAL_PLACES_DISCOVERY_PER_RUN=20`) ; un 403/429
+arrête les appels (nouvel essai une heure plus tard). Restreindre la clé à « Places API (New) » et fixer un quota journalier dans la console Google Cloud.
 
 ---
 

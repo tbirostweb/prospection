@@ -127,6 +127,16 @@ def lookup_siren(siren: str, conn=None) -> dict | None:
     return None
 
 
+def search_name(name: str, postal_code: str, conn=None) -> list[dict]:
+    """Unités légales ACTIVES dont le nom ou l'enseigne ressemble à `name`, avec un établissement dans ce code postal (cache 24 h).
+    Sert à rattacher un résultat Google Places à SON entreprise SIRENE : la fiche est ensuite construite avec les données SIRENE seulement."""
+    if len((name or "").strip()) < 3 or not re.fullmatch(r"\d{5}", postal_code or ""):
+        return []
+    data = http.get_json(SEARCH_API, {"q": name.strip()[:120], "code_postal": postal_code, "etat_administratif": "A", "per_page": 10},
+                         conn=conn, cache_hours=24)
+    return [u for u in (data or {}).get("results") or [] if isinstance(u, dict)]
+
+
 def search_page(lat: float, lon: float, radius_km: float, naf_codes: list[str], page: int = 1, conn=None) -> dict:
     params = {"lat": lat, "long": lon, "radius": min(radius_km, MAX_RADIUS_KM), "activite_principale": ",".join(naf_codes),
               "etat_administratif": "A", "per_page": PER_PAGE, "page": page}

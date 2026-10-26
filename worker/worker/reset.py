@@ -30,7 +30,8 @@ from .config import TELEGRAM_API_BASE, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, log
 
 # Prospects et caches partent ; campagnes (configuration), « ne plus contacter », « mauvais sites » et retours utilisateur sont CONSERVÉS —
 # une entreprise qui a demandé à ne plus être contactée ne doit jamais redevenir contactable à cause d'une remise à zéro.
-LOCAL_TABLES = ["local_prospects", "local_prospect_campaigns", "local_prospect_sources", "local_http_cache"]
+LOCAL_TABLES = ["local_prospects", "local_prospect_campaigns", "local_prospect_sources", "local_http_cache",
+                "local_places_queries", "local_places_query_prospects"]   # mémoire Google Places : sinon ses fiches ne reviendraient pas avant 90 jours
 TECH_TABLES = ["local_engine_health", "local_events", "local_run_metrics", "local_health_report"]
 SWEEP_MAX_IDS = 400          # nombre maximal de messages Telegram récents tentés
 SWEEP_STOP_AFTER = 40        # échecs consécutifs (messages > 48 h ou déjà supprimés) avant d'arrêter

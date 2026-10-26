@@ -48,3 +48,24 @@ def geocode_commune(city: str = "", postal_code: str = "", conn=None, department
             "postal_code": postal_code or (c.get("codesPostaux") or [""])[0], "latitude": round(lat, 6),
             "longitude": round(lon, 6), "population": c.get("population"),
             "ambiguous": ambiguous, "alternatives": alternatives, "confidence": 0.5 if ambiguous else 0.95}
+
+
+DEPT_COMMUNES_API = "https://geo.api.gouv.fr/departements/{}/communes"
+
+
+def communes_in_zone(lat: float, lon: float, radius_km: float, departments, conn=None, whole_department: bool = False) -> list[dict]:
+    """Communes (code INSEE, nom, centre, population) des départements donnés dont le centre est dans le rayon (ou toutes avec `whole_department`),
+    les plus peuplées d'abord. Liste officielle geo.api.gouv.fr, cache 30 jours."""
+    out: dict[str, dict] = {}
+    for dep in sorted({str(d).strip().upper() for d in departments or [] if d}):
+        data = http.get_json(DEPT_COMMUNES_API.format(dep), {"fields": "nom,code,centre,population"}, conn=conn, cache_hours=24 * 30)
+        for c in data if isinstance(data, list) else []:
+            clon, clat = (c.get("centre") or {}).get("coordinates") or (None, None)
+            if clat is None or not c.get("code"):
+                continue
+            dist = haversine_km(lat, lon, clat, clon)
+            if not whole_department and dist > radius_km:
+                continue
+            out[c["code"]] = {"code": c["code"], "name": c.get("nom") or "", "latitude": clat, "longitude": clon,
+                              "population": int(c.get("population") or 0), "distance_km": round(dist, 1)}
+    return sorted(out.values(), key=lambda c: (-c["population"], c["distance_km"], c["code"]))

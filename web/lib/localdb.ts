@@ -67,8 +67,13 @@ export async function getPlacesStats() {
         AND (p.category IS NULL OR p.category <> 'IGNORER') AND p.status NOT IN ('LOST','WON','DO_NOT_CONTACT','CONTACTED')
         AND JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.places') IS NULL
         AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)`);
+  // découverte des campagnes (worker/local/placesdiscovery.py) : fiches rattachées à SIRENE, dont celles qu'aucune autre source n'avait ; résultats ignorés
+  const [f] = await safeRows<any>(`SELECT COUNT(*) AS n, COALESCE(SUM(NOT EXISTS (SELECT 1 FROM local_prospect_sources o WHERE o.prospect_id = s.prospect_id
+      AND o.source IN ('sirene','sirene_bulk'))),0) AS only FROM local_prospect_sources s WHERE s.source = 'places'`);
+  const [qd] = await safeRows<any>(`SELECT COUNT(*) AS queries, COALESCE(SUM(unmatched),0) AS unmatched FROM local_places_queries`);   // table absente avant la migration 032 : []
   const backfill = await getSetting<{ enabled?: boolean }>("local_places_backfill", {});
   return { pending: Number(t?.n ?? 0), backfillOn: backfill?.enabled === true,
      requests: Number(u?.requests ?? 0), budget: Number(b?.budget ?? 900), asked, hadSite: Number(c?.had_site ?? 0), verified: Number(c?.verified ?? 0),
+    found: Number(f?.n ?? 0), onlyPlaces: Number(f?.only ?? 0), queries: Number(qd?.queries ?? 0), unmatched: Number(qd?.unmatched ?? 0),
     ever: asked > 0 || Number(ever?.n ?? 0) > 0 };
 }

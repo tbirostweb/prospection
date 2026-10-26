@@ -139,7 +139,7 @@ def env_sans_telegram(migrated, monkeypatch, tmp_path, no_network):
             cur.execute("SET FOREIGN_KEY_CHECKS=0")
             for t in ("local_prospect_sources", "local_prospect_campaigns", "local_prospects", "local_campaigns", "local_do_not_contact", "local_http_cache",
                       "local_engine_health", "local_events", "local_run_metrics", "local_bad_sites", "local_site_feedback", "local_health_report",
-                      "local_outcomes", "local_emails", "local_mail_state"):
+                      "local_outcomes", "local_emails", "local_mail_state", "local_places_queries", "local_places_query_prospects"):
                 try:
                     cur.execute(f"DELETE FROM `{t}`")
                 except pymysql.err.ProgrammingError:

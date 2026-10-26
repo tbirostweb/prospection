@@ -26,8 +26,8 @@ import time
 from .. import db
 from ..config import log
 from . import audit as audit_mod
-from . import (chains, contacts, engines, snippets, socials as socials_mod, errors, fetch as fetch_mod, identity, naf as naf_mod, osm, places, scoring, sirene,
-               sitefinder, store, zone)
+from . import (chains, contacts, engines, snippets, socials as socials_mod, errors, fetch as fetch_mod, identity, naf as naf_mod, osm, places,
+               placesdiscovery, scoring, sirene, sitefinder, store, zone)
 from .errors import SearchUnavailable
 
 TIME_BUDGET_S = int(os.getenv("LOCAL_TIME_BUDGET_S") or "600")
@@ -74,15 +74,18 @@ def _rescore(conn, row: dict, ctx: Ctx, issues: list | None = None) -> dict:
 
 
 # ── Découverte ───────────────────────────────────────────────────────────────────────────────────────────
+def independent(e) -> bool:
+    """Établissement SIRENE gardé à la découverte : ni chaîne / franchise / grosse entreprise, ni activité exclue (agence web, holding, lavage…).
+    Même filtre pour toutes les sources de découverte (SIRENE, Google Places)."""
+    return not naf_mod.chain_signals(e.name, e.trade_name, e.company_size, e.employee_range, e.establishments_open, e.legal_category, e.naf_code) \
+        and not naf_mod.excluded_reason(e.naf_code, f"{e.trade_name or ''} {e.name}", legal_category=e.legal_category)
+
+
 def discover(conn, camp: dict, ctx: Ctx, stats: dict) -> dict:
     codes, unknown = naf_mod.resolve_activities(json.loads(camp["activities"]) if isinstance(camp["activities"], str) else camp["activities"], ctx.catalog)
     if not codes:
         raise ValueError(f"aucune activité exploitable (ignorées : {unknown})")
     lat, lon, radius = float(camp["latitude"]), float(camp["longitude"]), float(camp["radius_km"])
-
-    def independent(e) -> bool:
-        return not naf_mod.chain_signals(e.name, e.trade_name, e.company_size, e.employee_range, e.establishments_open, e.legal_category, e.naf_code) \
-            and not naf_mod.excluded_reason(e.naf_code, f"{e.trade_name or ''} {e.name}", legal_category=e.legal_category)
 
     cov = {"pages": 0, "units_available": 0, "imported": 0, "kept": 0, "limit_hit": False, "stopped": "exhausted", "chunks": 0, "unknown_activities": unknown}
     per_chunk = max(1, int(camp["max_companies"]) // max(1, -(-len(codes) // NAF_CHUNK)))
@@ -111,6 +114,19 @@ def discover(conn, camp: dict, ctx: Ctx, stats: dict) -> dict:
     cov["partial"] = bool(cov["limit_hit"] or cov.get("radius_capped"))
     stats["discovery_done"] = True
     return cov
+
+
+def _discover_places(conn, camp: dict, ctx: Ctx, stats: dict, fetch, deadline: float) -> bool:
+    """Google Places comme source (`placesdiscovery`) : résultats rattachés à SIRENE, bornés par passage. True = requêtes restantes (campagne
+    pas terminée). Une erreur inattendue n'arrête jamais la campagne (et ne la bloque pas : la découverte Places est marquée faite)."""
+    try:
+        return placesdiscovery.run(conn, camp, ctx, stats, fetch, deadline, url_limit=LOOKUPS_PER_RUN)
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        log.exception("[local] découverte Google Places de la campagne #%s en échec", camp["id"])
+        errors.record(conn, errors.classify(exc), "places", campaign_id=camp["id"], detail=str(exc))
+        stats.update(places_done=True, places_error=str(exc)[:160])
+        return False
 
 
 def enrich_osm(conn, camp: dict, ctx: Ctx, stats: dict) -> None:
@@ -464,8 +480,10 @@ def run_campaign(conn, camp: dict, search=None, fetch=None, deadline: float | No
         cov = json.loads(camp["coverage"]) if isinstance(camp.get("coverage"), (str, bytes)) else camp.get("coverage")
         if not stats.get("discovery_done"):
             cov = discover(conn, camp, ctx, stats)
+            stats.pop("places_done", None)                                            # campagne relancée : Google Places aussi (requêtes de moins de 90 j non refaites)
             db.execute(conn, "UPDATE local_campaigns SET coverage=%s WHERE id=%s", (json.dumps(cov), cid))
             conn.commit()
+        places_pending = _discover_places(conn, camp, ctx, stats, fetch, deadline)
         enrich_osm(conn, camp, ctx, stats)
         stats.pop("time_budget_hit", None)
         for r in _campaign_prospects(conn, cid, "AND p.scored_at IS NULL"):
@@ -481,8 +499,10 @@ def run_campaign(conn, camp: dict, search=None, fetch=None, deadline: float | No
         pool = search or engines.SearchPool(conn)
         searcher = pool                                    # remplacé par un « moteur coupé » après une SearchUnavailable (pool garde ses métriques)
         # jamais traités d'abord : des fiches en attente de moteur (recherche indisponible) ne doivent pas bloquer les nouvelles
+        # fiches dont la fiche Google a donné un site (candidat en mémoire seulement, perdu à la fin du processus) : traitées en premier
+        with_url = ",".join(str(int(pid)) for pid, url in places._session.items() if url) or "0"
         todo = [] if stats.get("time_budget_hit") else _campaign_prospects(conn, cid, todo_sql(), limit=LOOKUPS_PER_RUN,
-                                                                            order="p.pipeline_stage <> 'DISCOVERED', p.prospect_score DESC, p.id")
+                                                                            order=f"p.id IN ({with_url}) DESC, p.pipeline_stage <> 'DISCOVERED', p.prospect_score DESC, p.id")
         stats.pop("waiting", None)
         stats.pop("resume_at", None)
         search_down = False
@@ -525,7 +545,7 @@ def run_campaign(conn, camp: dict, search=None, fetch=None, deadline: float | No
         remaining = db.fetch_one(conn, f"""SELECT COUNT(*) AS n FROM local_prospects p JOIN local_prospect_campaigns c ON c.prospect_id=p.id
                                           WHERE c.campaign_id=%s {todo_sql(RETRY_PLANNED)}""", (cid,))["n"]
         stats["remaining"] = remaining
-        finished = remaining == 0 and not stats.get("waiting")
+        finished = remaining == 0 and not stats.get("waiting") and not places_pending
         db.execute(conn, "UPDATE local_campaigns SET status=%s, last_finished_at=IF(%s, UTC_TIMESTAMP(), last_finished_at), stats=%s, last_error=%s WHERE id=%s",
                    ("done" if finished else "running", int(finished), json.dumps(stats), (stats.get("waiting") or None), cid))
     except Exception as exc:  # noqa: BLE001 — une campagne en erreur n'arrête pas les autres

@@ -148,6 +148,22 @@ def _no_search(_query: str) -> list:
     return []
 
 
+def _verify_places_urls(conn, row: dict, ctx, company: dict, urls: list[str], fetch) -> bool:
+    """URL(s) de la fiche Google VÉRIFIÉES sur le site lui-même, sans aucune requête moteur ; site sûr = même suite que `recheck`. Renvoie : enregistré ?"""
+    res = sitefinder.resolve(company, _no_search, fetch, ctx.site_thresholds, strategy_budget=0,
+                             known_urls=runner._known_urls(conn, row), candidate_urls=urls)
+    return _conclude(conn, row, ctx, company, res, fetch, only_if_found=True)[1]
+
+
+def verify_places_site(conn, row: dict, url: str, fetch) -> bool:
+    """Fiche « sans site » retrouvée par la découverte Google Places (`placesdiscovery`) avec un site sur sa fiche Google : vérifié tout de suite
+    (l'URL n'est jamais stockée). Mêmes garde-fous que le passage Google Places : jamais une fiche contactée, écartée, chaîne ou « ne plus contacter »."""
+    fresh = db.fetch_one(conn, f"SELECT p.* FROM local_prospects p WHERE p.id=%s AND {NO_SITE_FILTER}", (row["id"],))
+    if fresh is None or not url:
+        return False
+    return _verify_places_urls(conn, fresh, runner.Ctx(conn, _campaign(conn, fresh["id"])), runner._company(conn, fresh), [url], fetch)
+
+
 def places_backfill_active(conn) -> bool:
     row = db.fetch_one(conn, "SELECT value_json FROM settings WHERE skey=%s LIMIT 1", (PLACES_SETTING,))
     v = row["value_json"] if row else None
@@ -184,9 +200,7 @@ def places_backfill(conn, fetch=None, limit: int = PLACES_PER_RUN) -> dict:
                 conn.commit()                                  # aucun site chez Google (provenance `places` posée) : rien d'autre à faire
                 stats["asked"] += 1
                 continue
-            res = sitefinder.resolve(company, _no_search, fetch, ctx.site_thresholds, strategy_budget=0,
-                                     known_urls=runner._known_urls(conn, row), candidate_urls=urls)
-            _status, saved = _conclude(conn, row, ctx, company, res, fetch, only_if_found=True)
+            saved = _verify_places_urls(conn, row, ctx, company, urls, fetch)
         except Exception as exc:  # noqa: BLE001 — une fiche en échec n'arrête pas les autres ; `places` est déjà posée : pas de boucle
             conn.rollback()
             log.warning("[local] Google Places sur la fiche #%s en échec : %s", row["id"], exc)
