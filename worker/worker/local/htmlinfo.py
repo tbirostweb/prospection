@@ -4,13 +4,29 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from selectolax.parser import HTMLParser
 
 PHONE_RX = re.compile(r"(?<!\d)(?:\+33\s?(?:\(0\)\s?)?|0033\s?(?:\(0\)\s?)?|0)[1-9](?:[\s.\-]?\d{2}){4}(?!\d)")
 EMAIL_RX = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 POSTAL_RX = re.compile(r"(?<!\d)(\d{5})(?!\d)")
+# Adresses masquées contre les robots : « contact [at] garage.fr », « contact (arobase) garage (point) fr », « contact arobase garage point fr ».
+# Jamais « at » ou « dot » nus (« rendez-vous at… ») : seulement entre crochets/parenthèses, ou les mots français « arobase » / « point ».
+_AT = r"\s*(?:\[\s*(?:at|arobase|@)\s*\]|\(\s*(?:at|arobase|@)\s*\)|\{\s*(?:at|arobase)\s*\}|\s+arobase\s+)\s*"
+_DOT = r"(?:\s*\[\s*(?:dot|point|\.)\s*\]\s*|\s*\(\s*(?:dot|point|\.)\s*\)\s*|\s+point\s+|\.)"
+OBFUSCATED_EMAIL_RX = re.compile(rf"([a-z0-9._%+\-]+){_AT}([a-z0-9\-]+(?:{_DOT}[a-z0-9\-]+)*{_DOT}[a-z]{{2,}})\b", re.I)
+_DOT_RX = re.compile(_DOT, re.I)
+CFEMAIL_RX = re.compile(r'data-cfemail="([0-9a-f]+)"')
+
+
+def cf_decode(hexstr: str) -> str:
+    """Adresse protégée par Cloudflare (« email-protection ») : premier octet = clé, puis XOR."""
+    try:
+        b = bytes.fromhex(hexstr)
+        return bytes(x ^ b[0] for x in b[1:]).decode("utf-8")
+    except (ValueError, IndexError, UnicodeDecodeError):
+        return ""
 
 
 @dataclass
@@ -69,12 +85,14 @@ class Page:
         rank = {"mailto": 0, "jsonld": 1, "microdata": 2, "text": 3}
 
         def put(raw: str, via: str) -> None:
-            m = raw.lower().strip().strip(".").removeprefix("mailto:").split("?")[0]
+            m = unquote(raw).lower().strip().strip(".").removeprefix("mailto:").split("?")[0]
             if EMAIL_RX.fullmatch(m) and not m.endswith((".png", ".jpg", ".webp", ".gif", ".svg")) and (m not in out or rank[via] < rank[out[m]]):
                 out[m] = via
         for h, _ in self.links:
             if h.lower().startswith("mailto:"):
                 put(h, "mailto")
+            elif "/cdn-cgi/l/email-protection#" in h:
+                put(cf_decode(h.rsplit("#", 1)[1]), "mailto")
         for item in self.jsonld:
             if isinstance(item.get("email"), str):
                 put(item["email"], "jsonld")
@@ -82,6 +100,10 @@ class Page:
             put(v, "microdata")
         for m in EMAIL_RX.findall(self.text):
             put(m, "text")
+        for hexstr in CFEMAIL_RX.findall(self.raw):
+            put(cf_decode(hexstr), "text")
+        for local, domain in OBFUSCATED_EMAIL_RX.findall(self.text):
+            put(f"{local}@{_DOT_RX.sub('.', domain)}", "text")
         return list(out.items())
 
     def emails(self) -> list[str]:

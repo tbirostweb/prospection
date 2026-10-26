@@ -161,6 +161,7 @@ services:
       LOCAL_IMAP_HOST: ${LOCAL_IMAP_HOST:-}
       LOCAL_IMAP_PORT: ${LOCAL_IMAP_PORT:-}
       LOCAL_DKIM_SELECTOR: ${LOCAL_DKIM_SELECTOR:-}
+      LOCAL_EMAIL_SEARCH_PER_RUN: ${LOCAL_EMAIL_SEARCH_PER_RUN:-}
     depends_on:
       mysql:
         condition: service_healthy

@@ -172,3 +172,27 @@ def test_classement_reponse_auto_et_erreurs():
     assert inbox.classify(bounce) == "bounce"
     delayed = _mail("From: MAILER-DAEMON@mx.exemple.net\nSubject: Delayed Mail\nContent-Type: text/plain", "Action: delayed\nStatus: 4.4.1\n")
     assert inbox.classify(delayed) == "delay"
+
+
+def test_adresses_masquees_et_cloudflare_lues_sur_le_site():
+    from worker.local import htmlinfo, snippets
+    cf = "a5" + bytes(x ^ 0xa5 for x in b"devis@garage-martin.fr").hex()
+    page = htmlinfo.parse(f"""<html><body><p>Écrivez-nous : contact [at] garage-martin.fr ou jean (arobase) garage-martin (point) fr.</p>
+        <p>Rendez-vous at 10h, prix 10.50 €.</p><a href="/cdn-cgi/l/email-protection#{cf}">e-mail</a>
+        <span class="__cf_email__" data-cfemail="{cf}">[email protected]</span><a href="mailto:info%40garage-martin.fr">écrire</a></body></html>""",
+        "https://garage-martin.fr/contact")
+    found = dict(page.email_points())
+    assert {"contact@garage-martin.fr", "jean@garage-martin.fr", "devis@garage-martin.fr", "info@garage-martin.fr"} <= set(found)
+    assert found["devis@garage-martin.fr"] == "mailto" and found["info@garage-martin.fr"] == "mailto"
+    assert not any("rendez" in m or m.startswith("10") for m in found)
+    assert snippets.email_query({"trade_name": "Garage Martin", "city": "Troyes"}) == '"Garage Martin" Troyes email'
+
+
+def test_recherche_email_pas_refaite_avant_30_jours():
+    import json
+    import time
+    from worker.local import runner
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    assert runner.email_recently_searched({"provenance": json.dumps({"email_search": {"checked_at": now}})}) is True
+    assert runner.email_recently_searched({"provenance": {"email_search": {"checked_at": "2026-01-01T00:00:00Z"}}}) is False
+    assert runner.email_recently_searched({"provenance": None}) is False

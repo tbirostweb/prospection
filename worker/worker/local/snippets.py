@@ -98,6 +98,13 @@ def extract(company: dict, hits: list) -> dict:
     return out
 
 
+def email_query(company: dict) -> str | None:
+    """Requête dédiée à l'e-mail (une seule) : les extraits des pages Facebook, des annuaires ou des mentions légales affichent souvent l'adresse."""
+    name = (company.get("trade_name") or company.get("company_name") or "").strip()
+    city = (company.get("city") or "").strip()
+    return f'"{name}" {city} email' if name and city else None
+
+
 def contact_query(company: dict) -> str | None:
     """Requête dédiée aux coordonnées (une seule), pour une entreprise déjà recherchée sans résultat de contact."""
     name = (company.get("trade_name") or company.get("company_name") or "").strip()

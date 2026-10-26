@@ -4,6 +4,7 @@ import { queryOne, query } from "@/lib/db";
 import { CHAIN_KIND_LABELS, EMAIL_KIND_LABELS, ERROR_LABELS, ISSUE_SEVERITY_CLASS, SITE_KIND_CLASS, SITE_OK, WEBSITE_LABELS, bestTime, distanceLabel, followupDue, formatPhone, recentSite, simpleStatus, siteInfo, verifiedSocials } from "@/lib/local";
 import FollowupButtons from "@/components/FollowupButtons";
 import AutoSendButton from "@/components/AutoSendButton";
+import EmailInput from "@/components/EmailInput";
 import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
 import { salesBrief } from "@/lib/pitch";
 import { getAutoSend, getSetting } from "@/lib/localdb";
@@ -97,6 +98,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
                 {socials.filter((x) => safeHref(x.url)).map((x) => <a key={x.url} href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-accent hover:underline md:min-h-8">{x.network} ↗</a>)}
               </div>
             ) : <span className="text-muted">Aucun contact trouvé (passer sur place reste possible).</span>}
+            {!p.email && !p.do_not_contact && <div className="mt-2"><EmailInput id={p.id} /></div>}
           </Row>
           <Row label="À faire"><b>{brief.action.label}</b>{brief.action.detail ? <span className="text-ink/70"> — {brief.action.detail}</span> : null}
             {!String(brief.action.detail ?? "").includes(bestTime(p.activity_key)) && p.phone && <div className="text-xs text-muted">Quand appeler : {bestTime(p.activity_key)}</div>}

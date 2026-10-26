@@ -17,6 +17,7 @@ Règles :
 """
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import time
@@ -265,8 +266,11 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch) -> N
             site_domain = row.get("canonical_domain") or (pages[0].domain if pages else "")
             pages = contacts.discover(pages or [], fetch, site_domain)
             c = _osm_contacts(row, contacts.extract(pages, site_domain))
+            company = {**_company(conn, row), "department": row.get("department")}
             if res is not None and not (c["phone"] and c["email"]):
-                c = _merge(c, snippets.extract({**_company(conn, row), "department": row.get("department")}, res.hits))
+                c = _merge(c, snippets.extract(company, res.hits))
+            if not c["email"] and (found := email_search(conn, pid, company, search, row)):
+                c = _merge(c, found)                            # adresse absente du site : souvent visible sur Facebook ou un annuaire
             store.save_contacts(conn, pid, c)
             store.set_provenance(conn, pid, "contacts", {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "found": bool(c["phone"] or c["email"] or c["contact_form"])})
             if not (c["phone"] or c["email"] or c["contact_form"] or c["contact_page"]):
@@ -300,6 +304,36 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch) -> N
     db.execute(conn, "UPDATE local_prospects SET deep_enriched_at=COALESCE(deep_enriched_at, UTC_TIMESTAMP()) WHERE id=%s", (pid,))
 
 
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+EMAIL_RECHECK_DAYS = 30
+
+
+def email_recently_searched(row: dict | None) -> bool:
+    """Recherche dédiée à l'e-mail déjà faite il y a moins de EMAIL_RECHECK_DAYS jours (provenance `email_search`)."""
+    prov = (row or {}).get("provenance")
+    prov = json.loads(prov) if isinstance(prov, (str, bytes)) else (prov or {})
+    at = (prov.get("email_search") or {}).get("checked_at")
+    try:
+        return bool(at) and time.time() - calendar.timegm(time.strptime(at, "%Y-%m-%dT%H:%M:%SZ")) < EMAIL_RECHECK_DAYS * 86400
+    except (TypeError, ValueError):
+        return False
+
+
+def email_search(conn, pid: int, company: dict, search, row: dict | None = None) -> dict | None:
+    """UNE recherche dédiée à l'e-mail (« nom ville email »), lue dans les extraits seulement (mêmes garde-fous d'attribution que snippets.extract).
+    Notée dans la provenance (`email_search`) : pas refaite avant EMAIL_RECHECK_DAYS. None si rien n'a été cherché. SearchUnavailable remonte,
+    comme pour la requête de téléphone : le prospect est repris plus tard, rien n'est conclu."""
+    q = snippets.email_query(company)
+    if not q or search is None or email_recently_searched(row):
+        return None
+    found = snippets.extract(company, search(q) or [])
+    store.set_provenance(conn, pid, "email_search", {"checked_at": _now_iso(), "found": bool(found["email"])})
+    return found
+
+
 def _merge(c: dict, extra: dict) -> dict:
     """Complète `c` avec `extra` champ par champ, sans jamais remplacer une coordonnée déjà trouvée par une source plus fiable."""
     for kind in ("phone", "email"):
@@ -331,6 +365,8 @@ def _fallback_contacts(conn, pid: int, row: dict, res, search) -> None:
         if hits is None and search is not None and (q := snippets.contact_query(company)):
             hits = search(q) or []                          # SearchUnavailable remonte : le prospect est repris plus tard, rien n'est conclu
         c = _merge(c, snippets.extract(company, hits or []))
+    if not c["email"] and (found := email_search(conn, pid, company, search, row)):
+        c = _merge(c, found)
     store.save_contacts(conn, pid, c)
     store.set_provenance(conn, pid, "contacts", {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "found": bool(c["phone"] or c["email"]),
                                                  "via": sorted({e["via"] for e in c["evidence"]})})

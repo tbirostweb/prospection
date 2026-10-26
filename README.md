@@ -211,6 +211,12 @@ contient la ligne d'opposition et un lien de désinscription (`List-Unsubscribe`
    Conseil : 3 par jour la première semaine, pour vérifier que les messages arrivent bien en boîte de réception.
 4. **Envois** : prérequis, aperçu de la signature, file, séquences en cours, réponses et derniers e-mails. « Arrêter l'envoi » retire un prospect.
 
+**Trouver plus d'e-mails** : pendant chaque campagne, une entreprise sans adresse reçoit une recherche dédiée (« nom ville email ») ; l'app lit
+seulement ce que le moteur affiche (Facebook, annuaires, mentions légales), avec le nom ET la ville exigés dans le résultat. Les adresses masquées
+des sites sont lues (« [at] », « arobase », « point », protection Cloudflare). Les fiches sans e-mail sont recherchées à nouveau deux fois par heure
+(`LOCAL_EMAIL_SEARCH_PER_RUN`, 10 par défaut ; une fois par mois au plus par fiche). Tu peux aussi saisir une adresse trouvée toi-même :
+« Ajouter l'e-mail » sur la fiche ou dans l'onglet Envois.
+
 Le journal est `logs/mail.log` (worker). Les e-mails envoyés sont aussi copiés dans le dossier « Envoyés » de ta boîte.
 
 ## Dépannage

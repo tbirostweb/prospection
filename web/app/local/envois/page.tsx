@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PageHeader, StatCard } from "@/components/LocalUI";
 import AutoSendButton from "@/components/AutoSendButton";
 import BulkQueueButton from "@/components/BulkQueueButton";
+import EmailInput from "@/components/EmailInput";
 import { getAutoSend, getSetting, safeRows } from "@/lib/localdb";
 import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
 import { formatPhone } from "@/lib/local";
@@ -176,6 +177,7 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
               {p.auto_state === "queued"
                 ? <span className="inline-flex items-center gap-2"><span className="chip">En file{auto.enabled ? "" : " (envoi désactivé)"}</span><AutoSendButton id={p.id} action="auto_stop" /></span>
                 : p.why === null ? <AutoSendButton id={p.id} action="auto_queue" />
+                : !p.email ? <span className="inline-flex flex-wrap items-center gap-2"><span className="text-xs text-muted">Pas d'e-mail :</span><EmailInput id={p.id} compact /></span>
                 : <span className="text-xs text-muted">À envoyer toi-même : {p.why.replace(/ : à contacter toi-même$/, "")}</span>}
             </div>))}
           {ready.length === 0 && <div className="px-6 py-10 text-center text-muted">Aucun brouillon en attente. Lance <code>/rediger</code> dans Claude Code pour en préparer.</div>}

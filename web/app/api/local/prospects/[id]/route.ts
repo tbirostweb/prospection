@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, transaction } from "@/lib/db";
 import { readJson, routeId } from "@/lib/api";
 import { DISLIKE_REASONS, MANUAL_STATUSES, isImported } from "@/lib/local";
-import { autoIneligible } from "@/lib/autosend";
+import { FREEMAIL, autoIneligible } from "@/lib/autosend";
 import { getAutoSend } from "@/lib/localdb";
 
 const RESPONSES = ["", "REPLIED", "INTERESTED", "NOT_INTERESTED", "NO_ANSWER", "NOT_A_FIT", "WON"];
@@ -80,6 +80,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       pipeline_stage='DISCOVERED', attempts=0, next_retry_at=NULL, error_category=NULL, last_error=NULL WHERE id=?`, [id]);
     await query(`UPDATE local_campaigns SET status='queued', enabled=1 WHERE id IN (SELECT campaign_id FROM local_prospect_campaigns WHERE prospect_id=?)`, [id]);
     return NextResponse.json({ ok: true, requeued: true });
+  }
+  // « Ajouter l'e-mail » : adresse trouvée par toi (jamais pour une entreprise qui s'est opposée). Le score est recalculé par le worker
+  // (worker/local/emailsearch.py, provenance `email_manual.pending`) ; la fiche peut être mise en file d'envoi aussitôt.
+  if (b.action === "set_email") {
+    const email = String(b.email ?? "").trim().toLowerCase();
+    if (!/^[^@\s<>"',;]+@[^@\s<>"',;]+\.[a-z]{2,}$/i.test(email) || email.length > 255) return NextResponse.json({ error: "adresse e-mail invalide" }, { status: 400 });
+    if (p.do_not_contact || await queryOne<any>("SELECT 1 AS x FROM local_do_not_contact WHERE email=? LIMIT 1", [email]))
+      return NextResponse.json({ error: "cette adresse ou cette entreprise a demandé à ne plus être contactée" }, { status: 409 });
+    const kind = FREEMAIL.has(email.split("@")[1]) ? "UNCERTAIN" : "GENERIC_BUSINESS";
+    const evidence = JSON.stringify({ kind: "email", value: email, category: kind, via: "manual", source: "ajoutée à la main", confidence: 0.95 });
+    await query(`UPDATE local_prospects SET email=?, email_kind=?, contact_discovered_at=UTC_TIMESTAMP(),
+      contact_confidence=GREATEST(COALESCE(contact_confidence, 0), 0.95),
+      contact_evidence=JSON_ARRAY_APPEND(COALESCE(contact_evidence, JSON_ARRAY()), '$', CAST(? AS JSON)),
+      provenance=JSON_SET(COALESCE(provenance, JSON_OBJECT()), '$.email_manual', JSON_OBJECT('at', DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), 'pending', TRUE))
+      WHERE id=?`, [email, kind, evidence, id]);
+    return NextResponse.json({ ok: true, email_kind: kind });
   }
   // Envoi automatique : mettre en file, retirer de la file, ou arrêter une séquence en cours (plus aucune relance).
   if (b.action === "auto_queue") {
