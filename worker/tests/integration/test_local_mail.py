@@ -98,8 +98,8 @@ def mail(env, conn, monkeypatch, telegram):
             db.execute(conn, "INSERT INTO settings (user_id, skey, value_json) VALUES (%s, 'local_auto_send', %s) ON DUPLICATE KEY UPDATE value_json=VALUES(value_json)",
                        (uid, json.dumps({"enabled": True, **cfg})))
 
-        def run(self, now, dns=DNS_OK):
-            return outbox.run(conn, now=now.astimezone(dt.timezone.utc), send=smtp, imap=imap, dns=lambda n: dns.get(n, []))
+        def run(self, now, dns=DNS_OK, site=None):
+            return outbox.run(conn, now=now.astimezone(dt.timezone.utc), send=smtp, imap=imap, dns=lambda n: dns.get(n, []), site_probe=lambda d: site)
 
     m = M()
     m.smtp, m.imap, m.tg = smtp, imap, telegram
@@ -252,3 +252,15 @@ def test_adresse_perso_envoyee_par_defaut(mail, conn):
     mail.enable()
     assert mail.run(T0)["status"] == "sent" and row(conn, pid)["auto_state"] == "active"
     assert mail.smtp.sent[0]["To"] == "garage.exemple@gmail.com"
+
+
+def test_message_sans_site_bloque_si_le_domaine_de_l_adresse_a_un_site(mail, conn):
+    pid = add(conn, "10000000000011", email="contact@metal-exemple.com")
+    db.execute(conn, "UPDATE local_prospects SET draft_kind='ai_sans_site' WHERE id=%s", (pid,))
+    mail.enable()
+    r = mail.run(T0, site="https://www.metal-exemple.com/")
+    assert r["status"] == "idle" and mail.smtp.sent == [] and row(conn, pid)["auto_state"] == "stopped"
+    assert "metal-exemple.com" in row(conn, pid)["provenance"] and any("Envoi bloqué" in t for t in mail.tg.texts)
+    gmail = add(conn, "20000000000011", email="metal.exemple@gmail.com", kind="UNCERTAIN", minutes=1)
+    db.execute(conn, "UPDATE local_prospects SET draft_kind='ai_sans_site' WHERE id=%s", (gmail,))
+    assert mail.run(T0 + dt.timedelta(minutes=10), site="https://gmail.com/")["status"] == "sent"   # messagerie gratuite : jamais vérifiée

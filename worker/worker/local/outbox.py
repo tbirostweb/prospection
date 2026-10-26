@@ -15,7 +15,7 @@ import smtplib
 import ssl
 import sys
 
-from .. import alerts, db
+from .. import alerts, db, net, notify
 from ..config import env, log
 from . import inbox, maildns, mailer
 from .store import is_do_not_contact
@@ -114,7 +114,18 @@ def _stop(conn, p: dict, reason: str, state: str = "stopped") -> None:
     conn.commit()
 
 
-def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None, personal: bool = False) -> str:
+def domain_site(domain: str, get=net.try_get) -> str | None:
+    """URL du site hébergé sur le domaine d'une adresse e-mail (contact@metalex-10.com -> https://www.metalex-10.com/), ou None.
+    Requêtes protégées (net.safe_get : adresses publiques seulement)."""
+    for url in (f"https://www.{domain}/", f"https://{domain}/", f"http://www.{domain}/", f"http://{domain}/"):
+        r = get(url, timeout=8.0)
+        if r is not None and r.status < 400 and "html" in (r.content_type or "") and len(r.text or "") > 500:
+            return r.url
+    return None
+
+
+def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None, personal: bool = False,
+             site_probe=domain_site) -> str:
     """Envoie UN e-mail. Renvoie 'sent', 'skipped' (prospect retiré) ou 'error' (problème du serveur : on réessaiera)."""
     from_name = cfg["from_name"] or sender.get("name") or ""
     if kind == "first":
@@ -126,6 +137,18 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
             reason = "déjà contacté"
         if reason:
             _stop(conn, p, reason)
+            return "skipped"
+        # Message « je n'ai pas trouvé de site » vers une adresse d'entreprise : si son domaine héberge un site, le message serait faux.
+        dom = mailer.email_domain(email)
+        if "sans_site" in (p.get("draft_kind") or "") and dom not in mailer.FREEMAIL and (site := site_probe(dom)):
+            _stop(conn, p, f"site trouvé sur le domaine de l'adresse ({site}) : message « sans site » bloqué")
+            store_hint = json.dumps({"url": site, "at": now.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+            db.execute(conn, "UPDATE local_prospects SET provenance = JSON_SET(COALESCE(provenance, JSON_OBJECT()), '$.email_domain_site', CAST(%s AS JSON)) WHERE id=%s",
+                       (store_hint, p["id"]))
+            conn.commit()
+            name = (p.get("trade_name") or p.get("company_name") or "").strip()
+            notify.send_text(f"🛑 Envoi bloqué pour <b>{name}</b> : son adresse e-mail est sur un domaine qui a un site ({site}). "
+                             "Le message « je n'ai pas trouvé de site » serait faux : à réécrire depuis la fiche.")
             return "skipped"
         subject, text, to, reply_to = p["draft_subject"].strip(), p["draft_message"], email, None
     else:
@@ -177,7 +200,7 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
     return "sent"
 
 
-def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect, dns=maildns.doh_txt) -> dict:
+def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect, dns=maildns.doh_txt, site_probe=domain_site) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg, out = mail_config(), {}
     missing = missing_config(cfg)
@@ -226,7 +249,8 @@ def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect
         if not task:
             return {**out, "status": "idle"}
         result = send_one(conn, task[0], task[1], cfg, sender, now, send=send,
-                          sent_copy=lambda m: inbox.append_sent(cfg, m.as_bytes(), factory=imap), personal=auto["personal_emails"])
+                          sent_copy=lambda m: inbox.append_sent(cfg, m.as_bytes(), factory=imap), personal=auto["personal_emails"],
+                          site_probe=site_probe)
         if result != "skipped":
             return {**out, "status": result, "kind": task[0]}
     return {**out, "status": "idle"}
