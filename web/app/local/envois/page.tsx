@@ -28,16 +28,29 @@ function nextStep(p: any): string {
   return `${label} · ${at <= Date.now() ? "au prochain créneau" : `à partir du ${dateTimeFr(new Date(at))}`}`;
 }
 
+/** Le logo est chargé par le serveur et intégré en data: : la CSP de l'app (img-src 'self' data:) reste fermée aux images externes.
+ *  Adresse réglée par toi seul (Réglages), https uniquement, image de 300 Ko au plus. */
+async function inlineLogo(url?: string): Promise<string | null> {
+  if (!url?.startsWith("https://")) return null;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000), cache: "no-store" });
+    const type = r.headers.get("content-type") ?? "";
+    if (!r.ok || !/^image\/(png|jpeg|gif|webp)$/.test(type.split(";")[0].trim())) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    return buf.length <= 300_000 ? `data:${type.split(";")[0].trim()};base64,${buf.toString("base64")}` : null;
+  } catch { return null; }
+}
+
 /** Même rendu que la signature HTML du worker (worker/local/mailer.py, signature_html) : à garder identiques. */
-function SignaturePreview({ s }: { s: Sender & { logo_url?: string } }) {
+function SignaturePreview({ s, logo }: { s: Sender & { logo_url?: string }; logo: string | null }) {
   const site = String(s.website ?? "").trim();
   const role = [s.role, s.company].filter(Boolean).join(" · ");
   return (
     <table cellPadding={0} cellSpacing={0} style={{ fontFamily: "Arial,Helvetica,sans-serif", fontSize: 13, lineHeight: 1.45, color: "#231F20" }}>
       <tbody><tr>
-        {s.logo_url?.startsWith("https://") && <td style={{ padding: "0 12px 0 0", verticalAlign: "middle" }}>
+        {logo && <td style={{ padding: "0 12px 0 0", verticalAlign: "middle" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={s.logo_url} width={48} height={48} alt={s.company || s.name || ""} style={{ display: "block", width: 48, height: 48, borderRadius: 8 }} /></td>}
+          <img src={logo} width={48} height={48} alt={s.company || s.name || ""} style={{ display: "block", width: 48, height: 48, borderRadius: 8 }} /></td>}
         <td style={{ borderLeft: "2px solid #F0451E", padding: "0 0 0 12px", verticalAlign: "middle" }}>
           <strong style={{ fontSize: 14 }}>{s.name || "[ton nom]"}</strong>
           {role && <><br /><span style={{ color: "#8A8580" }}>{role}</span></>}
@@ -75,6 +88,7 @@ export default async function Envois() {
   if (!sender.privacy_url) blockers.push("Le lien de ta notice d'information manque dans Réglages > Mon identité.");
   const warnings: string[] = [...(checks.dns?.warnings ?? [])];
   if (!sender.logo_url) warnings.push("Pas de logo dans la signature (Réglages > Mon identité).");
+  if (!sender.phone) warnings.push("Pas de téléphone dans la signature (Réglages > Mon identité).");
 
   return (
     <div className="max-w-4xl">
@@ -102,7 +116,7 @@ export default async function Envois() {
         <div className="mt-4 border-t border-line pt-4">
           <span className="mono mb-2 block">Aperçu de la signature</span>
           <p className="mb-2">Bien cordialement,</p>
-          <SignaturePreview s={sender} />
+          <SignaturePreview s={sender} logo={await inlineLogo(sender.logo_url)} />
         </div>
       </section>
 
