@@ -67,3 +67,13 @@ def test_adresse_ajoutee_a_la_main_rescoree(env, conn, monkeypatch):
     p = row(conn, DUPONT)
     assert stats["manual_rescored"] == 1 and p["scored_at"] is not None and '"pending": false' in p["provenance"]
     assert emailsearch.run(conn, search, limit=0)["manual_rescored"] == 0
+
+
+def test_brouillons_deja_rediges_cherches_en_premier(env, conn, monkeypatch):
+    install_api(monkeypatch)
+    web, search = web_and_search()
+    runner.run_campaign(conn, add_campaign(conn), search=search, fetch=web)
+    db.execute(conn, "UPDATE local_prospects SET email=NULL, provenance = JSON_REMOVE(COALESCE(provenance, JSON_OBJECT()), '$.email_search')")
+    db.execute(conn, "UPDATE local_prospects SET draft_message='Bonjour…' WHERE siret=%s", (DUPONT,))
+    ids = [r["id"] for r in emailsearch.candidates(conn, 10)]
+    assert ids and ids[0] == row(conn, DUPONT)["id"]

@@ -21,7 +21,8 @@ EMAIL_RECHECK_DAYS = runner.EMAIL_RECHECK_DAYS
 
 
 def candidates(conn, limit: int) -> list[dict]:
-    """Prospects traités sans e-mail, jamais cherchés (ou pas depuis EMAIL_RECHECK_DAYS jours), les plus prometteurs d'abord."""
+    """Prospects traités sans e-mail, jamais cherchés (ou pas depuis EMAIL_RECHECK_DAYS jours) : ceux dont le message est déjà rédigé d'abord
+    (une adresse trouvée les rend envoyables aussitôt), puis les plus prometteurs."""
     return db.fetch_all(conn, f"""SELECT p.* FROM local_prospects p
         WHERE (p.email IS NULL OR p.email = '') AND p.do_not_contact = 0 AND p.contacted_at IS NULL AND p.excluded_reason IS NULL
           AND p.is_chain = 0 AND p.pipeline_stage = 'DONE' AND (p.category IS NULL OR p.category <> 'IGNORER')
@@ -29,7 +30,8 @@ def candidates(conn, limit: int) -> list[dict]:
           AND (JSON_EXTRACT(p.provenance, '$.email_search.checked_at') IS NULL
                OR STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.email_search.checked_at')), '%%Y-%%m-%%dT%%H:%%i:%%sZ')
                   < UTC_TIMESTAMP() - INTERVAL {EMAIL_RECHECK_DAYS} DAY)
-        ORDER BY FIELD(p.category, 'A_EXAMINER', 'A_CONTACTER', 'TRES_BON') DESC, p.prospect_score DESC, p.id LIMIT %s""", (limit,))
+        ORDER BY (p.draft_message IS NOT NULL) DESC, FIELD(p.category, 'A_EXAMINER', 'A_CONTACTER', 'TRES_BON') DESC, p.prospect_score DESC, p.id
+        LIMIT %s""", (limit,))
 
 
 def _rescore(conn, pid: int) -> None:
