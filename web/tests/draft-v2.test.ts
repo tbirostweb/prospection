@@ -97,3 +97,16 @@ test("enveloppe : salutation, opposition, signature et notice toujours ajoutées
   assert.match(body, /Théo Birost/);
   assert.match(body, /https:\/\/moi\.test\/confidentialite/);
 });
+
+test("site existant avec défauts vérifiés : refonte proposée, jamais « corriger », année du © citée telle quelle", () => {
+  const site = { ...P, website_status: "CONFIRMED", website_url: "https://www.garage-exemple.test/", site_year: 2015,
+    issues: JSON.stringify([{ code: "no_viewport" }, { code: "meta_description_missing" }, { code: "canonical_missing" }]) };
+  const d = buildDraft(site, SENDER, OFFER)!;
+  assert.equal(d.kind, "site_ameliorable");
+  assert.match(d.facts[0], /date de 2015/);
+  assert.ok(d.facts.includes("l'affichage sur téléphone ne semble pas adapté") && d.facts.length === 3);
+  assert.match(d.core, /refonte/);
+  assert.doesNotMatch(d.core, /corriger|—|perdre des clients/);
+  assert.deepEqual(checkWrittenCore("J'ai regardé votre site : la mention de copyright date de 2015 et l'affichage sur téléphone ne semble pas adapté. Je m'appelle Théo, je suis développeur web près de Troyes. Une refonte vous intéresserait ?", "Votre site", d), []);
+  assert.equal(buildDraft({ ...site, issues: "[]", site_year: new Date().getFullYear() - 1 }, SENDER, OFFER), null);   // aucun défaut : aucun message
+});

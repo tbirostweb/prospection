@@ -98,7 +98,10 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
                 {socials.filter((x) => safeHref(x.url)).map((x) => <a key={x.url} href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-accent hover:underline md:min-h-8">{x.network} ↗</a>)}
               </div>
             ) : <span className="text-muted">Aucun contact trouvé (passer sur place reste possible).</span>}
-            {!p.email && !p.do_not_contact && <div className="mt-2"><EmailInput id={p.id} /></div>}
+            {!p.email && !p.do_not_contact && <div className="mt-2 flex flex-wrap items-center gap-3">
+              <a href={`https://www.google.com/search?q=${encodeURIComponent(`"${name}" ${p.city ?? ""} email`)}`} target="_blank" rel="noopener noreferrer"
+                className="text-sm font-medium text-accent hover:underline">Chercher l'e-mail sur Google ↗</a>
+              <EmailInput id={p.id} /></div>}
           </Row>
           <Row label="À faire"><b>{brief.action.label}</b>{brief.action.detail ? <span className="text-ink/70"> — {brief.action.detail}</span> : null}
             {!String(brief.action.detail ?? "").includes(bestTime(p.activity_key)) && p.phone && <div className="text-xs text-muted">Quand appeler : {bestTime(p.activity_key)}</div>}

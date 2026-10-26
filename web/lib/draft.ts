@@ -83,7 +83,11 @@ export const ISSUE_PHRASES: Record<string, string> = {
   free_subdomain: "le site est hébergé sur une adresse gratuite (sous-domaine d'un créateur de sites), moins crédible et moins bien référencée",
   directory_site: "le site semble fourni par un annuaire, avec une présentation assez générique",
   site_builder: "le site semble fait avec un créateur de sites en ligne, souvent limité pour être bien trouvé sur Google",
+  structured_data_missing: "la page d'accueil ne donne pas à Google vos informations pratiques (adresse, horaires) sous une forme qu'il sait lire",
+  js_shell: "le contenu de la page d'accueil ne s'affiche qu'avec JavaScript, ce que les moteurs de recherche lisent mal",
 };
+// Site daté : la mention « © » la plus récente du site a au moins OLD_SITE_YEARS ans (fait vérifiable, l'année est citée telle quelle).
+const OLD_SITE_YEARS = 6;
 // Événements officiels (BODACC) qui donnent une raison d'écrire MAINTENANT — citées seulement si publiées il y a moins d'un an.
 export const EVENT_OPENINGS: Record<string, (name: string, where: string) => string> = {
   takeover: (name, where) => `J'ai vu que vous aviez repris ${name}${where} récemment : félicitations !`,
@@ -128,11 +132,13 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
     facts.push("site inaccessible lors de ma vérification");
   } else if ((status === "CONFIRMED" || status === "PROBABLE") && issues.length) {
     const codes = new Set(issues.map((i) => i.code));
-    const found = PRIORITY.filter((c) => codes.has(c)).map((c) => ISSUE_PHRASES[c]).slice(0, 3);
+    const found = PRIORITY.filter((c) => codes.has(c)).map((c) => ISSUE_PHRASES[c]);
+    const year = Number(p.site_year);
+    if (year && year <= new Date().getFullYear() - OLD_SITE_YEARS) found.unshift(`la mention de copyright du site date de ${year}, il a sans doute vieilli`);
     if (!found.length) return null;
     kind = "site_ameliorable";
-    facts.push(...found);
-    opening = ` J'ai regardé rapidement le site de ${name}${p.website_url ? ` (${p.website_url.replace(/^https?:\/\//, "").replace(/\/$/, "")})` : ""} — uniquement ce qui est visible publiquement — et j'ai relevé quelques points qui pourraient vous faire perdre des clients :`;
+    facts.push(...found.slice(0, 3));
+    opening = ` J'ai regardé le site de ${name}${p.website_url ? ` (${p.website_url.replace(/^https?:\/\//, "").replace(/\/$/, "")})` : ""}, seulement ce qui est visible publiquement, et j'ai relevé quelques points :`;
   } else {
     return null;
   }
@@ -146,7 +152,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
       ? `Je crée des sites simples et efficaces pour les indépendants et les petites entreprises de la région : être trouvé sur Google, présenter vos services et être joignable facilement depuis un téléphone.`   // jamais de spécialisation inventée par métier
       : kind === "site_inaccessible"
         ? "Je peux vous aider à le remettre en ligne rapidement, et si besoin à le moderniser pour qu'il soit trouvé et consultable sur téléphone."
-        : "Je peux corriger ces points, ou vous proposer une version plus moderne de votre site, selon ce qui a du sens pour vous.");
+        : "Je peux vous proposer une refonte : un nouveau site, plus actuel, agréable à consulter sur téléphone et pensé pour qu'on vous trouve sur Google, dont j'écris les textes avec vous.");   // une refonte, jamais « corriger » le site actuel
   const list = kind === "site_ameliorable" ? "\n" + facts.map((f) => `- ${f}`).join("\n") : "";
   const area = offer.enabled && offer.area?.trim() ? `, ${offer.area.trim()}` : "";
   const ask = offer.enabled
@@ -156,7 +162,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const body = wrapDraft(p, sender, core);
   const subject = kind === "sans_site" ? `${name} : votre présence en ligne${city ? ` à ${city}` : ""}`
     : kind === "site_inaccessible" ? `${name} : votre site semble inaccessible`
-    : `${name} : quelques points à améliorer sur votre site`;
+    : `${name} : quelques remarques sur votre site`;
   return { subject, body, core, facts, kind: event ? `${event.code}_${kind}` : kind };  // type mesuré par l'apprentissage (quel message obtient des réponses)
 }
 
