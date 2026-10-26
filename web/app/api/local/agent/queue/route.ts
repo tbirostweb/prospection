@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const t = strongSignals(p)[0];
     items.push({
       id: p.id, entreprise: cap((p.trade_name || p.company_name || "").trim()),
-      nom_commercial: p.trade_name ? cap(String(p.trade_name).trim()) : null, raison_sociale: p.company_name ? cap(String(p.company_name).trim()) : null,
+      nom_commercial: p.trade_name ? cap(String(p.trade_name).trim()) : null,   // jamais la raison sociale : chez un entrepreneur individuel, elle contient son nom
       ville: p.city ? cap(p.city) : null,
       activite: p.activity_label ? String(p.activity_label).split(",")[0] : null,
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,

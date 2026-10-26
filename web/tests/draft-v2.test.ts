@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDraft, checkWrittenCore, offerParagraphs, photosOffered, wrapDraft } from "../lib/draft";
+import { buildDraft, checkWrittenCore, deName, offerParagraphs, photosOffered, wrapDraft } from "../lib/draft";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 const P = { company_name: "PLOMBERIE DURAND", city: "TROYES", website_status: "UNREACHABLE", website_url: "https://durand.test", issues: "[]",
   activity_label: "Plombiers", manager_name: "Paul Durand", contact_source_url: "https://durand.test/contact" };
@@ -58,13 +60,31 @@ test("garde-fous /rediger : chiffres et liens limités à la référence, mentio
   assert.ok(checkWrittenCore(ok + " Si vous ne souhaitez pas être recontacté, dites-le.", "x", ref).some((x) => x.includes("ajoutées par l'application")));
 });
 
-test("élision devant une voyelle : « le lancement d'Atelier Exemple », jamais « de Atelier »", () => {
+test("élision devant une voyelle : « d'Atelier Exemple », jamais « de Atelier »", () => {
+  assert.equal(deName("Atelier Exemple"), "d'Atelier Exemple");
+  assert.equal(deName("Le Petit Bistrot"), "du Petit Bistrot");
+  assert.equal(deName("Garage Martin"), "de Garage Martin");
+});
+
+test("jamais de « félicitations pour le lancement » d'après la seule date d'immatriculation", () => {
   const p = { company_name: "ATELIER EXEMPLE", city: "VILLE-TEST", website_status: "NOT_FOUND", website_absence_confidence: 0.85,
     website_search_tried: 8, website_search_total: 10, company_created_at: new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10), issues: "[]" };
   const d = buildDraft(p, SENDER, OFFER)!;
-  assert.match(d.body, /lancement d'Atelier Exemple/);
+  assert.doesNotMatch(d.body, /Félicitations|lancement d'Atelier/);
   assert.match(d.body, /sauf erreur de ma part\./);
   assert.doesNotMatch(d.body, /ignorez|ne tenez pas compte/);
+});
+
+test("offre du code : pas de bilan à trois mois tant qu'il n'est pas confirmé", () => {
+  const text = offerParagraphs(OFFER, { photos: true }).join(" ");
+  assert.doesNotMatch(text, /bilan|trois mois/);
+  assert.match(text, /en ligne en deux à quatre semaines/);
+});
+
+test("file /rediger : jamais la raison sociale (elle contient le nom d'un entrepreneur individuel)", () => {
+  const src = readFileSync(path.resolve(__dirname, "..", "..", "app/api/local/agent/queue/route.ts"), "utf-8")   // .test-dist/tests → web;
+  assert.doesNotMatch(src, /raison_sociale/);
+  assert.match(src, /nom_commercial/);
 });
 
 test("enveloppe : salutation, opposition, signature et notice toujours ajoutées par le code", () => {

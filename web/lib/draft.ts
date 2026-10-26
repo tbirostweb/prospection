@@ -44,7 +44,7 @@ export function photosOffered(p: { activity_key?: string | null; distance_km?: a
 export function offerParagraphs(offer: Offer, opts: { photos?: boolean } = {}): string[] {
   const out = [
     "Concrètement, j'écris les textes à partir de ce que vous me racontez de votre métier, vous n'avez qu'à relire. "
-      + "Le site est en ligne en deux à quatre semaines, et je vous envoie un bilan chiffré au bout de trois mois (appels, demandes reçues, position sur Google). "
+      + "Le site est en ligne en deux à quatre semaines. "   // pas de bilan à trois mois tant que Théo ne l'a pas confirmé
       + (opts.photos ? "En option, je peux aussi créer ou compléter votre fiche Google et passer faire les photos." : "En option, je peux aussi créer ou compléter votre fiche Google."),
   ];
   const slots = Math.max(0, Math.floor(Number(offer.launch_slots_left) || 0));
@@ -96,11 +96,6 @@ const SMALL = new Set(["de", "du", "des", "la", "le", "les", "et", "à", "au", "
 /** « CAFE DE LA GARE » → « Cafe de la Gare » (articles en minuscules, sauf en tête). */
 export const cap = (s: string) => s.toLowerCase().split(/(\s+|-|'|’)/).map((w, i) => (i > 0 && SMALL.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join("");
 
-function monthsSince(d?: string | null): number | null {
-  if (!d) return null;
-  const x = new Date(d), n = new Date();
-  return (n.getFullYear() - x.getFullYear()) * 12 + n.getMonth() - x.getMonth();
-}
 
 /** `p` : ligne `local_prospects`. Renvoie null quand AUCUN fait objectif ne justifie un message (on n'invente jamais une faiblesse). */
 /** « de Le Petit Bistrot » → « du Petit Bistrot », « de Les Délices » → « des Délices », « de L'Atelier » → « de l'Atelier », « de Atelier Exemple » → « d'Atelier Exemple ». */
@@ -116,11 +111,9 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const status = p.website_status;
   const facts: string[] = [];
   let opening = "", kind = "";
-  const created = monthsSince(p.company_created_at);
-  const recent = created != null && created >= 0 && created <= 12;
   const sigs: any[] = j(p.buy_signals) ?? [];
   const event = sigs.find((x) => EVENT_OPENINGS[x.code]);
-  const ref = recent || event ? "votre entreprise" : `${name}${where}`;          // on vient de nommer l'entreprise dans les félicitations : pas de répétition
+  const ref = event ? "votre entreprise" : `${name}${where}`;                    // on vient de nommer l'entreprise dans l'ouverture : pas de répétition
 
   if (status === "NOT_FOUND" && !siteSearched(p)) {
     return null;                                                                   // recherche trop maigre : « pas de site » n'est pas encore un fait
@@ -145,7 +138,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   }
 
   const first = event ? `${EVENT_OPENINGS[event.code](name, where)}${opening}`
-    : recent ? `Félicitations pour le lancement ${deName(name)}${where} !${opening}` : opening.trim();
+    : opening.trim();   // jamais de « félicitations pour le lancement » d'après la seule date d'immatriculation
   const who = [sender.name, sender.role ? sender.role : "développeur web", sender.company ? `(${sender.company})` : ""].filter(Boolean).join(", ").replace(", (", " (");
   const activity = p.activity_label ? p.activity_label.split(",")[0].toLowerCase() : null;
   const pitch = sender.pitch?.trim()

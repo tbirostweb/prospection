@@ -1,7 +1,7 @@
 // Fiche de VENTE d'un prospect : pourquoi lui, pourquoi maintenant, quel argument, quelle action, quel message.
 // Construite UNIQUEMENT à partir des données déjà en base (score, signaux, audit, SIRENE, contacts) : aucune source externe, rien d'inventé.
 // Une donnée absente n'est jamais comblée ; sans fait objectif, pas de message conseillé.
-import { EVENT_OPENINGS, ISSUE_PHRASES, PRIORITY, Sender, cap, deName } from "./draft";
+import { EVENT_OPENINGS, ISSUE_PHRASES, PRIORITY, Sender, cap } from "./draft";
 import { NETWORK_ICONS, bestTime, followupDue, monthsSince, siteSearched, verifiedSocials } from "./local";
 
 export interface Brief {
@@ -127,7 +127,6 @@ export function salesBrief(p: any, sender: Sender = {}): Brief {
   let opening: string | null = null;
   const where = city ? ` à ${city}` : "";
   if (top && EVENT_OPENINGS[top.code]) opening = EVENT_OPENINGS[top.code](name, where);
-  else if (top?.code === "new_no_site" || (status === "NOT_FOUND" && created != null && created >= 0 && created <= 12)) opening = `Félicitations pour le lancement ${deName(name)}${where} !`;
   let fact: string | null = null;
   if (status === "NOT_FOUND" && searched) fact = `Je n'ai pas trouvé de site internet pour ${opening ? "votre entreprise" : `${name}${where}`} (je peux me tromper).`;
   else if (status === "UNREACHABLE") fact = `En voulant consulter votre site, je n'ai pas pu y accéder.`;

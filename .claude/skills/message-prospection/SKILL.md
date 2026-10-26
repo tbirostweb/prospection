@@ -76,7 +76,7 @@ Structure indicative, à adapter librement. Une seule contrainte d'ordre : **Th�
 - **Message Facebook ou Instagram** : Théo l'envoie lui-même, sans l'enveloppe de l'e-mail ; finir par « Théo (Birostweb) » puis, sur une ligne à part : « Vos coordonnées viennent de sources publiques. Si vous ne voulez plus de message de ma part, dites-le-moi simplement. En savoir plus : https://birostweb.fr/mentions-legales.html#prospection ».
 - **Longueur naturelle, avec un plafond selon le canal** (jamais un objectif à atteindre) : e-mail 150 mots au plus ; formulaire de contact 110 ; message Facebook ou Instagram 80, encore plus simple. Paragraphes courts, nombre variable.
 - Objet (e-mail) : court et naturel, comme un objet qu'on écrirait soi-même, sans point d'exclamation ; pas toujours le même patron (« Nom : un site pour… ? »).
-- **Le nom de l'entreprise** : le nom commercial (`nom_commercial`) quand il existe ; sinon la raison sociale. Au plus une fois dans l'objet et une fois dans le message, puis « le garage », « l'atelier », « l'institut »…
+- **Le nom de l'entreprise** : le nom commercial (`nom_commercial`) quand il existe ; sinon le nom de l'entreprise (`entreprise`). Au plus une fois dans l'objet et une fois dans le message, puis « le garage », « l'atelier », « l'institut »…
 - Noms propres avec leurs accents même si l'annuaire les a perdus (« Théo », « Saint-André-les-Vergers », « Société ») ; ne jamais modifier l'orthographe d'un nom de marque (lettres spéciales, majuscules).
 
 **À ne jamais écrire** :
