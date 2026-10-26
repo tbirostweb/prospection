@@ -1,6 +1,8 @@
 """Pont entre la commande Claude Code /rediger et l'application (bibliothèque standard uniquement ; ce script n'envoie aucun e-mail).
 
-    python3 scripts/rediger.py queue [--limit 5] [--include-drafted]   -> file de rédaction (faits vérifiés + brouillon de référence), en JSON
+    python3 scripts/rediger.py queue [--limit 5] [--include-drafted] [--email-only]
+                                                                       -> file de rédaction (faits vérifiés + brouillon de référence), en JSON ;
+                                                                          --email-only : seulement les prospects qui peuvent partir par e-mail automatique
     python3 scripts/rediger.py save ID fichier.json [--no-auto]        -> dépose {"subject", "core"} comme brouillon (refusé si un garde-fou échoue)
                                                                           et le met en file d'envoi automatique si le prospect est éligible
                                                                           (l'envoi est fait par le worker, seulement s'il est activé dans Réglages)
@@ -66,7 +68,7 @@ def main(argv: list[str]) -> int:
         return 2
     if argv[0] == "queue":
         limit = argv[argv.index("--limit") + 1] if "--limit" in argv else "5"
-        extra = "&include_drafted=1" if "--include-drafted" in argv else ""
+        extra = ("&include_drafted=1" if "--include-drafted" in argv else "") + ("&email_only=1" if "--email-only" in argv else "")
         status, data = call("GET", f"/api/local/agent/queue?limit={int(limit)}{extra}")
         print(json.dumps(data, ensure_ascii=False, indent=2))
         return 0 if status == 200 else 1

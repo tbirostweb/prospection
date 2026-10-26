@@ -7,15 +7,18 @@ import { autoIneligible } from "@/lib/autosend";
 /** File de rédaction de la commande Claude Code /rediger (lecture seule ; authentification Basic APP_USER / APP_PASSWORD, comme tout script).
  *  Uniquement des FAITS sur l'entreprise (nom commercial, ville, activité, déclencheur, constats vérifiés) et le brouillon de référence construit
  *  par le code : ni le nom du gérant, ni e-mail, ni téléphone ne sortent d'ici (salutation, signature et notice sont ajoutées au dépôt).
- *  Prospects prêts de la file « À contacter », sans brouillon (sauf `?include_drafted=1`), déclencheurs forts d'abord. */
+ *  Prospects prêts de la file « À contacter », sans brouillon (sauf `?include_drafted=1`), déclencheurs forts d'abord.
+ *  `?email_only=1` : seulement ceux qui peuvent partir par l'envoi automatique (adresse e-mail acceptée par le réglage, jamais contactés). */
 export async function GET(req: NextRequest) {
   const limit = Math.min(50, Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 5));
   const withDrafts = req.nextUrl.searchParams.get("include_drafted") === "1";
+  const emailOnly = req.nextUrl.searchParams.get("email_only") === "1";
   const sender = await getSetting<Sender>("local_sender", {});
   const offer = await getSetting<Offer>("local_offer", {});
   const auto = await getAutoSend();
   const rows = (await safeRows<any>(`SELECT ${LIST_COLUMNS}, p.website_evidence, p.contact_source_url, p.draft_message ${CONTACT_QUEUE_SQL}`))
-    .filter((p) => withDrafts || !p.draft_message);
+    .filter((p) => withDrafts || !p.draft_message)
+    .filter((p) => !emailOnly || autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null);
   const { triggered, others } = splitByTrigger(rows);
   const items = [];
   for (const p of [...triggered, ...others]) {
