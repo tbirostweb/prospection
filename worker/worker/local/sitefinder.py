@@ -556,10 +556,13 @@ def dns_resolves(domains: list[str], timeout: float = 4.0) -> list[str]:
 
 
 def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresholds | None = None, strategy_budget: int = STRATEGY_BUDGET,
-            known_urls: list[str] | None = None, dns: Callable[[list[str]], list[str]] | None = None) -> Resolution:
+            known_urls: list[str] | None = None, dns: Callable[[list[str]], list[str]] | None = None,
+            candidate_urls: list[str] | None = None) -> Resolution:
     """Trouve et VÉRIFIE le site officiel. Voir `Resolution.status` ; `known_urls` : sites déjà fournis par une source structurée.
     `dns` (résolveur) active les domaines devinés d'après le nom, essayés AVANT toute recherche : un site confirmé ainsi ne coûte aucune requête
-    aux moteurs, et si les moteurs sont saturés, un site déjà probable est retenu au lieu d'attendre."""
+    aux moteurs, et si les moteurs sont saturés, un site déjà probable est retenu au lieu d'attendre.
+    `candidate_urls` : sites SUGGÉRÉS (fiche Google Maps) — simples candidats, sans le bonus d'une source structurée : seule la preuve lue sur le
+    site lui-même (SIRET, adresse, mentions légales) les confirme."""
     th = thresholds or Thresholds()
     strategies = build_strategies(company)
     res = Resolution(status="NOT_FOUND", strategies_total=len(strategies))
@@ -588,6 +591,15 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
 
     def best_conf() -> float:
         return max((a.confidence for a in assessed.values()), default=0.0)
+
+    for u in candidate_urls or []:
+        if canonical_domain(u) in assessed:
+            continue
+        before = set(assessed)
+        consider(u, None)
+        for key in set(assessed) - before:
+            guessed.add(key)                                 # sans rapport : ne prend pas la place des résultats de recherche
+            assessed[key].evidence.append(ev("suggested_site", "site suggéré par une fiche en ligne, puis vérifié sur le site", 0.0))
 
     for u in email_site_urls(company):                   # domaine de l'adresse e-mail : le candidat le plus probable, lu avant toute devinette
         if best_conf() >= th.confirmed or canonical_domain(u) in assessed:

@@ -84,7 +84,8 @@ def recheck(conn, row: dict, search, fetch) -> tuple[str, bool]:
     ctx = runner.Ctx(conn, camp)
     company = runner._company(conn, row)
     res = sitefinder.resolve(company, search, fetch, ctx.site_thresholds, strategy_budget=RECHECK_STRATEGIES,
-                             known_urls=runner._known_urls(conn, row), dns=ctx.dns)
+                             known_urls=runner._known_urls(conn, row), dns=ctx.dns,
+                             candidate_urls=runner._places_urls(conn, row))
     flag = {"checked_at": runner._now_iso(), "previous": row.get("website_status"), "status": res.status, "confidence": round(res.confidence, 2),
             "url": res.url if res.accepted else None}
     fresh = db.fetch_one(conn, f"SELECT p.* FROM local_prospects p WHERE p.id=%s AND {UNTOUCHABLE}", (pid,))

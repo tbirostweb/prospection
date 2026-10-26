@@ -26,7 +26,7 @@ import time
 from .. import db
 from ..config import log
 from . import audit as audit_mod
-from . import (chains, contacts, engines, snippets, socials as socials_mod, errors, fetch as fetch_mod, identity, naf as naf_mod, osm, scoring, sirene,
+from . import (chains, contacts, engines, snippets, socials as socials_mod, errors, fetch as fetch_mod, identity, naf as naf_mod, osm, places, scoring, sirene,
                sitefinder, store, zone)
 from .errors import SearchUnavailable
 
@@ -170,6 +170,12 @@ def _known_urls(conn, row: dict) -> list[str]:
     return urls
 
 
+def _places_urls(conn, row: dict) -> list[str]:
+    """Site indiqué par Google Places (UNE requête par prospect, plafond mensuel) : un candidat à vérifier, jamais une preuve ni une donnée stockée."""
+    url = places.candidate_url(conn, row, _company(conn, row))
+    return [url] if url else []
+
+
 def _local_presence(a, res, row: dict) -> dict:
     lp = dict(a.local_presence or {})
     city = (row.get("city") or "").lower()
@@ -229,7 +235,8 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch, res=
     status = row.get("website_status")
     if status is None:
         store.set_stage(conn, pid, "WEBSITE_SEARCH")
-        res = sitefinder.resolve(_company(conn, row), search, fetch, ctx.site_thresholds, known_urls=_known_urls(conn, row), dns=ctx.dns)
+        res = sitefinder.resolve(_company(conn, row), search, fetch, ctx.site_thresholds, known_urls=_known_urls(conn, row), dns=ctx.dns,
+                                candidate_urls=_places_urls(conn, row))
         store.set_stage(conn, pid, "WEBSITE_VALIDATION")
         found = socials_mod.from_hits({**_company(conn, row), "manager_name": row.get("manager_name")}, res.hits)   # jamais un profil non attribué
         store.save_resolution(conn, pid, res, socials=[x["url"] for x in found])
