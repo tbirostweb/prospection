@@ -20,11 +20,15 @@ export async function GET(req: NextRequest) {
     .filter((p) => withDrafts || !p.draft_message)
     .filter((p) => !emailOnly || autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null);
   const { triggered, others } = splitByTrigger(rows);
+  // Les entreprises qui ONT un site passent en premier (défauts constatés → refonte ; e-mail presque toujours publié sur le site),
+  // puis les déclencheurs forts, puis les autres. L'ordre d'origine est gardé à égalité.
+  const hasSite = (kind: string) => /site_ameliorable|site_inaccessible/.test(kind);
+  const drafted = [...triggered, ...others].map((p) => ({ p, d: buildDraft(p, sender, offer) }))
+    .filter((x): x is { p: any; d: NonNullable<ReturnType<typeof buildDraft>> } => x.d !== null)   // aucun fait objectif : on n'écrit pas
+    .map((x, i) => ({ ...x, i })).sort((a, b) => Number(hasSite(b.d.kind)) - Number(hasSite(a.d.kind)) || a.i - b.i);
   const items = [];
-  for (const p of [...triggered, ...others]) {
+  for (const { p, d } of drafted) {
     if (items.length >= limit) break;
-    const d = buildDraft(p, sender, offer);
-    if (!d) continue;                                   // aucun fait objectif : on n'écrit pas
     const t = strongSignals(p)[0];
     items.push({
       id: p.id, entreprise: cap((p.trade_name || p.company_name || "").trim()),
