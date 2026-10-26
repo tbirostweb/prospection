@@ -79,6 +79,10 @@ _EXCLUDED_WORDS = re.compile(
     r"cr[eé]ation\s+de\s+sites?|cr[eé]ation\s+site|d[eé]veloppeur\s+web|d[eé]veloppement\s+web|r[eé]f[eé]rencement\s+naturel|"
     r"h[eé]bergeur|h[eé]bergement\s+web|freelance\s+web|studio\s+web|community\s+manag\w*)\b", re.I)
 
+# Stations de lavage auto : pas besoin de site. Elles n'ont pas de code NAF propre (45.20, comme les garages) : repérées par le nom, dans le
+# métier auto seulement (« lavage de vitres », nettoyage 81.22, reste une cible). Prospects déjà en base : db/updates/029.
+_CAR_WASH = re.compile(r"\b(station\s+de\s+lavage|lavage|car\s*wash|wash)\b", re.I)
+
 # Enseignes BANNIES (chaînes, franchises, réseaux, concessions) : liste par métier dans `franchises.py`, + tes ajouts (Paramètres).
 from . import franchises as _franchises  # noqa: E402
 
@@ -162,6 +166,8 @@ def excluded_reason(naf: str | None, name: str | None = None, site_text: str | N
             return f"forme juridique {legal_category} ({label}) : pas une cible"
     if naf and naf.upper() in EXCLUDED_NAF:
         return f"activité NAF {naf.upper()} ({EXCLUDED_NAF[naf.upper()]}) : ce n'est pas une cible"
+    if naf and naf.upper().startswith("45.") and name and (m := _CAR_WASH.search(name)):
+        return f"nom : « {m.group(0).lower()} » — station de lavage, pas besoin de site"
     for label, text in (("nom", name), ("site", site_text)):
         if text and (m := _EXCLUDED_WORDS.search(text)):
             return f"{label} : « {m.group(0).lower()} » — activité web / marketing, pas une cible"

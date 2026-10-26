@@ -286,3 +286,16 @@ def test_declencheurs_forts_en_tete_ordre_garde_sinon():
             {"id": 3, "buy_signals": None}, {"id": 4, "buy_signals": [{"code": "takeover", "label": "Reprise", "strength": 1.0}]},
             {"id": 5, "buy_signals": "{pas du json"}, {"id": 6, "buy_signals": [{"code": "site_builder", "label": "Wix", "strength": 0.35}]}]
     assert [r["id"] for r in today.trigger_first(rows)] == [4, 2, 1, 3, 5, 6]
+
+
+@pytest.mark.parametrize("naf_code,name,excluded", [
+    ("45.20A", "Autoplus Lavage", True),
+    ("45.20A", "Station de lavage du Centre", True),
+    ("45.20B", "Clean Car Wash", True),
+    ("45.20A", "Garage Martin", False),
+    ("81.22Z", "Lavage de vitres Dupont", False),          # nettoyage : reste une cible
+])
+def test_stations_de_lavage_ecartees(naf_code, name, excluded):
+    from worker.local import naf
+    reason = naf.excluded_reason(naf_code, name)
+    assert bool(reason) is excluded and (not excluded or "station de lavage" in reason)
