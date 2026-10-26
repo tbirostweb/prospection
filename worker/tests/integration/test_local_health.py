@@ -26,7 +26,7 @@ def test_funnel_montre_ou_l_on_perd_des_prospects(env, conn, monkeypatch):
     camp = _run(conn, monkeypatch)
     f = {s["key"]: s["count"] for s in health.funnel(conn, camp["id"])}
     assert f["discovered"] == 5 and f["eligible"] == 5                      # chaîne et agence web bannies dès la découverte
-    assert f["searched"] == 5 and f["identified"] == 2 and f["confirmed"] == 2 and f["audited"] == 0 and f["contacts"] >= 1   # audit désactivé par défaut (LOCAL_AUDIT)
+    assert f["searched"] == 5 and f["identified"] == 2 and f["confirmed"] == 2 and f["audited"] == 2 and f["contacts"] >= 1   # audit actif par défaut (LOCAL_AUDIT)
     assert f["discovered"] >= f["eligible"] >= f["searched"] >= f["identified"] >= f["audited"]
     assert all(s["label"] for s in health.funnel(conn))
 
@@ -34,7 +34,7 @@ def test_funnel_montre_ou_l_on_perd_des_prospects(env, conn, monkeypatch):
 def test_mesures_par_campagne(env, conn, monkeypatch):
     camp = _run(conn, monkeypatch)
     m = health.campaign_metrics(conn, camp["id"])
-    assert m["discovered"] == 5 and m["confirmed"] == 2 and m["not_found"] >= 1 and m["audits"] == 0 and m["errors"] == 0
+    assert m["discovered"] == 5 and m["confirmed"] == 2 and m["not_found"] >= 1 and m["audits"] == 2 and m["errors"] == 0
     assert m["qualified"] == m["tres_bon"] + m["a_contacter"] + m["a_examiner"] and m["contacts"] >= 1
     assert m["total_time_s"] >= 0 and m["avg_time_per_prospect_s"] is not None
 

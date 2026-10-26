@@ -2,7 +2,7 @@
 
 Application **self-hosted** qui trouve, autour d'une ville, les commerces, artisans et TPE qui pourraient avoir intérêt à un nouveau site (refonte, SEO,
 HTTPS, mobile, performance), et te les présente **classés, expliqués et avec leur niveau de confiance**. Aucune IA : découverte par données ouvertes,
-recherche du site officiel vérifiée par preuves, contacts publics, score par règles explicables (audit passif du site en option : `LOCAL_AUDIT=1`).
+recherche du site officiel vérifiée par preuves, contacts publics, score par règles explicables, audit passif du site (actif par défaut, `LOCAL_AUDIT=0` pour le couper).
 
 **Ce sont des prospects à froid** : ils n'ont rien demandé. L'app ne dit jamais qu'ils « cherchent un développeur ». Elle n'envoie rien à leur place, sauf si tu actives l'**envoi automatique des e-mails** (désactivé par défaut, voir plus bas).
 **Coût :** VPS + nom de domaine. Par défaut, aucune API payante ; un moteur payant (Serper) peut être ajouté en dernier recours, avec un budget plafonné (voir [docs/GUIDE_CONNEXION.md](docs/GUIDE_CONNEXION.md)).
@@ -28,7 +28,7 @@ recherche du site officiel vérifiée par preuves, contacts publics, score par r
 Campagne (ville + rayon + activités)
   → SIRENE (entreprises actives) → exclusions / chaînes → OSM (complément)
   → recherche du site officiel (SearXNG, puis API Brave / Tavily, puis Serper payant ; preuves pondérées, vérification inversée)
-  → [audit passif si LOCAL_AUDIT=1] → contacts publics
+  → [audit passif, sauf LOCAL_AUDIT=0] → contacts publics
   → score explicable → alerte Telegram → classement (toi)
 ```
 
@@ -147,7 +147,7 @@ cd /app && python -m worker.telegram_check
 - **Fiche « Pour vendre »** (en tête de chaque prospect, déduite des données déjà connues, rien d'inventé) : résumé en une ligne, pourquoi lui, pourquoi maintenant, argument à utiliser, prochaine action (appeler, e-mail, relancer, passer sur place) et message conseillé court (premier contact ou relance), à copier ou ouvrir dans ta messagerie — jamais envoyé automatiquement.
 - **Suivi** : « À contacter » liste les relances dues (J+3, J+7, sans réponse à J+14, puis plus de contact) ; chaque fiche indique le dirigeant s'il est connu (il n'est plus recherché automatiquement), quand appeler selon le métier et les horaires OSM ; « Tournée » propose les meilleurs prospects dans un ordre de passage court, avec l'itinéraire Google Maps.
 - **Contacts** : uniquement publics et professionnels, avec leur source (site officiel, OpenStreetMap, ou **extrait d'un résultat de recherche** citant le nom ET la ville — les annuaires ne sont jamais ouverts, les numéros surtaxés 08 refusés) ; jamais d'adresse devinée.
-- **Audit** (désactivé par défaut, `LOCAL_AUDIT=1` pour l'activer) : passif et léger (jamais de scan de sécurité) ; « aucun problème majeur détecté », « bases SEO manquantes », « SEO technique améliorable » — jamais « mauvais référencement » sans donnée réelle. Page rendue en JavaScript ou protégée par anti-bot : SEO « non évaluable ».
+- **Audit** (actif par défaut, `LOCAL_AUDIT=0` pour le couper ; les sites déjà identifiés des campagnes terminées sont audités à leur tour, 10 par passage) : passif et léger (jamais de scan de sécurité) ; « aucun problème majeur détecté », « bases SEO manquantes », « SEO technique améliorable » — jamais « mauvais référencement » sans donnée réelle. Page rendue en JavaScript ou protégée par anti-bot : SEO « non évaluable ».
 
 Règles détaillées : `.claude/skills/local-prospecting/SKILL.md` · sources et mesures réelles : [docs/SOURCES.md](docs/SOURCES.md).
 
@@ -214,7 +214,10 @@ contient la ligne d'opposition et un lien de désinscription (`List-Unsubscribe`
 **Trouver plus d'e-mails** : pendant chaque campagne, une entreprise sans adresse reçoit une recherche dédiée (« nom ville email ») ; l'app lit
 seulement ce que le moteur affiche (Facebook, annuaires, mentions légales), avec le nom ET la ville exigés dans le résultat. Les adresses masquées
 des sites sont lues (« [at] », « arobase », « point », protection Cloudflare). Les fiches sans e-mail sont recherchées à nouveau deux fois par heure
-(`LOCAL_EMAIL_SEARCH_PER_RUN`, 10 par défaut ; une fois par mois au plus par fiche). Tu peux aussi saisir une adresse trouvée toi-même :
+(`LOCAL_EMAIL_SEARCH_PER_RUN`, 10 par défaut ; une fois par mois au plus par fiche). Au même passage, les fiches « sans site » jamais
+contactées sont recherchées une seconde fois, une seule fois chacune (`LOCAL_SITE_RECHECK_PER_RUN`, 10 par défaut : domaine de l'adresse
+e-mail, nom collé ou suivi du département, mentions légales) ; un site trouvé ajoute ses coordonnées (sans effacer les tiennes), efface le
+brouillon « je n'ai pas trouvé de site » et retire la fiche de la file d'envoi. Tu peux aussi saisir une adresse trouvée toi-même :
 « Ajouter l'e-mail » sur la fiche ou dans l'onglet Envois.
 
 Le journal est `logs/mail.log` (worker). Les e-mails envoyés sont aussi copiés dans le dossier « Envoyés » de ta boîte.

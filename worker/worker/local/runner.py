@@ -2,12 +2,13 @@
 
     python -m worker.local.run            # traite les campagnes « queued » / « running » (cron toutes les 15 min)
 
-Étapes d'un prospect (`pipeline_stage`) : DISCOVERED → ENRICHING (OSM) → WEBSITE_SEARCH → WEBSITE_VALIDATION → [AUDIT si LOCAL_AUDIT=1] →
+Étapes d'un prospect (`pipeline_stage`) : DISCOVERED → ENRICHING (OSM) → WEBSITE_SEARCH → WEBSITE_VALIDATION → [AUDIT sauf LOCAL_AUDIT=0] →
 CONTACT_DISCOVERY → SCORING → DONE ; en cas d'échec : ERROR (catégorie, tentatives, `next_retry_at` avec backoff). Chaque étape lit ce qui est
 déjà enregistré : un crash, un redémarrage Docker ou une base momentanément indisponible ne fait rien retraiter inutilement.
 
 L'essentiel par entreprise : a-t-elle un site (officiel, vérifié) ? et un moyen de la contacter. Le reste (Lighthouse, approfondissement,
-revérifications, BODACC par SIREN) n'est plus fait ici : le débit va aux fiches nouvelles. L'audit passif est désactivé par défaut (LOCAL_AUDIT).
+revérifications, BODACC par SIREN) n'est plus fait ici : le débit va aux fiches nouvelles. L'audit passif est actif par défaut (LOCAL_AUDIT=0 le
+coupe) ; les sites déjà identifiés des campagnes terminées sont audités à leur tour, AUDIT_STOCK_PER_RUN par passage (`audit_stock`).
 
 Règles :
   * un prospect en échec n'arrête JAMAIS la campagne ; une recherche indisponible (moteurs en cooldown) met la campagne en attente, sans rien
@@ -31,7 +32,10 @@ from .errors import SearchUnavailable
 
 TIME_BUDGET_S = int(os.getenv("LOCAL_TIME_BUDGET_S") or "600")
 LOOKUPS_PER_RUN = int(os.getenv("LOCAL_LOOKUPS_PER_RUN") or "30")
-AUDIT = os.getenv("LOCAL_AUDIT", "0") == "1"    # audit passif du site (SEO, technique, modernisation) : désactivé par défaut
+# audit passif du site (SEO, technique, modernisation) : ACTIF par défaut, LOCAL_AUDIT=0 pour le couper (valeur vide, celle que transmet
+# docker-compose quand la variable n'est pas définie, = défaut)
+AUDIT = (os.getenv("LOCAL_AUDIT") or "1").strip() != "0"
+AUDIT_STOCK_PER_RUN = 10                        # sites déjà identifiés (campagnes terminées) audités au plus par passage : coût borné
 NAF_CHUNK = 10
 SITE_STATES = "('CONFIRMED','PROBABLE')"
 
@@ -139,9 +143,14 @@ def enrich_osm(conn, camp: dict, ctx: Ctx, stats: dict) -> None:
 
 # ── Un prospect ──────────────────────────────────────────────────────────────────────────────────────────
 def _company(conn, row: dict) -> dict:
-    company = {k: row.get(k) for k in ("siret", "siren", "company_name", "trade_name", "city", "postal_code", "address", "phone", "activity_label")}
+    company = {k: row.get(k) for k in ("siret", "siren", "company_name", "trade_name", "city", "postal_code", "address", "phone", "activity_label",
+                                        "department", "email")}
     osm_data = row.get("osm_data")
     osm_data = json.loads(osm_data) if isinstance(osm_data, (str, bytes)) else osm_data
+    prov = row.get("provenance")
+    prov = json.loads(prov) if isinstance(prov, (str, bytes)) else (prov or {})
+    if isinstance(prov.get("email_domain_site"), dict) and prov["email_domain_site"].get("url"):
+        company["email_site"] = prov["email_domain_site"]["url"]   # site constaté par l'envoi sur le domaine de l'adresse : candidat prioritaire
     if osm_data and osm_data.get("phone") and not company.get("phone"):
         company["phone"] = osm_data["phone"]                    # sert UNIQUEMENT à chercher / vérifier (jamais affiché comme contact confirmé)
     company["bad_domains"] = store.bad_domains(conn, row.get("siret"), row.get("fingerprint"))
@@ -212,12 +221,11 @@ def _search_down(exc: SearchUnavailable):
     return down
 
 
-def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch) -> None:
-    """Fait UNIQUEMENT ce qui reste à faire pour ce prospect (voir la docstring du module)."""
+def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch, res=None, pages=None) -> None:
+    """Fait UNIQUEMENT ce qui reste à faire pour ce prospect (voir la docstring du module). `res` / `pages` : résolution et pages déjà lues
+    (nouvelle recherche de site, `siterecheck`), pour ne pas relire le site."""
     pid = row["id"]
     issues = None
-    pages = None
-    res = None
     status = row.get("website_status")
     if status is None:
         store.set_stage(conn, pid, "WEBSITE_SEARCH")
@@ -247,7 +255,7 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch) -> N
             db.execute(conn, "UPDATE local_prospects SET excluded_reason=%s WHERE id=%s", (reason, pid))
         if pages and (year := audit_mod.site_year(" ".join(p.raw for p in pages))) and year != row.get("site_year"):
             db.execute(conn, "UPDATE local_prospects SET site_year=%s WHERE id=%s", (year, pid))     # site récent : écarté par le score
-        if AUDIT and row.get("audited_at") is None:            # désactivé par défaut : todo_sql() n'exige alors pas `audited_at`
+        if AUDIT and row.get("audited_at") is None:            # LOCAL_AUDIT=0 : todo_sql() n'exige alors pas `audited_at`
             store.set_stage(conn, pid, "AUDIT")
             a = audit_mod.audit_site(url, fetch, home=pages[0] if pages else None)
             if a.response_ms is None:
@@ -406,7 +414,7 @@ NO_SITE_STATES = ("NOT_FOUND", "UNCERTAIN", "UNREACHABLE")
 
 
 def todo_sql(retry: str = RETRY_DUE) -> str:
-    """Ce qui reste à faire. L'audit n'est exigé que s'il est activé (LOCAL_AUDIT=1) : sinon une fiche avec site est terminée dès que ses
+    """Ce qui reste à faire. L'audit n'est exigé que s'il est activé (défaut ; LOCAL_AUDIT=0 le coupe) : sinon une fiche avec site est terminée dès que ses
     contacts ont été cherchés (exiger `audited_at` sans jamais l'écrire ferait retraiter la même fiche à chaque passage)."""
     site_todo = "(p.audited_at IS NULL OR JSON_EXTRACT(p.provenance, '$.contacts') IS NULL)" if AUDIT else "JSON_EXTRACT(p.provenance, '$.contacts') IS NULL"
     return f"""AND p.excluded_reason IS NULL AND p.is_chain = 0 AND p.do_not_contact = 0
@@ -540,6 +548,38 @@ def _write_run_metrics(conn, cid: int, run: dict, stats: dict, pool, t_start: fl
         log.warning("[local] métriques non écrites : %s", exc)
 
 
+def audit_stock(conn, fetch=None, deadline: float | None = None, limit: int = AUDIT_STOCK_PER_RUN) -> int:
+    """Audit activé après coup : les sites CONFIRMED / PROBABLE jamais audités, hors campagnes encore en cours (elles s'en chargent), passent par
+    `process_prospect`. Aucune recherche de site n'est relancée (website_status connu) et aucun moteur n'est sollicité (`search=None`) : accueil
+    et pages utiles relus, audit (≤ 4 lectures), score recalculé. `limit` par passage : coût borné. Jamais contactés d'abord, puis le score."""
+    if not AUDIT or limit <= 0:
+        return 0
+    rows = db.fetch_all(conn, f"""SELECT p.* FROM local_prospects p
+        WHERE p.website_status IN {SITE_STATES} AND p.audited_at IS NULL AND p.excluded_reason IS NULL AND p.is_chain = 0 AND p.do_not_contact = 0
+          AND p.contacted_at IS NULL AND {RETRY_DUE}
+          AND NOT EXISTS (SELECT 1 FROM local_prospect_campaigns pc JOIN local_campaigns c ON c.id = pc.campaign_id
+                          WHERE pc.prospect_id = p.id AND c.enabled = 1 AND c.status IN ('queued','running'))
+          AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)
+        ORDER BY (p.draft_message IS NOT NULL) DESC, p.prospect_score DESC, p.id LIMIT %s""", (limit,))
+    fetcher = fetch_mod.Fetcher() if fetch is None else None
+    fetch = fetch or fetcher
+    done = 0
+    for row in rows:
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        camp = db.fetch_one(conn, """SELECT c.* FROM local_campaigns c JOIN local_prospect_campaigns pc ON pc.campaign_id = c.id
+                                     WHERE pc.prospect_id = %s ORDER BY c.id DESC LIMIT 1""", (row["id"],))
+        stats: dict = {}
+        try:
+            process_prospect(conn, row, Ctx(conn, camp), stats, None, fetch)
+            done += stats.get("audited", 0)
+        except Exception as exc:  # noqa: BLE001 — un site en échec n'arrête pas les autres (reprise avec backoff)
+            conn.rollback()
+            _handle_failure(conn, camp["id"], row, exc, stats)
+        conn.commit()
+    return done
+
+
 def run_pending() -> int:
     """Traite les campagnes en attente (une passe bornée). Renvoie le nombre de campagnes traitées."""
     with db.connect() as conn:
@@ -557,6 +597,12 @@ def run_pending() -> int:
             if time.monotonic() > deadline:
                 break
             run_campaign(conn, camp, deadline=deadline)
+        try:
+            if (n := audit_stock(conn, deadline=deadline)):
+                log.info("[local] audit des sites déjà identifiés : %d site(s)", n)
+        except Exception as exc:  # noqa: BLE001 — n'empêche jamais les fiches importées ni les alertes
+            conn.rollback()
+            log.warning("[local] audit des sites déjà identifiés en échec : %s", exc)
         try:
             from . import imported                              # fiches importées (CSV) : site déclaré vérifié, sans moteur de recherche
             done = imported.run(conn, deadline=deadline)

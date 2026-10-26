@@ -23,7 +23,7 @@ description: Règles de la prospection LOCALE proactive de l'app Prospection (co
 - Économie de requêtes (`sitefinder.py`) : ≤ 5 domaines devinés lus (DNS puis lecture directe, 0 requête ; un deviné sans rapport ne compte pas dans `MAX_ASSESSED`), stratégies de la plus productive à la moins productive, requêtes dédoublonnées (casse, accents, guillemets), arrêt dès qu'un site est confirmé (seule une contradiction sur un candidat ≥ probable justifie de continuer).
 
 ## Audit
-- DÉSACTIVÉ par défaut (`LOCAL_AUDIT=0`) : le but premier est de savoir si l'entreprise a un site et de trouver un moyen de la contacter. Étape AUDIT seulement si `LOCAL_AUDIT=1` (sinon `todo_sql` n'exige pas `audited_at`).
+- ACTIF par défaut (`LOCAL_AUDIT` vide ou 1 ; `LOCAL_AUDIT=0` pour couper) : les défauts constatés alimentent le message « refonte » (`site_ameliorable`, web/lib/draft.ts). Le stock de sites confirmés jamais audités est audité par `runner.audit_stock` (10 par passage, sans recherche). Les fiches « sans site » sont revérifiées par `siterecheck.py` (domaine de l'e-mail, nom-département, mentions légales).
 - Passif et léger : ≤ 4 GET via `net.try_get` (SSRF-safe), robots respecté. JAMAIS : scan de ports, vulnérabilités, mots de passe, injections, exploits, contournement de protection.
 - SEO, technique, performance, design séparés. Formulations prudentes : « bases SEO manquantes », « SEO technique améliorable », « aucun problème majeur détecté ». Pas de « mauvais SEO » non démontré.
 - « Site ancien » uniquement par indices objectifs (jamais par Ollama). Lighthouse / PageSpeed : RETIRÉ du runner (plus aucune mesure) ; la performance vient de l'audit léger (temps de réponse, poids), jamais 0 par défaut.

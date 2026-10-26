@@ -13,7 +13,7 @@ depuis le terminal du conteneur `worker` du VPS.
 | **SearXNG** (auto-hébergé) — palier 0 | Recherche du site officiel : stratégies progressives, moteurs actifs découverts depuis `/config`, santé / cooldown / budget par moteur | Voir « Moteurs » ci-dessous |
 | **API Brave Search**, **API Tavily** — palier 1 | Secours à quota gratuit, seulement si aucun moteur SearXNG n'a pu répondre | Facultatif (clé). Brave branché et testé sur fixture ; Tavily **testé seulement sur fixture** |
 | **API Serper** (résultats Google) — palier 2, PAYANT | Dernier recours, budget quotidien et mensuel plafonnés | Facultatif (clé). **Testé seulement sur fixture** |
-| **Audit HTML passif** | ≤ 4 GET par site : SEO (preuves), technique, performance légère, indices de modernisation | Testé en réel sur un corpus de 17 URLs. **Désactivé par défaut** (`LOCAL_AUDIT=1` pour l'activer) |
+| **Audit HTML passif** | ≤ 4 GET par site : SEO (preuves), technique, performance légère, indices de modernisation | Testé en réel sur un corpus de 17 URLs. **Actif par défaut** (`LOCAL_AUDIT=0` pour le couper) |
 | ~~PageSpeed / Lighthouse~~ | Retiré du worker de campagne (jamais de résultat obtenu en réel) | Plus utilisé |
 
 ## Moteurs de recherche (mesures réelles)

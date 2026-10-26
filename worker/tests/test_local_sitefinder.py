@@ -214,3 +214,78 @@ def test_domaines_devines_sans_rapport_ne_prennent_pas_la_place_des_resultats_de
     res = sf.resolve(MARTIN, search, web, dns=lambda ds: list(ds))
     assert res.status == "CONFIRMED" and res.url == "https://www.martin-troyes-pains.fr/" and len(search.queries) == 1
     assert {"boulangerie-martin-lyon.fr", "martin-troyes-pains.fr"} <= {c["domain"] for c in res.candidates}   # les 2 résultats de recherche ont été lus
+
+
+# ── domaines ratés en réel : nom + département, nom collé, domaine de l'adresse e-mail ─────────────────────
+METALEX = dict(siret="41234567800021", siren="412345678", company_name="METALEX", trade_name=None, city="LA CHAPELLE-SAINT-LUC",
+               postal_code="10600", address="3 RUE DE LA PAIX 10600 LA CHAPELLE-SAINT-LUC", phone=None, department="10")
+KARROSS = dict(siret="89012345600017", siren="890123456", company_name="KARROSS PERFORMANCE", trade_name=None, city="SAINTE-SAVINE",
+               postal_code="10300", address="15 AVENUE GALLIENI 10300 SAINTE-SAVINE", phone=None)
+GENERIC_HOME = html(title="Accueil", h1="Bienvenue", desc="Carrosserie et peinture", canonical=False, body="<p>Votre carrossier de confiance.</p>")
+KARROSS_LEGAL = html(title="Mentions légales", h1="Mentions légales",
+                     body="<p>KARROSS PERFORMANCE - SIRET 890 123 456 00017 - 15 avenue Gallieni 10300 Sainte-Savine - 03 25 70 00 00</p>")
+
+
+def test_departement_du_code_postal_et_outre_mer():
+    assert sf.department_of(dict(postal_code="10600")) == "10" and sf.department_of(dict(postal_code="97410")) == "974"
+    assert sf.department_of(dict(department="2A", postal_code="20000")) == "2a" and sf.department_of({}) == ""
+
+
+def test_domaines_devines_avec_le_departement():
+    g = sf.guess_domains(METALEX)
+    assert "metalex-10.com" in g and "metalex10.fr" in g and len(g) <= sf.GUESS_MAX
+    assert "metalex-10.com" in sf.guess_domains(dict(METALEX, department=None))            # département déduit du code postal
+    both = sf.guess_domains(dict(MARTIN, department="10"))
+    assert "martinboulangerie.fr" in both[:4]                                              # la raison sociale n'est plus évincée par l'enseigne
+
+
+@pytest.mark.parametrize("domain,expected", [
+    ("karrossperformance.fr", True), ("karross-performance.fr", True), ("www.karrossperformance.com", True), ("karrossperformance10.fr", True),
+    ("karrossperformance-sainte-savine.fr", True), ("karross.fr", False), ("karrossperformancepro.fr", False), ("performance.fr", False),
+])
+def test_nom_reconnu_dans_le_domaine(domain, expected):
+    assert sf.domain_matches_name(KARROSS, domain) is expected
+
+
+def test_domaine_au_nom_colle_preuve_de_nom_complete_mais_plafonnee_seul():
+    a = sf.score_candidate(KARROSS, "https://karrossperformance.fr/", None, [sf.htmlinfo.parse(GENERIC_HOME, "https://karrossperformance.fr/")])
+    codes = {e["code"] for e in a.evidence}
+    assert {"name_exact", "domain_name"} <= codes and a.confidence <= sf.NAME_ONLY_CAP        # nom seul : jamais retenu sans preuve forte
+
+
+def test_domaine_colle_titre_generique_siret_dans_les_mentions_legales_confirme():
+    """Cas réel KARROSS PERFORMANCE : accueil « Accueil / Bienvenue » sans lien, SIRET sur /mentions-legales. Autrefois 0,40 → NOT_FOUND."""
+    web = FakeWeb().add_site("karrossperformance.fr", GENERIC_HOME, legal=KARROSS_LEGAL)
+    search = FakeSearch()
+    res = sf.resolve(KARROSS, search, web, dns=lambda ds: [d for d in ds if d == "karrossperformance.fr"])
+    assert res.status == "CONFIRMED" and res.url == "https://karrossperformance.fr/" and search.queries == []
+    assert "https://karrossperformance.fr/mentions-legales" in web.calls and any(e["code"] == "siret" for e in res.evidence)
+
+
+def test_mentions_legales_lues_par_les_chemins_usuels_une_seule_page_legale():
+    web = FakeWeb().add_site("karrossperformance.fr", GENERIC_HOME)
+    web.pages["https://karrossperformance.fr/mentions"] = (200, KARROSS_LEGAL)
+    pages, _home = sf._load_pages("https://karrossperformance.fr/", web, KARROSS)
+    assert [p.url for p in pages] == ["https://karrossperformance.fr/", "https://karrossperformance.fr/mentions"]
+    assert "https://karrossperformance.fr/legal" not in web.calls and "https://karrossperformance.fr/contact" in web.calls
+    web2 = FakeWeb().add_site("autre-chose.fr", GENERIC_HOME)
+    sf._load_pages("https://autre-chose.fr/", web2, KARROSS)
+    assert web2.calls == ["https://autre-chose.fr/"]                                        # site sans rapport : pages annexes jamais lues
+
+
+def test_domaine_de_l_adresse_e_mail_lu_en_premier():
+    assert sf.email_site_urls(dict(email="contact@metalex-10.com")) == ["https://www.metalex-10.com/"]
+    assert sf.email_site_urls(dict(email="metalex@orange.fr")) == [] and sf.email_site_urls({}) == []
+    assert sf.email_site_urls(dict(email="a@metalex-10.com", email_site="https://metalex-10.com/")) == ["https://metalex-10.com/", "https://www.metalex-10.com/"]
+    legal = html(title="Mentions légales", body="<p>METALEX SAS - SIRET 412 345 678 00021 - 3 rue de la Paix 10600 La Chapelle-Saint-Luc</p>")
+    web = FakeWeb().add_site("www.metalex-10.com", html(title="Métallerie, serrurerie", h1="Bienvenue", body=""), legal=legal)
+    search = FakeSearch()
+    res = sf.resolve(dict(METALEX, email="contact@metalex-10.com"), search, web, dns=lambda ds: [])
+    assert res.status == "CONFIRMED" and res.url == "https://www.metalex-10.com/" and search.queries == []
+    assert web.calls[0] == "https://www.metalex-10.com/" and any(e["code"] == "email_domain" for e in res.evidence)
+
+
+def test_domaine_de_l_e_mail_sans_www():
+    web = FakeWeb().add_site("karrossperformance.fr", GENERIC_HOME, legal=KARROSS_LEGAL)
+    res = sf.resolve(dict(KARROSS, email="contact@karrossperformance.fr"), FakeSearch(), web, dns=lambda ds: [])
+    assert res.status == "CONFIRMED" and res.url == "https://karrossperformance.fr/"

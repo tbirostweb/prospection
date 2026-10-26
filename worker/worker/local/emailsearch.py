@@ -4,7 +4,8 @@ Une fiche n'est vérifiée qu'une fois ; une adresse publiée plus tard (page Fa
 chaque passage, LOCAL_EMAIL_SEARCH_PER_RUN prospects sans e-mail (jamais contactés, hors « ne plus contacter » et écartés) reçoivent UNE recherche
 dédiée (`runner.email_search`), au plus une fois tous les EMAIL_RECHECK_DAYS jours. Une adresse trouvée complète la fiche (jamais elle ne
 remplace une coordonnée connue) et le score est recalculé : la fiche peut alors passer « À contacter » et partir par l'envoi automatique.
-Même verrou que les campagnes (jamais en même temps) et même budget de moteurs.
+Même verrou que les campagnes (jamais en même temps) et même budget de moteurs. Avant les e-mails, la nouvelle recherche des sites ratés
+(`siterecheck`) : un site trouvé apporte ses propres coordonnées.
 """
 from __future__ import annotations
 
@@ -80,7 +81,16 @@ def main() -> int:
         return 0                                               # une campagne tourne : elle a la priorité sur les moteurs
     try:
         with db.connect() as conn:
-            stats = run(conn, engines.SearchPool(conn))
+            pool = engines.SearchPool(conn)
+            try:
+                from . import siterecheck
+                sites = siterecheck.run(conn, pool)
+                if sites["rechecked"]:
+                    log.info("[local] nouvelle recherche de sites : %s", json.dumps(sites))
+            except Exception as exc:  # noqa: BLE001 — n'empêche jamais la recherche d'e-mails
+                conn.rollback()
+                log.warning("[local] nouvelle recherche de sites en échec : %s", exc)
+            stats = run(conn, pool)
         if stats["searched"] or stats["manual_rescored"]:
             log.info("[local] recherche d'e-mails : %s", json.dumps(stats))
     finally:

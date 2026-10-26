@@ -175,9 +175,9 @@ def test_recherche_en_panne_n_est_jamais_prise_pour_aucun_site(env, conn, monkey
     assert c["status"] == "running" and "CAPTCHA" in c["last_error"]        # en attente (visible), pas en erreur : les moteurs reviendront
 
 
-def test_audit_desactive_par_defaut_site_et_contacts_seulement_sans_retraitement(env, conn, monkeypatch):
-    """LOCAL_AUDIT=0 (défaut) : site et contacts seulement ; la fiche est terminée et n'est jamais retraitée en boucle (audited_at reste NULL)."""
-    assert runner.AUDIT is False
+def test_audit_coupe_site_et_contacts_seulement_sans_retraitement(env, conn, monkeypatch):
+    """LOCAL_AUDIT=0 : site et contacts seulement ; la fiche est terminée et n'est jamais retraitée en boucle (audited_at reste NULL)."""
+    monkeypatch.setattr(runner, "AUDIT", False)
     install_api(monkeypatch)
     web, search = web_and_search()
     camp = add_campaign(conn)
@@ -191,6 +191,26 @@ def test_audit_desactive_par_defaut_site_et_contacts_seulement_sans_retraitement
     web.calls.clear()
     stats = runner.run_campaign(conn, db.fetch_one(conn, "SELECT * FROM local_campaigns WHERE id=%s", (camp["id"],)), search=search, fetch=web)
     assert search.queries == [] and web.calls == [] and stats["remaining"] == 0                  # rien n'est retraité
+    assert runner.audit_stock(conn, fetch=web) == 0                                               # audit coupé : le stock n'est pas audité
+
+
+def test_audit_active_apres_coup_audite_le_stock_sans_nouvelle_recherche(env, conn, monkeypatch):
+    """Audit coupé pendant la campagne, puis activé (défaut) : les sites déjà identifiés d'une campagne TERMINÉE sont audités, bornés par
+    passage, sans aucune requête aux moteurs ni nouvelle recherche de site."""
+    monkeypatch.setattr(runner, "AUDIT", False)
+    install_api(monkeypatch)
+    web, search = web_and_search()
+    camp = add_campaign(conn)
+    runner.run_campaign(conn, camp, search=search, fetch=web)
+    assert db.fetch_one(conn, "SELECT status FROM local_campaigns WHERE id=%s", (camp["id"],))["status"] == "done"
+    monkeypatch.setattr(runner, "AUDIT", True)
+    search.queries.clear()
+    before = {r["id"]: r["website_checked_at"] for r in db.fetch_all(conn, "SELECT id, website_checked_at FROM local_prospects")}
+    assert runner.audit_stock(conn, fetch=web, limit=1) == 1                                     # borné par passage
+    assert runner.audit_stock(conn, fetch=web) == 1 and runner.audit_stock(conn, fetch=web) == 0
+    rows = db.fetch_all(conn, "SELECT * FROM local_prospects WHERE website_status IN ('CONFIRMED','PROBABLE')")
+    assert len(rows) == 2 and all(r["audited_at"] is not None and r["pipeline_stage"] == "DONE" for r in rows)
+    assert search.queries == [] and {r["id"]: r["website_checked_at"] for r in db.fetch_all(conn, "SELECT id, website_checked_at FROM local_prospects")} == before
 
 
 def test_fiches_deja_traitees_sans_deep_enriched_at_deviennent_pretes(env, conn, monkeypatch):

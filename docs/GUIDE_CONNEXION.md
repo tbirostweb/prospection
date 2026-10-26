@@ -39,7 +39,7 @@ Une réponse « aucun résultat » du gratuit ne déclenche pas le payant (sauf 
 
 **Modifié**
 - Budget Brave par défaut : **30 requêtes / jour** (il était de 60).
-- L'audit passif du site (SEO, technique, modernisation) est **désactivé par défaut** : `LOCAL_AUDIT=1` pour le réactiver.
+- L'audit passif du site (SEO, technique, modernisation) a été désactivé par défaut, puis **réactivé par défaut** : `LOCAL_AUDIT=0` pour le couper.
 
 **Retiré du worker de campagne** (le débit va aux fiches nouvelles : le but est de savoir si l'entreprise a un site et de trouver un contact)
 - Mesures Lighthouse / PageSpeed.
@@ -279,8 +279,7 @@ LOCAL_SERPER_DAILY_BUDGET=150
 LOCAL_PAID_MONTHLY_BUDGET=2000
 LOCAL_PAID_ON_EMPTY=0
 
-# Le but : site + contact. Audit seulement si tu en as besoin
-LOCAL_AUDIT=0
+# Audit passif du site actif par défaut ; LOCAL_AUDIT=0 pour chercher seulement le site et un contact
 ```
 
 Puis :

@@ -34,7 +34,9 @@ MAX_CANDIDATES_PER_STRATEGY = 2
 MAX_ASSESSED = 6                      # sites lus par entreprise, toutes stratégies confondues (coût borné)
 STRATEGY_BUDGET = 6                   # stratégies lancées au plus par passage
 EXTRA_PAGES = 2
-GUESS_MAX = 8                         # domaines devinés d'après le nom (vérifiés comme n'importe quel candidat) : 0 recherche consommée
+GUESS_MAX = 12                        # domaines devinés d'après le nom (vérifiés comme n'importe quel candidat) : 0 recherche consommée. 12 (au
+                                      # lieu de 8) pour les formes « nom-département » (metalex-10.com) : la résolution DNS est parallèle et
+                                      # bornée à 4 s, seules les LECTURES coûtent, et elles restent plafonnées par GUESS_FETCH
 GUESS_FETCH = 5                       # domaines devinés EXISTANTS (DNS) lus au plus : des lectures directes, aucune requête aux moteurs
 GUESS_TLDS = ("fr", "com")
 
@@ -54,7 +56,9 @@ NOT_OFFICIAL = {
 }
 SOCIAL = {"facebook.com", "instagram.com", "linkedin.com", "tiktok.com", "twitter.com", "x.com", "youtube.com", "pinterest.com"}
 LEGAL_LINKS = r"mentions|l[eé]gal|contact|propos|qui[- ]sommes|cgv|nous[- ]trouver|acc[eè]s"
-GUESS_PATHS = ("mentions-legales", "contact")
+# Chemins usuels lus quand l'accueil n'a AUCUN lien utile : la 1re page légale qui répond suffit (les autres variantes ne sont pas demandées),
+# puis la page contact. Au plus 5 lectures, uniquement sur un site déjà jugé lié à l'entreprise (`_looks_related`).
+GUESS_PATHS = ("mentions-legales", "mentions-legales/", "mentions", "legal", "contact")
 
 # Poids des preuves (somme plafonnée à 1). Documentés ici pour rester lisibles ET testables.
 WEIGHTS = {"siret": 0.60, "siren": 0.50, "address_exact": 0.30, "address_street": 0.18, "phone": 0.25, "name_exact": 0.30, "name_partial": 0.30,
@@ -328,11 +332,18 @@ def score_candidate(company: dict, url: str, hit: Hit | None, pages: list[htmlin
     dt = distinctive_tokens(company.get("company_name")) or name_tokens(company.get("company_name"))
     tt = distinctive_tokens(company.get("trade_name")) or name_tokens(company.get("trade_name"))
     frac = max(token_fraction(dt, head), token_fraction(tt, head) if tt else 0.0)
-    if frac:
+    # Domaine = nom collé (« karrossperformance.fr »), avec tirets ou suivi du département / de la ville (« metalex-10.com ») : preuve de nom
+    # COMPLÈTE, même si le titre de l'accueil est générique. Elle ne suffit jamais seule (plafond « nom seul » ci-dessous) : elle sert à lire les
+    # mentions légales, qui apportent la preuve forte (SIRET, adresse, téléphone).
+    dom_match = domain_matches_name(company, domain)
+    if dom_match and frac < 1.0:
+        frac = 1.0
+        add("name_exact", "nom de l'entreprise retrouvé dans le nom de domaine", WEIGHTS["name_exact"])
+    elif frac:
         add("name_exact" if frac >= 0.999 else "name_partial", f"nom retrouvé dans le titre / l'en-tête / le domaine ({int(frac * 100)} % des mots)", WEIGHTS["name_exact"] * frac)
-        best = tt if tt and token_fraction(tt, head) >= token_fraction(dt, head) else dt
-        if best and all(t in domain_tokens(domain).split() or "".join(best) in domain_tokens(domain).replace(" ", "") for t in best):
-            add("domain_name", "le nom de domaine reprend le nom de l'entreprise")
+    best = tt if tt and token_fraction(tt, head) >= token_fraction(dt, head) else dt
+    if dom_match or (best and all(t in domain_tokens(domain).split() or "".join(best) in domain_tokens(domain).replace(" ", "") for t in best)):
+        add("domain_name", "le nom de domaine reprend le nom de l'entreprise")
     legal_pages = [p for p in pages if re.search(r"mention|legal|cgv|propos", p.url, re.I)]
     if dt and legal_pages and token_fraction(dt, " ".join(p.text for p in legal_pages)) >= 0.999 and len(dt) >= 1:
         add("legal_name", "raison sociale retrouvée dans les mentions légales")
@@ -393,10 +404,54 @@ def score_candidate(company: dict, url: str, hit: Hit | None, pages: list[htmlin
     return Assessment(_origin(final), domain, round(max(0.0, min(1.0, conf)), 2), evidence, True, pages, original_url or url, chain, contradictions, ident)
 
 
+def department_of(company: dict) -> str:
+    """Département (colonne `department`, sinon dérivé du code postal : 2 chiffres, 3 pour l'outre-mer 97x / 98x), en minuscules."""
+    dep = re.sub(r"[^0-9a-z]", "", fold(company.get("department")))
+    if dep:
+        return dep
+    cp = digits(company.get("postal_code"))
+    if len(cp) != 5:
+        return ""
+    return cp[:3] if cp[:2] in ("97", "98") else cp[:2]
+
+
+def _domain_label(domain: str) -> str:
+    """Libellé du nom de domaine, sans extension ni sous-domaine ni tirets : « www.metalex-10.com » → « metalex10 ». Site gratuit : le chemin."""
+    host, _, path = (domain or "").lower().removeprefix("www.").partition("/")
+    parts = host.split(".")
+    label = path or (parts[-2] if len(parts) >= 2 else host)
+    return re.sub(r"[^a-z0-9]", "", fold(label))
+
+
+def domain_matches_name(company: dict | None, domain: str) -> bool:
+    """Le libellé du domaine est-il EXACTEMENT les mots du nom collés (enseigne ou raison sociale), éventuellement suivis du département ou de la
+    ville ? « karrossperformance.fr », « karross-performance.fr », « metalex-10.com », « metalex-troyes.fr » : oui ; « metalexpro.fr » : non.
+    Moins de 4 lettres : jamais (trop d'homonymes)."""
+    if not company:
+        return False
+    label = _domain_label(domain)
+    if not label:
+        return False
+    dep, city = department_of(company), re.sub(r"[^a-z0-9]", "", fold(company.get("city")))
+    forms = {label}
+    for suffix in (dep, city):
+        if suffix and label.endswith(suffix) and len(label) > len(suffix):
+            forms.add(label[:-len(suffix)])
+    for name in (company.get("trade_name"), company.get("company_name")):
+        for toks in (name_tokens(name), distinctive_tokens(name)):
+            stem = "".join(toks)
+            if len(stem) >= 4 and stem in forms:
+                return True
+    return False
+
+
 def _looks_related(company: dict | None, page: htmlinfo.Page) -> bool:
     """Filtre bon marché : l'accueil mentionne-t-il un mot distinctif du nom, la ville ou le code postal ? Sinon les pages annexes ne changeront rien
-    (la confiance serait plafonnée à 0,30) : on ne perd pas 2 requêtes lentes sur un site sans rapport."""
+    (la confiance serait plafonnée à 0,30) : on ne perd pas 2 requêtes lentes sur un site sans rapport. Un domaine qui reprend le nom (collé, avec
+    tirets ou suivi du département) suffit : titre générique (« Accueil ») mais mentions légales à lire."""
     if company is None:
+        return True
+    if domain_matches_name(company, canonical_domain(page.url)):
         return True
     head = f"{page.title} {' '.join(page.h1)} {domain_tokens(page.domain)}"
     dt = distinctive_tokens(company.get("company_name")) or name_tokens(company.get("company_name"))
@@ -417,13 +472,23 @@ def _load_pages(url: str, fetch: Fetcher, company: dict | None = None) -> tuple[
     pages = [page]
     if not _looks_related(company, page):
         return pages, home
-    links = htmlinfo.internal_links(page, LEGAL_LINKS)[:EXTRA_PAGES]
-    if not links:
-        links = [f"{_origin(home.url)}{p}" for p in GUESS_PATHS][:EXTRA_PAGES]
-    for extra in links:
-        got = fetch(extra)
+    # mentions légales d'abord (SIREN, adresse : les preuves fortes), puis contact, puis le reste
+    links = sorted(htmlinfo.internal_links(page, LEGAL_LINKS), key=lambda u: 0 if re.search(r"mention|l[eé]gal", u, re.I) else 1 if "contact" in u.lower() else 2)
+    if links:
+        for extra in links[:EXTRA_PAGES]:
+            got = fetch(extra)
+            if got is not None and getattr(got, "ok", False) and got.text:
+                pages.append(htmlinfo.parse(got.text, got.url))
+        return pages, home
+    legal_found = False
+    for path in GUESS_PATHS:                                    # aucun lien : chemins usuels, une seule page légale suffit
+        is_legal = path != "contact"
+        if (is_legal and legal_found) or len(pages) > EXTRA_PAGES:
+            continue
+        got = fetch(f"{_origin(home.url)}{path}")
         if got is not None and getattr(got, "ok", False) and got.text:
             pages.append(htmlinfo.parse(got.text, got.url))
+            legal_found = legal_found or is_legal
     return pages, home
 
 
@@ -438,21 +503,39 @@ def _assess(company: dict, url: str, hit: Hit | None, fetch: Fetcher, structured
 
 
 def guess_domains(company: dict) -> list[str]:
-    """Domaines plausibles d'après le nom (« boulangerie-dupont.fr », « lepetitfournil.com »…). Aucun n'est cru sur parole : chacun est lu et
-    vérifié comme un résultat de recherche (nom + ville / adresse / téléphone / SIREN). Rien si le nom n'a pas de mot distinctif."""
+    """Domaines plausibles d'après le nom (« boulangerie-dupont.fr », « lepetitfournil.com », « metalex-10.com »…). Aucun n'est cru sur parole :
+    chacun est lu et vérifié comme un résultat de recherche (nom + ville / adresse / téléphone / SIREN). Rien si le nom n'a pas de mot distinctif.
+    Ordre : formes les plus fréquentes d'abord, enseigne ET raison sociale à chaque rang (la raison sociale n'est plus évincée par l'enseigne) :
+    nom collé, nom à tirets, mots distinctifs, nom + département (« -10 », « 10 »), nom + ville."""
     city = fold(company.get("city")).replace(" ", "-")
-    out: list[str] = []
+    dep = department_of(company)
+    tiers: list[list[str]] = [[], [], [], [], []]
     for label in (company.get("trade_name"), company.get("company_name")):
         toks, dt = name_tokens(label), distinctive_tokens(label)
         if not dt or len(toks) > 5:
             continue
-        stems = ["".join(toks), "-".join(toks), "".join(dt)]
+        tiers[0].append("".join(toks))
+        tiers[1].append("-".join(toks))
+        tiers[2].append("".join(dt))
+        if dep:
+            tiers[3] += ["".join(toks) + "-" + dep, "".join(toks) + dep]
         if city:
-            stems.append("-".join(toks) + "-" + city)
-        for stem in stems:
-            if 4 <= len(stem) <= 50:
-                out += [f"{stem}.{tld}" for tld in GUESS_TLDS]
+            tiers[4].append("-".join(toks) + "-" + city)
+    out = [f"{stem}.{tld}" for tier in tiers for stem in tier if 4 <= len(stem) <= 50 for tld in GUESS_TLDS]
     return list(dict.fromkeys(out))[:GUESS_MAX]
+
+
+def email_site_urls(company: dict) -> list[str]:
+    """Sites à lire EN PRIORITÉ : le domaine de l'adresse e-mail connue (contact@metalex-10.com → https://www.metalex-10.com/, hors messageries
+    gratuites) et le site déjà constaté sur ce domaine par l'envoi (provenance `email_domain_site`). Vérifiés comme n'importe quel candidat."""
+    from .contacts import FREEMAIL
+    out: list[str] = []
+    if company.get("email_site"):
+        out.append(company["email_site"])
+    dom = (company.get("email") or "").strip().lower().rpartition("@")[2]
+    if dom and "." in dom and dom not in FREEMAIL and not _in_set(dom, NOT_OFFICIAL | SOCIAL):
+        out.append(f"https://www.{dom}/")
+    return list(dict.fromkeys(out))
 
 
 def dns_resolves(domains: list[str], timeout: float = 4.0) -> list[str]:
@@ -506,8 +589,20 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
     def best_conf() -> float:
         return max((a.confidence for a in assessed.values()), default=0.0)
 
+    for u in email_site_urls(company):                   # domaine de l'adresse e-mail : le candidat le plus probable, lu avant toute devinette
+        if best_conf() >= th.confirmed or canonical_domain(u) in assessed:
+            continue
+        before = set(assessed)
+        consider(u, None)
+        got = assessed.get(canonical_domain(u))
+        if (got is None or not got.reachable) and u.startswith("https://www."):
+            consider(u.replace("https://www.", "https://", 1), None)   # « www » injoignable : le domaine nu
+        for key in set(assessed) - before:
+            guessed.add(key)                                 # sans rapport : ne prend pas la place des résultats de recherche
+            assessed[key].evidence.append(ev("email_domain", f"domaine de l'adresse e-mail connue ({key}), puis vérifié sur le site", 0.0))
+
     if dns is not None and best_conf() < th.confirmed:
-        for d in dns([g for g in guess_domains(company) if g not in bad])[:GUESS_FETCH]:
+        for d in dns([g for g in guess_domains(company) if g not in bad and g not in assessed])[:GUESS_FETCH]:
             if counted() >= MAX_ASSESSED or best_conf() >= th.confirmed:
                 break
             before = set(assessed)
