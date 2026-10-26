@@ -223,7 +223,8 @@ def test_dns_incorrect_bloque_et_erreur_smtp_reessayee(mail, conn):
     mail.smtp.error = smtplib.SMTPAuthenticationError(535, b"authentication failed")
     assert mail.run(T0 + dt.timedelta(hours=6), dns=DNS_OK)["status"] == "error"   # DNS revérifié (6 h), puis échec d'authentification
     assert row(conn, pid)["auto_state"] == "queued"                                # rien de perdu : réessayé au passage suivant
-    assert "authentication failed" in db.fetch_one(conn, "SELECT last_error FROM local_mail_state WHERE id=1")["last_error"]
+    err = db.fetch_one(conn, "SELECT last_error FROM local_mail_state WHERE id=1")["last_error"]
+    assert "mot de passe lu : 20 caractères" in err and "mot-de-passe-de-test" not in err   # longueur seulement, jamais la valeur
     mail.smtp.error = None
     assert mail.run(T0 + dt.timedelta(hours=6, minutes=10))["status"] == "sent"
 

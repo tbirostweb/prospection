@@ -153,6 +153,11 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
             _stop(conn, p, f"{fails} refus du serveur d'envoi", "failed")
         _error(conn, f"message refusé par le serveur ({exc.smtp_code})")
         return "error"
+    except smtplib.SMTPAuthenticationError as exc:
+        # Jamais la valeur : seulement sa longueur, pour repérer un mot de passe coupé (« # » ou « $ » mal lus dans le .env de Dokploy).
+        _error(conn, f"identifiant ou mot de passe refusé par le serveur ({exc.smtp_code}) — mot de passe lu : {len(cfg['password'])} caractères, "
+                     f"utilisateur : {cfg['user']}")
+        return "error"
     except (smtplib.SMTPException, OSError) as exc:
         _error(conn, f"envoi impossible ({type(exc).__name__}) : {exc}")
         return "error"
