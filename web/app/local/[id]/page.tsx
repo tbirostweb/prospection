@@ -6,6 +6,7 @@ import FollowupButtons from "@/components/FollowupButtons";
 import AutoSendButton from "@/components/AutoSendButton";
 import EmailInput from "@/components/EmailInput";
 import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
+import { ficheReason } from "@/lib/complete";
 import { salesBrief } from "@/lib/pitch";
 import { getAutoSend, getSetting } from "@/lib/localdb";
 import type { Sender } from "@/lib/draft";
@@ -45,7 +46,10 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
   const autoActive = p.auto_state === "active";
   const due = autoActive ? null : followupDue({ status: p.status, contacted_at: p.contacted_at ? String(p.contacted_at) : null, followups: p.followups });
   const emails = await query<any>("SELECT kind, to_email, subject, status, error, sent_at FROM local_emails WHERE prospect_id=? ORDER BY sent_at", [p.id]).catch(() => []);
-  const canQueue = !autoIneligible(p, (await getAutoSend()).personal_emails) && (!p.auto_state || p.auto_state === "stopped");
+  const personal = (await getAutoSend()).personal_emails;
+  const canQueue = !autoIneligible(p, personal) && (!p.auto_state || p.auto_state === "stopped");
+  const notAuto = p.email && p.draft_message && !canQueue && (!p.auto_state || ["queued", "stopped", "bounced"].includes(p.auto_state))
+    ? (p.auto_state === "queued" ? ficheReason(p, personal) : autoIneligible(p, personal)) : null;   // fiche « à vérifier » : pourquoi elle ne part pas
 
   return (
     <div className="max-w-3xl">
@@ -110,7 +114,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
       </section>
 
       <ProspectActions id={p.id} status={p.status} notes={p.notes} doNotContact={!!p.do_not_contact} websiteUrl={p.website_url} siteAccepted={siteOk} feedbackReason={p.feedback_reason} />
-      {(p.auto_state || emails.length > 0 || canQueue) && (
+      {(p.auto_state || emails.length > 0 || canQueue || notAuto) && (
         <section className="panel text-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span><b>Envoi automatique</b> · {p.auto_state ? AUTO_STATES[p.auto_state] ?? p.auto_state : "pas en file"}</span>
@@ -119,6 +123,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           </div>
           {emails.length > 0 && <ul className="mt-3 space-y-1 text-muted">{emails.map((e: any, i: number) => (
             <li key={i}>{dateTimeFr(e.sent_at)} · {EMAIL_KINDS[e.kind] ?? e.kind} à {e.to_email}{e.status !== "sent" ? ` · ${e.status === "bounced" ? "revenu (adresse invalide)" : `échec${e.error ? ` : ${e.error}` : ""}`}` : ""}</li>))}</ul>}
+          {notAuto && <p className="mt-2 text-xs text-muted">{p.auto_state === "queued" ? "En attente" : "Pas d'envoi automatique"} : {notAuto}{notAuto.startsWith("fiche incomplète") ? " — l'app la complète seule." : ""}</p>}
           {canQueue && !p.draft_message && <p className="mt-2 text-xs text-muted">Crée d'abord le brouillon ci-dessous : c'est lui qui partira.</p>}
         </section>
       )}

@@ -4,7 +4,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { AUTO_DEFAULTS, FREEMAIL, autoIneligible, sanitizeAutoSend } from "../lib/autosend";
 
-const P = { email: "contact@garage-exemple.fr", email_kind: "GENERIC_BUSINESS", do_not_contact: 0, contacted_at: null, draft_message: "Bonjour,…" };
+// fiche COMPLÈTE (lib/complete.ts) : métier connu, site confirmé, traitement terminé
+const P = { email: "contact@garage-exemple.fr", email_kind: "GENERIC_BUSINESS", do_not_contact: 0, contacted_at: null, draft_message: "Bonjour,…",
+  pipeline_stage: "DONE", activity_label: "Garages", website_status: "CONFIRMED", status: "QUALIFIED", is_chain: 0 };
 
 test("envoi automatique désactivé par défaut et réglage borné", () => {
   assert.equal(AUTO_DEFAULTS.enabled, false);
@@ -39,4 +41,14 @@ test("même liste de messageries gratuites que le worker", () => {
   const block = py.slice(py.indexOf("FREEMAIL = {"), py.indexOf("}", py.indexOf("FREEMAIL = {")));
   const worker = new Set([...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
   assert.deepEqual([...FREEMAIL].sort(), [...worker].sort());
+});
+
+test("fiche incomplète ou adresse invalide : jamais en file d'envoi", () => {
+  assert.match(autoIneligible({ ...P, activity_label: null }, true)!, /fiche incomplète : métier inconnu/);
+  assert.match(autoIneligible({ ...P, website_status: "UNCERTAIN" }, true)!, /site à trancher/);
+  assert.match(autoIneligible({ ...P, website_status: "NOT_FOUND", website_absence_confidence: 0.7 }, true)!, /site à trancher/);   // revérification pas faite
+  assert.equal(autoIneligible({ ...P, website_status: "NOT_FOUND", website_absence_confidence: 0.7,
+    provenance: JSON.stringify({ site_recheck: { status: "NOT_FOUND" } }) }, true), null);
+  assert.match(autoIneligible({ ...P, pipeline_stage: "AUDIT" }, true)!, /traitement pas terminé/);
+  assert.match(autoIneligible({ ...P, auto_state: "bounced" }, true)!, /adresse invalide/);
 });

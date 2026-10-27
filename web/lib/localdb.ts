@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { READY_SQL } from "@/lib/local";
 import { AUTO_DEFAULTS, AutoSend } from "@/lib/autosend";
+import { qualitySql } from "@/lib/complete";
 
 /** Colonnes d'une ligne de liste (pas les gros champs JSON de l'audit). */
 export const LIST_COLUMNS = `p.id, p.siret, p.company_name, p.trade_name, p.activity_key, p.activity_label, p.city, p.postal_code, p.distance_km,
@@ -93,4 +94,14 @@ export async function getPlacesStats() {
      requests: Number(u?.requests ?? 0), budget: Number(b?.budget ?? 900), asked, hadSite: Number(c?.had_site ?? 0), verified: Number(c?.verified ?? 0),
     found: Number(f?.n ?? 0), onlyPlaces: Number(f?.only ?? 0), queries: Number(qd?.queries ?? 0), unmatched: Number(qd?.unmatched ?? 0),
     ever: asked > 0 || Number(ever?.n ?? 0) > 0 };
+}
+
+/** Statistiques → « Qualité de la liste » : fiches à prospecter (actives, indépendantes, jamais contactées), dont complètes (lib/complete.ts) avec e-mail
+ *  ou téléphone seul, et ce qui manque aux autres (une fiche peut cumuler). Même réglage personal_emails que l'envoi automatique. */
+export async function getQualityStats() {
+  const auto = await getAutoSend();
+  const [q] = await safeRows<any>(qualitySql(auto.personal_emails));
+  const n = (k: string) => Number(q?.[k] ?? 0);
+  return { total: n("total"), email: n("complete_email"), phone: n("complete_phone"),
+    missing: { processing: n("processing"), noMetier: n("no_metier"), siteTodo: n("site_todo"), noContact: n("no_contact"), emailInvalid: n("email_invalid") } };
 }

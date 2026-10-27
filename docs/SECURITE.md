@@ -90,7 +90,9 @@ tile.openstreetmap.org (fonds de carte), geo.api.gouv.fr (recherche de commune).
   (`worker/worker/local/notify.py`) ; le résumé quotidien contient un indicateur « ☎ appeler », sans le numéro, et un lien d'itinéraire (`worker/worker/digest.py`).
 - **E-mail** : envoi automatique FACULTATIF, désactivé par défaut (réglage `local_auto_send`). Activé, le worker envoie par la boîte SMTP de l'utilisateur
   (`worker/worker/local/outbox.py`) : adresses de l'entreprise (Gmail, Orange… publiées comme contact incluses, désactivable : `personal_emails`), plafond quotidien, jours ouvrés, ligne d'opposition et `List-Unsubscribe` dans
-  chaque message, DNS (SPF, DMARC unique, DKIM si sélecteur) vérifié avant tout envoi. La boîte de réception est lue en IMAP **en lecture seule**
+  chaque message, DNS (SPF, DMARC unique, DKIM si sélecteur) vérifié avant tout envoi. Premier message seulement pour une fiche complète (`complete.py`) ;
+  juste avant : MX / A du domaine destinataire (DoH, aucune donnée stockée hors le domaine et la date) et, pour un message « sans site », relecture du site
+  sans moteur ni API payante (Google : seul le `place_id` reste stocké, l'URL n'est gardée qu'en mémoire). La boîte de réception est lue en IMAP **en lecture seule**
   (EXAMINE + BODY.PEEK, `inbox.py`) : une réponse arrête les relances, un refus inscrit l'adresse dans `local_do_not_contact`. Le mot de passe
   (`LOCAL_SMTP_PASSWORD`) reste dans l'environnement du worker, masqué dans les journaux. Les e-mails envoyés (`local_emails`) sont exportés et
   effacés avec le prospect (`privacy.py`, clé étrangère en cascade). Sinon : brouillons ouverts par `mailto:` dans la messagerie de l'utilisateur.

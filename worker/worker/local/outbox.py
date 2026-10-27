@@ -6,23 +6,40 @@ DÉSACTIVÉ par défaut : rien ne part tant que Réglages > Envoi automatique n'
   3. si l'envoi est activé, dans les heures ouvrées (jours ouvrés, hors fériés), DNS vérifié et plafond du jour non atteint :
      UN seul e-mail part (donc au plus un toutes les 2 min) — une relance due (J+3, puis J+7 en réponse au premier message), sinon le prochain premier message en file.
 Adresses de l'entreprise seulement (Gmail, Orange… publiées comme contact : réglage personal_emails, activé par défaut) ; chaque message contient la ligne d'opposition. Formulaires et Facebook : jamais.
+Premier message : seulement pour une FICHE COMPLÈTE avec e-mail (`complete`) ; une fiche en file encore incomplète (métier inconnu, site à
+trancher…) attend sans partir. Juste avant, sans rien demander au propriétaire :
+  * le domaine de l'adresse doit recevoir du courrier (MX, ou A / AAAA ; DoH, résultat positif gardé MX_TTL) : sinon l'adresse est marquée
+    invalide (auto_state 'bounced', comme un e-mail revenu) et la fiche passe au téléphone / à la visite ;
+  * message « sans site » : dernière vérification du site, sans moteur de recherche (domaine de l'adresse, domaines devinés d'après le nom, site
+    de la fiche Google s'il n'a jamais été vérifié), bornée à PRESEND_TIMEOUT. Site sûr : enregistré comme par `siterecheck` (contacts ajoutés,
+    score), brouillon « sans site » effacé, fiche sortie de la file — elle reviendra seule dans la file de rédaction, en refonte. Doute ou réseau
+    en échec : pas d'envoi ce passage-ci, nouvel essai PRESEND_RETRY plus tard, PRESEND_MAX_TRIES fois au plus (ensuite : sortie de la file, site
+    « à trancher »).
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import smtplib
 import ssl
 import sys
+import threading
 
-from .. import alerts, db, net, notify
+from .. import alerts, db
 from ..config import env, log
-from . import inbox, maildns, mailer
+from . import complete, inbox, maildns, mailer, store
+from .contacts import FREEMAIL
 from .store import is_do_not_contact
 
 DNS_TTL = dt.timedelta(hours=6)
 INBOX_EVERY = dt.timedelta(minutes=9)
 MAX_FAILURES = 3
+MX_TTL = dt.timedelta(days=7)            # domaine du destinataire qui reçoit du courrier : pas redemandé avant 7 jours
+PRESEND_TIMEOUT = 45.0                   # secondes : dernière vérification du site avant un message « sans site » (passage toutes les 2 min)
+PRESEND_RETRY = dt.timedelta(hours=1)    # doute ou réseau en échec : nouvel essai une heure plus tard
+PRESEND_MAX_TRIES = 3
+PRESEND_FRESH = dt.timedelta(days=3)     # vérification réussie (rien trouvé) : pas refaite avant 3 jours (envoi repoussé par une erreur SMTP…)
 
 
 def mail_config() -> dict:
@@ -94,8 +111,9 @@ def abandon(conn, now: dt.datetime) -> int:
     return n
 
 
-def next_task(conn, now: dt.datetime) -> tuple[str, dict] | None:
-    """La prochaine chose à envoyer : relance due d'abord (elle a une date), sinon le premier message en file depuis le plus longtemps."""
+def next_task(conn, now: dt.datetime, personal: bool = True) -> tuple[str, dict] | None:
+    """La prochaine chose à envoyer : relance due d'abord (elle a une date), sinon le premier message en file depuis le plus longtemps dont la
+    fiche est complète (`waiting`)."""
     t = now.astimezone(dt.timezone.utc).replace(tzinfo=None)
     d1, d2 = mailer.FOLLOWUP_DAYS
     row = db.fetch_one(conn, """SELECT * FROM local_prospects WHERE auto_state='active' AND do_not_contact=0 AND status='CONTACTED'
@@ -105,8 +123,34 @@ def next_task(conn, now: dt.datetime) -> tuple[str, dict] | None:
                        (t - dt.timedelta(days=d1), t - dt.timedelta(days=d2), t - dt.timedelta(days=d2 - d1)))
     if row:
         return ("followup1" if int(row["followups"] or 0) == 0 else "followup2"), row
-    row = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE auto_state='queued' ORDER BY auto_queued_at, id LIMIT 1")
-    return ("first", row) if row else None
+    for row in db.fetch_all(conn, "SELECT * FROM local_prospects WHERE auto_state='queued' ORDER BY auto_queued_at, id LIMIT 300"):
+        if waiting(row, personal, now) is None:
+            return "first", row
+    return None
+
+
+def _iso(now: dt.datetime) -> str:
+    return now.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sans_site(p: dict) -> bool:
+    return "sans_site" in (p.get("draft_kind") or "")
+
+
+def waiting(p: dict, personal: bool, now: dt.datetime) -> str | None:
+    """Pourquoi ce premier message en file ne part pas ce passage-ci (None = il peut partir) : fiche incomplète (elle attend que l'app la
+    complète), ou vérification du site à reprendre plus tard. Le site de la fiche Google encore à vérifier n'empêche pas un message « sans site »
+    de passer : il est vérifié juste avant l'envoi (`presend_site`)."""
+    pre = complete._json(p.get("provenance")).get("presend_site")
+    if isinstance(pre, dict) and (pre.get("retry_at") or "") > _iso(now):
+        return "vérification du site à reprendre"
+    # adresse refusée par le réglage : `mailer.ineligible` retire la fiche de la file, avec sa raison (pas d'attente sans fin)
+    codes = [c for c in complete.missing(p, personal) if c not in ("contact", "email_invalide")]
+    if codes == ["site"] and complete.site_state(p) == "places" and _sans_site(p):
+        from . import places
+        if places.enabled():
+            return None
+    return "fiche incomplète : " + ", ".join(complete.LABELS[c] for c in codes) if codes else None
 
 
 def _stop(conn, p: dict, reason: str, state: str = "stopped") -> None:
@@ -115,19 +159,134 @@ def _stop(conn, p: dict, reason: str, state: str = "stopped") -> None:
     conn.commit()
 
 
-def domain_site(domain: str, get=net.try_get) -> str | None:
-    """URL du site hébergé sur le domaine d'une adresse e-mail (contact@metalex-10.com -> https://www.metalex-10.com/), ou None.
-    Requêtes protégées (net.safe_get : adresses publiques seulement)."""
-    for url in (f"https://www.{domain}/", f"https://{domain}/", f"http://www.{domain}/", f"http://{domain}/"):
-        r = get(url, timeout=8.0)
-        if r is not None and r.status < 400 and "html" in (r.content_type or "") and len(r.text or "") > 500:
-            return r.url
-    return None
+def mail_domain_ok(conn, email: str, now: dt.datetime, query=maildns.doh) -> bool | None:
+    """Le domaine de l'adresse reçoit-il du courrier ? True / False, ou None si le DNS ne répond pas (rien conclu). Messageries gratuites
+    connues : pas de requête. Résultat positif gardé MX_TTL dans l'état de l'envoi (onglet Envois)."""
+    dom = mailer.email_domain(email)
+    if dom in FREEMAIL:
+        return True
+    checks = _state(conn)["checks"]
+    cache = checks.get("mx") if isinstance(checks.get("mx"), dict) else {}
+    try:
+        if dom in cache and now - dt.datetime.fromisoformat(cache[dom]) < MX_TTL:
+            return True
+    except (TypeError, ValueError):
+        pass
+    try:
+        ok = maildns.mail_host(dom, query=query)
+    except RuntimeError as exc:
+        log.warning("[mail] serveur de messagerie de %s : vérification impossible (%s)", dom, exc)
+        return None
+    if ok:
+        limit = now - MX_TTL
+        fresh = {}
+        for d, at in cache.items():
+            try:
+                if dt.datetime.fromisoformat(at) >= limit:
+                    fresh[d] = at
+            except (TypeError, ValueError):
+                pass
+        checks["mx"] = {**fresh, dom: now.isoformat()}
+        _save_checks(conn, checks)
+    return ok
+
+
+def _mark_invalid(conn, p: dict, email: str, why: str, now: dt.datetime) -> None:
+    """Adresse inutilisable AVANT tout envoi : marquée invalide comme un e-mail revenu (auto_state 'bounced'), sans alerte. La fiche passe
+    au téléphone / à la visite (fiche complète « téléphone » si elle en a un)."""
+    log.info("[mail] prospect %s : adresse %s invalide (%s), pas d'envoi", p["id"], email, why)
+    db.execute(conn, "UPDATE local_prospects SET auto_state='bounced' WHERE id=%s AND auto_state='queued'", (p["id"],))
+    store.set_provenance(conn, p["id"], "email_invalid", {"email": email, "reason": why, "at": _iso(now)})
+    conn.commit()
+
+
+def _defer(conn, p: dict, now: dt.datetime, why: str) -> None:
+    """Pas d'envoi ce passage-ci : nouvel essai PRESEND_RETRY plus tard, PRESEND_MAX_TRIES fois au plus. Au-delà, la fiche sort de la file et
+    son site reste « à trancher » (doute posé) : jamais de message « sans site » sur un doute."""
+    prev = complete._json(p.get("provenance")).get("presend_site")
+    tries = int((prev or {}).get("tries") or 0) + 1 if isinstance(prev, dict) else 1
+    flag = {"at": _iso(now), "result": "retry", "why": why[:160], "tries": tries, "retry_at": _iso(now + PRESEND_RETRY)}
+    if tries >= PRESEND_MAX_TRIES:
+        flag = {**flag, "result": "doubt", "doubt": True, "retry_at": None}
+        db.execute(conn, "UPDATE local_prospects SET auto_state=NULL, auto_queued_at=NULL WHERE id=%s AND auto_state='queued'", (p["id"],))
+        log.info("[mail] prospect %s sorti de la file après %d essais : %s (site à trancher)", p["id"], tries, why)
+    else:
+        log.info("[mail] prospect %s : envoi repoussé (%s), essai %d/%d", p["id"], why, tries, PRESEND_MAX_TRIES)
+    store.set_provenance(conn, p["id"], "presend_site", flag)
+    conn.commit()
+
+
+def _resolve_bounded(company: dict, fetch, thresholds, known: list[str], dns, urls: list[str], timeout: float):
+    """`sitefinder.resolve` SANS moteur de recherche (domaine de l'adresse, devinettes, site de la fiche Google), dans un fil borné à `timeout`.
+    Renvoie la résolution, ou None si le temps est écoulé ou en cas d'erreur (rien n'est conclu)."""
+    from . import siterecheck, sitefinder
+    out: list = []
+
+    def work():
+        try:
+            out.append(sitefinder.resolve(company, siterecheck._no_search, fetch, thresholds, strategy_budget=0, known_urls=known, dns=dns,
+                                          candidate_urls=urls))
+        except Exception as exc:  # noqa: BLE001 — une erreur de lecture = rien de conclu
+            log.warning("[mail] vérification du site en échec : %s", exc)
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(timeout)
+    return out[0] if out else None
+
+
+def presend_site(conn, p: dict, now: dt.datetime, fetch=None, timeout: float = PRESEND_TIMEOUT) -> tuple[str, str]:
+    """Dernière vérification du site avant un message « sans site ». Renvoie (verdict, détail) : 'none' (rien trouvé : le message peut
+    partir), 'found' (site sûr enregistré comme par siterecheck, brouillon effacé, fiche sortie de la file), 'retry' (doute ou erreur)."""
+    from . import places, runner, siterecheck
+    pid = p["id"]
+    prov = complete._json(p.get("provenance"))
+    pre = prov.get("presend_site") if isinstance(prov.get("presend_site"), dict) else {}
+    places_due = complete.site_state(p) == "places"
+    try:
+        if pre.get("result") == "none" and not places_due and now - dt.datetime.fromisoformat(pre["at"].replace("Z", "+00:00")) < PRESEND_FRESH:
+            return "none", "déjà vérifié"
+    except (KeyError, TypeError, ValueError, AttributeError):
+        pass
+    if fetch is None:
+        from . import fetch as fetch_mod
+        fetch = fetch_mod.Fetcher(timeout=6.0)
+    camp = siterecheck._campaign(conn, pid) or {"radius_km": 30}
+    ctx, company = runner.Ctx(conn, camp), runner._company(conn, p)
+    urls: list[str] = []
+    if places_due:
+        url, concluded = places.recover_url(conn, p, company)        # une requête Place Details (budget du mois) ; l'URL n'est jamais stockée
+        if not concluded:
+            conn.rollback()
+            return "retry", "site de la fiche Google pas encore vérifiable"
+        urls = [url] if url else []
+    res = _resolve_bounded(company, fetch, ctx.site_thresholds, runner._known_urls(conn, p), ctx.dns, urls, timeout)
+    if res is None:
+        return "retry", "vérification du site trop longue ou en échec"
+    runner.record_places_check(conn, pid, res, urls)
+    if res.accepted:
+        try:
+            _status, saved = siterecheck._conclude(conn, p, ctx, company, res, fetch, only_if_found=True)
+        except Exception as exc:  # noqa: BLE001 — enregistrement en échec : rien d'envoyé, nouvel essai plus tard
+            conn.rollback()
+            return "retry", f"enregistrement du site en échec ({type(exc).__name__})"
+        if saved:
+            conn.commit()
+            return "found", res.url or ""
+        conn.rollback()
+        return "retry", "fiche modifiée pendant la vérification"
+    dom = mailer.email_domain(p.get("email"))
+    if res.status == "UNCERTAIN" or any(c.get("domain") == dom and c.get("reachable") for c in res.candidates if dom and dom not in FREEMAIL):
+        conn.commit()                                                 # verdict Google éventuel gardé
+        return "retry", f"site possible ({res.candidates[0]['domain'] if res.candidates else '?'}), pas assez sûr"
+    store.set_provenance(conn, pid, "presend_site", {"at": _iso(now), "result": "none", "tries": int(pre.get("tries") or 0)})
+    conn.commit()
+    return "none", ""
 
 
 def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None, personal: bool = False,
-             site_probe=domain_site) -> str:
-    """Envoie UN e-mail. Renvoie 'sent', 'skipped' (prospect retiré) ou 'error' (problème du serveur : on réessaiera)."""
+             mx_query=maildns.doh, site_fetch=None) -> str:
+    """Envoie UN e-mail. Renvoie 'sent', 'error' (problème du serveur : on réessaiera) ou, sans envoi : 'skipped' (prospect retiré),
+    'found_site' (site trouvé juste avant), 'waiting' (fiche incomplète, reste en file) ou 'deferred' (vérification à reprendre plus tard)."""
     from_name = cfg["from_name"] or sender.get("name") or ""
     if kind == "first":
         reason = mailer.ineligible(p, personal)
@@ -139,18 +298,32 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
         if reason:
             _stop(conn, p, reason)
             return "skipped"
-        # Message « je n'ai pas trouvé de site » vers une adresse d'entreprise : si son domaine héberge un site, le message serait faux.
-        dom = mailer.email_domain(email)
-        if "sans_site" in (p.get("draft_kind") or "") and dom not in mailer.FREEMAIL and (site := site_probe(dom)):
-            _stop(conn, p, f"site trouvé sur le domaine de l'adresse ({site}) : message « sans site » bloqué")
-            store_hint = json.dumps({"url": site, "at": now.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
-            db.execute(conn, "UPDATE local_prospects SET provenance = JSON_SET(COALESCE(provenance, JSON_OBJECT()), '$.email_domain_site', CAST(%s AS JSON)) WHERE id=%s",
-                       (store_hint, p["id"]))
+        # Message « je n'ai pas trouvé de site » alors que le site est connu depuis (saisi à la main…) : brouillon effacé, sortie de la file.
+        if _sans_site(p) and p.get("website_status") in ("CONFIRMED", "PROBABLE"):
+            from .siterecheck import _drop_no_site_draft
+            _drop_no_site_draft(conn, p["id"])
             conn.commit()
-            name = (p.get("trade_name") or p.get("company_name") or "").strip()
-            notify.send_text(f"🛑 Envoi bloqué pour <b>{name}</b> : son adresse e-mail est sur un domaine qui a un site ({site}). "
-                             "Le message « je n'ai pas trouvé de site » serait faux : à réécrire depuis la fiche.")
+            log.info("[mail] prospect %s : site connu, brouillon « sans site » effacé, à rédiger de nouveau (refonte)", p["id"])
             return "skipped"
+        ok = mail_domain_ok(conn, email, now, query=mx_query)
+        if ok is False:
+            _mark_invalid(conn, p, email, f"aucun serveur de messagerie pour {mailer.email_domain(email)}", now)
+            return "skipped"
+        if ok is None:
+            _defer(conn, p, now, "DNS du destinataire injoignable")
+            return "deferred"
+        if _sans_site(p):
+            verdict, detail = presend_site(conn, p, now, fetch=site_fetch)
+            if verdict == "found":
+                log.info("[mail] prospect %s : site trouvé avant l'envoi (%s), message « sans site » effacé, rien d'envoyé", p["id"], detail)
+                return "found_site"
+            if verdict == "retry":
+                _defer(conn, p, now, detail)
+                return "deferred"
+            p = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (p["id"],)) or p   # verdict Google éventuel posé
+        if (why := complete.reason(p, personal)) is not None:
+            log.info("[mail] prospect %s en attente : %s", p["id"], why)
+            return "waiting"
         subject, text, to, reply_to = p["draft_subject"].strip(), p["draft_message"], email, None
     else:
         first = db.fetch_one(conn, "SELECT * FROM local_emails WHERE prospect_id=%s AND kind='first' AND status='sent' ORDER BY sent_at LIMIT 1", (p["id"],))
@@ -201,7 +374,8 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
     return "sent"
 
 
-def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect, dns=maildns.doh_txt, site_probe=domain_site) -> dict:
+def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect, dns=maildns.doh_txt, mx_query=maildns.doh, site_fetch=None) -> dict:
+    """Un passage. `dns` (TXT du domaine d'envoi), `mx_query` (DNS du destinataire) et `site_fetch` (lecture des sites) : remplaçables en test."""
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg, out = mail_config(), {}
     missing = missing_config(cfg)
@@ -251,20 +425,43 @@ def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect
         return {**out, "status": "cap"}
     sender = _setting(conn, "local_sender")
     for _ in range(5):                  # quelques prospects retirés (opposition, adresse perso…) ne gâchent pas le passage
-        task = next_task(conn, now)
+        task = next_task(conn, now, auto["personal_emails"])
         if not task:
             return {**out, "status": "idle"}
         result = send_one(conn, task[0], task[1], cfg, sender, now, send=send,
                           sent_copy=lambda m: inbox.append_sent(cfg, m.as_bytes(), factory=imap), personal=auto["personal_emails"],
-                          site_probe=site_probe)
-        if result != "skipped":
+                          mx_query=mx_query, site_fetch=site_fetch)
+        if result not in ("skipped", "waiting"):     # 'found_site' / 'deferred' : une vérification a déjà pris du temps, la suite au passage suivant
             return {**out, "status": result, "kind": task[0]}
     return {**out, "status": "idle"}
 
 
+def _lock():
+    """Un seul passage à la fois : la vérification d'un site avant l'envoi peut durer plus que l'intervalle de 2 min (jamais deux envois du même
+    message). Dossier des journaux absent (poste de développement) : pas de verrou."""
+    import fcntl
+    try:
+        fh = open(os.path.join(os.path.dirname(os.getenv("LOCAL_LOCK", "/app/logs/local.lock")), "outbox.lock"), "w")
+    except OSError:
+        return open(os.devnull, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
 def main() -> int:
-    with db.connect() as conn:
-        result = run(conn)
+    lock = _lock()
+    if lock is None:
+        log.info("[mail] passage précédent encore en cours")
+        return 0
+    try:
+        with db.connect() as conn:
+            result = run(conn)
+    finally:
+        lock.close()
     if result.get("status") not in ("disabled", "idle", "hours", "cap"):
         log.info("[mail] passage : %s", result)
     return 1 if result.get("status") == "error" else 0

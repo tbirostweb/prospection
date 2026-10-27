@@ -1,4 +1,5 @@
 /** Envoi automatique des e-mails (worker/local/outbox.py) : réglage, éligibilité et libellés. Désactivé par défaut. */
+import { FicheFields, ficheReason } from "./complete";
 
 /** personal_emails : envoyer aussi aux adresses Gmail, Orange… publiées comme contact de l'entreprise (activé par défaut, désactivable). */
 export type AutoSend = { enabled: boolean; daily_cap: number; start_hour: number; end_hour: number; personal_emails: boolean };
@@ -16,8 +17,9 @@ export const AUTO_STATES: Record<string, string> = {
 export const EMAIL_KINDS: Record<string, string> = { first: "Premier message", followup1: "Relance J+3", followup2: "Relance J+7" };
 
 /** Raison pour laquelle ce prospect ne peut pas être mis en file (null = éligible). Le worker revérifie tout juste avant l'envoi.
- *  `personal` (réglage personal_emails) : adresses Gmail, Orange… et adresses incertaines acceptées. */
-export function autoIneligible(p: { email?: string | null; email_kind?: string | null; do_not_contact?: any; contacted_at?: any; draft_message?: string | null }, personal: boolean): string | null {
+ *  `personal` (réglage personal_emails) : adresses Gmail, Orange… et adresses incertaines acceptées.
+ *  Seules les FICHES COMPLÈTES avec e-mail (lib/complete.ts) partent : métier connu, site tranché, entreprise active et indépendante. */
+export function autoIneligible(p: FicheFields & { contacted_at?: any; draft_message?: string | null }, personal: boolean): string | null {
   const email = String(p.email ?? "").trim().toLowerCase();
   if (p.do_not_contact) return "entreprise en liste « ne plus contacter »";
   if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return "pas d'adresse e-mail";
@@ -25,6 +27,9 @@ export function autoIneligible(p: { email?: string | null; email_kind?: string |
     if (!["GENERIC_BUSINESS", "PERSONAL_BUSINESS", "UNCERTAIN"].includes(String(p.email_kind))) return "adresse non vérifiée : à contacter toi-même";
   } else if (!["GENERIC_BUSINESS", "PERSONAL_BUSINESS"].includes(String(p.email_kind)) || FREEMAIL.has(email.split("@")[1]))
     return "adresse non professionnelle ou incertaine : à contacter toi-même";
+  if (p.auto_state === "bounced") return "adresse invalide (e-mail revenu ou domaine sans messagerie) : par téléphone ou sur place";
+  const incomplete = ficheReason(p, personal);
+  if (incomplete) return incomplete;
   if (p.contacted_at) return "déjà contacté";
   if (!p.draft_message) return "pas de brouillon";
   return null;

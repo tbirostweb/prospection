@@ -1,0 +1,32 @@
+{
+  "_doc": "Cas partagés par worker/worker/local/complete.py (tests/test_local_complete.py) et web/lib/complete.ts (web/tests/complete.test.ts, et sur MySQL : web/tests/complete-db.test.ts). `p` complète la fiche de base `base` ; `missing` : codes attendus ; `channel` : email | phone | null.",
+  "base": {"pipeline_stage": "DONE", "activity_label": "Garages", "website_status": "CONFIRMED", "email": "contact@garage-exemple.fr",
+           "email_kind": "GENERIC_BUSINESS", "phone": null, "do_not_contact": 0, "status": "QUALIFIED", "excluded_reason": null, "is_chain": 0,
+           "category": "A_CONTACTER", "site_review": null, "bodacc": null, "provenance": null, "auto_state": null, "website_absence_confidence": null},
+  "cases": [
+    {"name": "complète avec e-mail", "p": {}, "personal": false, "missing": [], "channel": "email"},
+    {"name": "métier inconnu", "p": {"activity_label": null}, "personal": true, "missing": ["metier"], "channel": null},
+    {"name": "métier vide", "p": {"activity_label": "  "}, "personal": true, "missing": ["metier"], "channel": null},
+    {"name": "traitement en cours", "p": {"pipeline_stage": "CONTACT_DISCOVERY"}, "personal": true, "missing": ["traitement"], "channel": null},
+    {"name": "site incertain", "p": {"website_status": "UNCERTAIN"}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "site en panne", "p": {"website_status": "UNREACHABLE"}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "site importé à vérifier", "p": {"site_review": "PENDING"}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "sans site, recherche faite mais pas revérifiée", "p": {"website_status": "NOT_FOUND", "website_absence_confidence": 0.7}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "sans site, recherche trop courte", "p": {"website_status": "NOT_FOUND", "website_absence_confidence": 0.4, "provenance": {"site_recheck": {"status": "NOT_FOUND"}}}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "sans site, revérification en erreur", "p": {"website_status": "NOT_FOUND", "website_absence_confidence": 0.7, "provenance": {"site_recheck": {"error": "x"}}}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "sans site, tranché", "p": {"website_status": "NOT_FOUND", "website_absence_confidence": 0.7, "provenance": {"site_recheck": {"status": "NOT_FOUND"}}}, "personal": true, "missing": [], "channel": "email"},
+    {"name": "sans site, fiche Google avec site jamais vérifié", "p": {"website_status": "NOT_FOUND", "website_absence_confidence": 0.7, "provenance": {"site_recheck": {"status": "NOT_FOUND"}, "places": {"place_id": "x", "had_website": true}}}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "sans site, fiche Google vérifiée", "p": {"website_status": "NOT_FOUND", "website_absence_confidence": 0.7, "provenance": {"site_recheck": {"status": "NOT_FOUND"}, "places": {"place_id": "x", "had_website": true, "site_checked_at": "2026-10-01T10:00:00Z", "site_checked": "rejected:no_match"}}}, "personal": true, "missing": [], "channel": "email"},
+    {"name": "sans site, doute avant l'envoi", "p": {"website_status": "NOT_FOUND", "website_absence_confidence": 0.7, "provenance": {"site_recheck": {"status": "NOT_FOUND"}, "presend_site": {"doubt": true}}}, "personal": true, "missing": ["site"], "channel": null},
+    {"name": "gmail refusée sans le réglage, pas de téléphone", "p": {"email": "garage@gmail.com", "email_kind": "UNCERTAIN"}, "personal": false, "missing": ["contact"], "channel": null},
+    {"name": "gmail acceptée par le réglage", "p": {"email": "garage@gmail.com", "email_kind": "UNCERTAIN"}, "personal": true, "missing": [], "channel": "email"},
+    {"name": "adresse pro sur messagerie gratuite sans le réglage, téléphone", "p": {"email": "garage@orange.fr", "email_kind": "GENERIC_BUSINESS", "phone": "0325000000"}, "personal": false, "missing": [], "channel": "phone"},
+    {"name": "e-mail invalide, téléphone", "p": {"auto_state": "bounced", "phone": "0325000000"}, "personal": true, "missing": [], "channel": "phone"},
+    {"name": "e-mail invalide, rien d'autre", "p": {"auto_state": "bounced"}, "personal": true, "missing": ["email_invalide"], "channel": null},
+    {"name": "aucun contact", "p": {"email": null, "email_kind": null}, "personal": true, "missing": ["contact"], "channel": null},
+    {"name": "chaîne", "p": {"is_chain": 1}, "personal": true, "missing": ["entreprise"], "channel": null},
+    {"name": "ne plus contacter", "p": {"do_not_contact": 1, "status": "DO_NOT_CONTACT"}, "personal": true, "missing": ["entreprise"], "channel": null},
+    {"name": "radiée", "p": {"bodacc": {"kind": "radiation"}}, "personal": true, "missing": ["entreprise"], "channel": null},
+    {"name": "écartée et métier inconnu", "p": {"excluded_reason": "holding", "activity_label": null}, "personal": true, "missing": ["entreprise", "metier"], "channel": null}
+  ]
+}

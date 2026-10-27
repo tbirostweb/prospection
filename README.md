@@ -205,6 +205,16 @@ une réponse arrête les relances (alerte Telegram), un refus inscrit l'entrepri
 invalide. Les adresses Gmail, Orange… publiées comme contact de l'entreprise sont incluses (désactivable dans Réglages) ; jamais par formulaire ni Facebook. Chaque message
 contient la ligne d'opposition et un lien de désinscription (`List-Unsubscribe`).
 
+**Fiches complètes seulement** : un premier e-mail ne part que pour une fiche complète avec e-mail — métier connu (code NAF, jamais deviné du
+nom), site tranché (confirmé / probable, ou « sans site » après recherche, revérification et site de la fiche Google vérifié), adresse fiable,
+entreprise active et indépendante (`worker/worker/local/complete.py` = `web/lib/complete.ts`). Les autres restent « en attente » (raison dans
+l'onglet Envois et sur la fiche) et partent seules une fois complétées ; `/rediger --email-only` ne propose que des fiches complètes. Juste avant
+l'envoi, sans rien te demander : domaine de l'adresse sans serveur de messagerie (ni MX ni A) → adresse marquée invalide, fiche au téléphone ;
+message « sans site » → dernière vérification du site (domaine de l'adresse, domaines devinés, fiche Google ; ≤ 45 s, aucun moteur). Site trouvé :
+enregistré, brouillon effacé, la fiche revient dans la file de rédaction en refonte (plus d'alerte Telegram). Doute ou réseau en échec : envoi
+repoussé d'une heure, 3 fois au plus, puis la fiche sort de la file (site « à trancher »). Statistiques → « Qualité de la liste » : fiches complètes
+et ce qui manque aux autres.
+
 1. **DNS du domaine d'envoi** : un seul enregistrement SPF, **un seul** enregistrement DMARC (deux = DMARC ignoré), DKIM activé chez OVH.
    L'envoi est bloqué tant que ce n'est pas le cas (l'onglet **Envois** dit quoi corriger).
 2. **Dokploy**, service *worker* : `LOCAL_SMTP_HOST`, `LOCAL_SMTP_PORT` (587, ou 465), `LOCAL_SMTP_USER` (l'adresse complète), `LOCAL_SMTP_PASSWORD`,

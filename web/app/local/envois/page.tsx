@@ -5,6 +5,7 @@ import BulkQueueButton from "@/components/BulkQueueButton";
 import EmailInput from "@/components/EmailInput";
 import { getAutoSend, getSetting, safeRows } from "@/lib/localdb";
 import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
+import { ficheReason } from "@/lib/complete";
 import { formatPhone, verifiedSocials } from "@/lib/local";
 import type { Sender } from "@/lib/draft";
 import { dateTimeFr } from "@/lib/format";
@@ -74,11 +75,14 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
   const [state] = await safeRows<any>("SELECT * FROM local_mail_state WHERE id=1");
   const checks = j(state?.checks) ?? {};
   // Brouillons pas encore partis : jamais contactés, ni écartés ni « ne plus contacter », hors séquence en cours ou terminée.
+  // + champs de la « fiche complète » (lib/complete.ts) : seule une fiche complète avec e-mail part, les autres attendent (raison affichée).
   const drafts = await safeRows<any>(`SELECT id, company_name, trade_name, city, social_links, email, email_kind, phone, do_not_contact, contacted_at, draft_subject,
-    draft_created_at, auto_state, auto_queued_at FROM local_prospects WHERE draft_message IS NOT NULL AND contacted_at IS NULL AND do_not_contact = 0
+    draft_created_at, auto_state, auto_queued_at, pipeline_stage, activity_label, website_status, website_absence_confidence, site_review, provenance, bodacc,
+    status, excluded_reason, is_chain, category FROM local_prospects WHERE draft_message IS NOT NULL AND contacted_at IS NULL AND do_not_contact = 0
     AND excluded_reason IS NULL AND (category IS NULL OR category <> 'IGNORER') AND status NOT IN ('LOST','WON','DO_NOT_CONTACT')
     AND (auto_state IS NULL OR auto_state IN ('queued','stopped')) ORDER BY draft_created_at DESC LIMIT 300`);
-  const ready = drafts.map((p) => ({ ...p, why: p.auto_state === "queued" ? null : autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) }))
+  const ready = drafts.map((p) => ({ ...p, why: p.auto_state === "queued" ? null : autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails),
+      waiting: p.auto_state === "queued" ? ficheReason(p, auto.personal_emails) : null }))
     .sort((a, b) => Number(b.auto_state === "queued") - Number(a.auto_state === "queued") || Number(a.why !== null) - Number(b.why !== null));
   const queued = ready.filter((p) => p.auto_state === "queued");
   const toQueue = ready.filter((p) => p.auto_state !== "queued" && p.why === null);
@@ -175,7 +179,8 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
                 {p.draft_subject && <div className="truncate text-xs text-muted">Objet : {p.draft_subject}</div>}
               </div>
               {p.auto_state === "queued"
-                ? <span className="inline-flex items-center gap-2"><span className="chip">En file{auto.enabled ? "" : " (envoi désactivé)"}</span><AutoSendButton id={p.id} action="auto_stop" /></span>
+                ? <span className="inline-flex items-center gap-2"><span className="chip">{p.waiting ? "En file, en attente" : `En file${auto.enabled ? "" : " (envoi désactivé)"}`}</span><AutoSendButton id={p.id} action="auto_stop" />
+                    {p.waiting && <span className="basis-full text-xs text-muted">{p.waiting} — l'app la complète seule, rien à faire</span>}</span>
                 : p.why === null ? <AutoSendButton id={p.id} action="auto_queue" />
                 : !p.email ? <span className="inline-flex flex-wrap items-center gap-2">
                     {/* Recherche à la main, en un clic : Google (requête prête) et la page Facebook vérifiée si l'app la connaît. */}
@@ -184,6 +189,7 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
                     {verifiedSocials(p).filter((x) => x.network === "Facebook").slice(0, 1).map((x) => (
                       <a key={x.url} href={x.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-accent hover:underline">Facebook ↗</a>))}
                     <EmailInput id={p.id} compact /></span>
+                : p.why.startsWith("fiche incomplète") ? <span className="text-xs text-muted">En attente : {p.why.replace(/^fiche incomplète : /, "")}</span>
                 : <span className="text-xs text-muted">À envoyer toi-même : {p.why.replace(/ : à contacter toi-même$/, "")}</span>}
             </div>))}
           {ready.length === 0 && <div className="px-6 py-10 text-center text-muted">Aucun brouillon en attente. Lance <code>/rediger</code> dans Claude Code pour en préparer.</div>}

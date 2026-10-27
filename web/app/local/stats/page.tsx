@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
 import PlacesBackfillButton from "@/components/PlacesBackfillButton";
-import { getPlacesStats, getSetting, safeRows } from "@/lib/localdb";
+import { getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
 import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engineTier } from "@/lib/local";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +76,11 @@ export default async function LocalStats() {
       (SELECT COUNT(*) FROM local_events e WHERE e.source = IF(s.source='websearch','search',s.source) AND e.at >= UTC_TIMESTAMP() - INTERVAL 7 DAY) AS errs
       FROM local_prospect_sources s GROUP BY s.source`);
   const places = await getPlacesStats();
+  const quality = await getQualityStats();
+  const complete = quality.email + quality.phone;
+  const gaps: [string, number][] = ([["Sans contact fiable", quality.missing.noContact], ["Site à trancher", quality.missing.siteTodo],
+    ["Métier inconnu", quality.missing.noMetier], ["E-mail invalide", quality.missing.emailInvalid], ["Traitement en cours", quality.missing.processing]] as [string, number][])
+    .filter(([, v]) => v > 0);
   const learn = await getSetting<any>("local_learning", null);
   const learned = learn ? Object.values(learn.features ?? {}).filter((f: any) => f.n >= 4).sort((a: any, b: any) => b.points - a.points) as any[] : [];
   const cards: [string, any, string?][] = [
@@ -98,6 +103,17 @@ export default async function LocalStats() {
       <PageHeader title="Statistiques" intro="Tes résultats, et l'état technique de la recherche (utile seulement si quelque chose ne marche pas).">
         <Link href="/settings" className="btn-ghost btn-sm">← Réglages</Link>
       </PageHeader>
+      {/* Qualité plutôt que quantité : fiche complète = métier connu, site tranché, contact fiable, entreprise active et indépendante (lib/complete.ts). */}
+      <section className="panel mb-8 min-w-0">
+        <h2 className="section-title">Qualité de la liste</h2>
+        <p className="text-sm"><span className="big-number text-2xl">{complete}</span> fiche{complete > 1 ? "s" : ""} complète{complete > 1 ? "s" : ""} sur {quality.total} à prospecter
+          <span className="text-muted"> ({pct(complete, quality.total)})</span></p>
+        <p className="mt-1 text-sm text-muted">dont <b className="text-ink">{quality.email}</b> avec e-mail (envoi automatique possible) · <b className="text-ink">{quality.phone}</b> par téléphone seulement</p>
+        {gaps.length > 0 && <>
+          <div className="mt-4 text-xs text-muted">Ce qui manque aux {quality.total - complete} autres (une fiche peut cumuler) — l'app continue à les compléter seule :</div>
+          <ul className="mt-2 flex flex-wrap gap-2 text-sm">{gaps.map(([label, v]) => <li key={label} className="chip">{label} · {v}</li>)}</ul>
+        </>}
+      </section>
       <div className="stat-grid mb-8 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
         {cards.map(([label, v, sub], i) => (
           <div key={label} className={`stat-block ${i === 3 ? "stat-block-accent" : ""}`}><div className="mono">{label}</div>

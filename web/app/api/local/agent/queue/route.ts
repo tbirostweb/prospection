@@ -8,7 +8,8 @@ import { autoIneligible } from "@/lib/autosend";
  *  Uniquement des FAITS sur l'entreprise (nom commercial, ville, activité, déclencheur, constats vérifiés) et le brouillon de référence construit
  *  par le code : ni le nom du gérant, ni e-mail, ni téléphone ne sortent d'ici (salutation, signature et notice sont ajoutées au dépôt).
  *  Prospects prêts de la file « À contacter », sans brouillon (sauf `?include_drafted=1`), déclencheurs forts d'abord.
- *  `?email_only=1` : seulement ceux qui peuvent partir par l'envoi automatique (adresse e-mail acceptée par le réglage, jamais contactés). */
+ *  `?email_only=1` : seulement ceux qui peuvent partir par l'envoi automatique : FICHE COMPLÈTE avec e-mail (lib/complete.ts : métier connu, site
+ *  tranché, adresse acceptée par le réglage, entreprise active), jamais contactés. Les autres attendent : l'app continue à les compléter seule. */
 export async function GET(req: NextRequest) {
   const limit = Math.min(50, Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 5));
   const withDrafts = req.nextUrl.searchParams.get("include_drafted") === "1";
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
   const sender = await getSetting<Sender>("local_sender", {});
   const offer = await getSetting<Offer>("local_offer", {});
   const auto = await getAutoSend();
-  const rows = (await safeRows<any>(`SELECT ${LIST_COLUMNS}, p.website_evidence, p.contact_source_url, p.draft_message ${CONTACT_QUEUE_SQL}`))
+  const rows = (await safeRows<any>(`SELECT ${LIST_COLUMNS}, p.website_evidence, p.contact_source_url, p.draft_message, p.provenance, p.auto_state ${CONTACT_QUEUE_SQL}`))
     .filter((p) => withDrafts || !p.draft_message)
     .filter((p) => !emailOnly || autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null);
   const { triggered, others } = splitByTrigger(rows);
@@ -43,8 +44,8 @@ export async function GET(req: NextRequest) {
       ville: p.city ? cap(p.city) : null,
       activite: p.activity_label ? String(p.activity_label).split(",")[0] : null,
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,
-      faits: d.facts, type: d.kind, photos_en_option: photosOffered(p, offer), canal: p.email ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
-      // envoi automatique possible (adresse e-mail acceptée par le réglage, jamais contacté) ; sinon Théo contacte lui-même
+      faits: d.facts, type: d.kind, photos_en_option: photosOffered(p, offer), canal: p.email && p.auto_state !== "bounced" ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
+      // envoi automatique possible (fiche complète avec e-mail, jamais contactée) ; sinon Théo contacte lui-même (jamais sans métier connu)
       envoi_auto: autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null,
       reference: { objet: d.subject, coeur: d.core }, fiche: `/local/${p.id}`,
     });

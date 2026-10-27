@@ -12,7 +12,7 @@ from email.policy import default as default_policy
 import pytest
 
 from worker import db
-from worker.local import outbox
+from worker.local import outbox, sitefinder
 
 SENDER = {"name": "Théo Exemple", "company": "Exemple Web", "role": "Développeur web", "phone": "06 12 34 56 78",
           "email": "contact@exemple-web.fr", "website": "exemple-web.fr", "logo_url": "https://exemple-web.fr/logo.png"}
@@ -23,6 +23,14 @@ BODY = ("Bonjour,\n\nJe n'ai pas trouvé de site pour votre garage, sauf erreur 
 PARIS = dt.timezone(dt.timedelta(hours=1))                                     # novembre : UTC+1
 T0 = dt.datetime(2026, 11, 2, 10, 0, tzinfo=PARIS)                             # lundi 10 h
 DNS_OK = {"exemple-web.fr": ["v=spf1 include:mx.ovh.com ~all"], "_dmarc.exemple-web.fr": ["v=DMARC1; p=quarantine"]}
+NO_MAIL: set[str] = set()                                                      # domaines de destinataires sans MX ni A (remplis par les tests)
+
+
+def fake_mx(name, rtype):
+    """DNS des destinataires : un MX partout, sauf les domaines de NO_MAIL ; « panne.example » ne répond pas."""
+    if name == "panne.example":
+        raise RuntimeError("DNS injoignable (test)")
+    return [] if name in NO_MAIL else (["10 mx.exemple.net."] if rtype == "MX" else [])
 
 
 class FakeSMTP:
@@ -92,14 +100,17 @@ def mail(env, conn, monkeypatch, telegram):
     uid = db.fetch_one(conn, "SELECT id FROM users LIMIT 1")["id"]
     db.execute(conn, "INSERT INTO settings (user_id, skey, value_json) VALUES (%s, 'local_sender', %s)", (uid, json.dumps(SENDER)))
     smtp, imap = FakeSMTP(), FakeImap()
+    NO_MAIL.clear()
+    monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])     # aucune résolution réelle des domaines devinés
 
     class M:
         def enable(self, **cfg):
             db.execute(conn, "INSERT INTO settings (user_id, skey, value_json) VALUES (%s, 'local_auto_send', %s) ON DUPLICATE KEY UPDATE value_json=VALUES(value_json)",
                        (uid, json.dumps({"enabled": True, **cfg})))
 
-        def run(self, now, dns=DNS_OK, site=None):
-            return outbox.run(conn, now=now.astimezone(dt.timezone.utc), send=smtp, imap=imap, dns=lambda n: dns.get(n, []), site_probe=lambda d: site)
+        def run(self, now, dns=DNS_OK, fetch=None):
+            return outbox.run(conn, now=now.astimezone(dt.timezone.utc), send=smtp, imap=imap, dns=lambda n: dns.get(n, []), mx_query=fake_mx,
+                              site_fetch=fetch or (lambda url: None))
 
     m = M()
     m.smtp, m.imap, m.tg = smtp, imap, telegram
@@ -107,10 +118,11 @@ def mail(env, conn, monkeypatch, telegram):
 
 
 def add(conn, siret: str, email: str = "contact@garage-exemple.fr", kind: str = "GENERIC_BUSINESS", queued: bool = True, minutes: int = 0) -> int:
+    """Fiche COMPLÈTE (métier connu, site confirmé, traitement terminé) avec un premier message en file."""
     db.execute(conn, """INSERT INTO local_prospects (siret, siren, fingerprint, company_name, trade_name, city, email, email_kind, status, category,
-                        draft_subject, draft_message, auto_state, auto_queued_at)
-                        VALUES (%s,%s,%s,'GARAGE EXEMPLE SARL','Garage Exemple','Troyes',%s,%s,'QUALIFIED','A_CONTACTER','Votre garage',%s,%s,
-                        UTC_TIMESTAMP() - INTERVAL %s MINUTE)""",
+                        activity_key, activity_label, website_status, website_url, pipeline_stage, draft_subject, draft_message, auto_state, auto_queued_at)
+                        VALUES (%s,%s,%s,'GARAGE EXEMPLE SARL','Garage Exemple','Troyes',%s,%s,'QUALIFIED','A_CONTACTER','garages','Garages','CONFIRMED',
+                        'https://www.garage-exemple.fr/','DONE','Votre garage',%s,%s, UTC_TIMESTAMP() - INTERVAL %s MINUTE)""",
                (siret, siret[:9], f"fp{siret}", email, kind, BODY, "queued" if queued else None, 100 - minutes))
     return db.fetch_one(conn, "SELECT id FROM local_prospects WHERE siret=%s", (siret,))["id"]
 
@@ -254,16 +266,49 @@ def test_adresse_perso_envoyee_par_defaut(mail, conn):
     assert mail.smtp.sent[0]["To"] == "garage.exemple@gmail.com"
 
 
-def test_message_sans_site_bloque_si_le_domaine_de_l_adresse_a_un_site(mail, conn):
-    pid = add(conn, "10000000000011", email="contact@metal-exemple.com")
+def test_message_sans_site_efface_si_le_site_est_connu_depuis(mail, conn):
+    pid = add(conn, "10000000000011")                                          # site confirmé (saisi depuis), brouillon « sans site » resté
     db.execute(conn, "UPDATE local_prospects SET draft_kind='ai_sans_site' WHERE id=%s", (pid,))
     mail.enable()
-    r = mail.run(T0, site="https://www.metal-exemple.com/")
-    assert r["status"] == "idle" and mail.smtp.sent == [] and row(conn, pid)["auto_state"] == "stopped"
-    assert "metal-exemple.com" in row(conn, pid)["provenance"] and any("Envoi bloqué" in t for t in mail.tg.texts)
-    gmail = add(conn, "20000000000011", email="metal.exemple@gmail.com", kind="UNCERTAIN", minutes=1)
-    db.execute(conn, "UPDATE local_prospects SET draft_kind='ai_sans_site' WHERE id=%s", (gmail,))
-    assert mail.run(T0 + dt.timedelta(minutes=10), site="https://gmail.com/")["status"] == "sent"   # messagerie gratuite : jamais vérifiée
+    assert mail.run(T0)["status"] == "idle" and mail.smtp.sent == []
+    p = row(conn, pid)
+    assert p["draft_message"] is None and p["auto_state"] is None and mail.tg.texts == []    # à rédiger de nouveau, aucune alerte
+
+
+def test_domaine_sans_serveur_de_messagerie_adresse_invalide(mail, conn):
+    pid = add(conn, "10000000000011", email="contact@domaine-mort.fr")
+    NO_MAIL.add("domaine-mort.fr")
+    ok = add(conn, "30000000000011", email="contact@autre-exemple.fr", minutes=1)
+    mail.enable()
+    r = mail.run(T0)
+    assert r["status"] == "sent" and [m["To"] for m in mail.smtp.sent] == ["contact@autre-exemple.fr"]   # la suivante part au même passage
+    p = row(conn, pid)
+    assert p["auto_state"] == "bounced" and '"email_invalid"' in p["provenance"] and "domaine-mort.fr" in p["provenance"]
+    assert row(conn, ok)["auto_state"] == "active" and not any("domaine-mort" in t for t in mail.tg.texts)   # aucune alerte
+    checks = json.loads(db.fetch_one(conn, "SELECT checks FROM local_mail_state WHERE id=1")["checks"])
+    assert "autre-exemple.fr" in checks["mx"] and "domaine-mort.fr" not in checks["mx"]       # seul un résultat positif est gardé
+
+
+def test_dns_du_destinataire_injoignable_envoi_repousse(mail, conn):
+    pid = add(conn, "10000000000011", email="contact@panne.example")
+    mail.enable()
+    assert mail.run(T0)["status"] == "deferred" and mail.smtp.sent == []
+    p = row(conn, pid)
+    assert p["auto_state"] == "queued" and '"retry_at"' in p["provenance"]
+    assert mail.run(T0 + dt.timedelta(minutes=2))["status"] == "idle"         # pas de nouvel essai avant PRESEND_RETRY
+
+
+def test_metier_inconnu_ou_fiche_incomplete_jamais_envoyee(mail, conn):
+    a = add(conn, "10000000000011")
+    db.execute(conn, "UPDATE local_prospects SET activity_label=NULL, activity_key=NULL WHERE id=%s", (a,))
+    b = add(conn, "20000000000011", email="contact@garage-deux.fr", minutes=1)
+    db.execute(conn, "UPDATE local_prospects SET website_status='UNCERTAIN' WHERE id=%s", (b,))      # site à trancher
+    mail.enable()
+    assert mail.run(T0)["status"] == "idle" and mail.smtp.sent == []
+    assert row(conn, a)["auto_state"] == "queued" and row(conn, b)["auto_state"] == "queued"        # restent en file, en attente
+    assert outbox.waiting(row(conn, a), True, T0) == "fiche incomplète : métier inconnu (activité non classée)"
+    db.execute(conn, "UPDATE local_prospects SET activity_label='Garages' WHERE id=%s", (a,))          # complétée : elle part
+    assert mail.run(T0 + dt.timedelta(minutes=2))["status"] == "sent" and mail.smtp.sent[0]["To"] == "contact@garage-exemple.fr"
 
 
 def test_boite_lue_toutes_les_10_min_et_toujours_avant_une_relance(mail, conn):
