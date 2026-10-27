@@ -232,6 +232,16 @@ e-mail, nom collé ou suivi du département, mentions légales) ; un site trouv�
 brouillon « je n'ai pas trouvé de site » et retire la fiche de la file d'envoi. Tu peux aussi saisir une adresse trouvée toi-même :
 « Ajouter l'e-mail » sur la fiche ou dans l'onglet Envois.
 
+**Enrichissement des fiches existantes** (`worker/worker/local/enrich.py`, lancé par `python -m worker.local.emailsearch`) : passage complet à
+:20 et :50, passage sans moteur à :05 et :35 (8 h-20 h), avec son propre verrou. Sans moteur (pendant les campagnes aussi, sur les fiches hors
+campagne en cours) : site de la fiche Google (Place Details), devinettes de domaine et domaine de l'e-mail, sites injoignables rouverts (3 jours
+d'écart, 2 fois, puis « site en panne » : tranché), sites vérifiés relus pour l'e-mail, fiches bloquées « traitement en cours » terminées. Avec
+moteurs (verrou des campagnes, attendu au plus 10 min, tenu au plus 5 min) : revérification, recherche trop maigre complétée (stratégies pas
+encore essayées), recherche d'e-mail. Les campagnes laissent une réserve du jour aux fiches existantes (moteurs : `LOCAL_ENGINE_ENRICH_RESERVE` ;
+Google Places : quota du jour `LOCAL_GOOGLE_PLACES_DAILY_BUDGET` et réserves `LOCAL_PLACES_ENRICH_*`). Statistiques → « Qualité de la liste » :
+pourquoi chaque site reste à trancher, pourquoi un contact manque, et l'état du dernier passage (heure, ce qui a été traité, raison d'arrêt :
+verrou pris, budget de temps, quota, moteurs indisponibles, rien à faire), table `local_enrich_runs` (migration 033).
+
 Le journal est `logs/mail.log` (worker). Les e-mails envoyés sont aussi copiés dans le dossier « Envoyés » de ta boîte.
 
 ## Dépannage

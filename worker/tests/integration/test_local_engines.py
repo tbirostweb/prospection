@@ -486,3 +486,17 @@ def test_paliers_identiques_web_et_worker():
     for p in engines.provider_catalog():
         assert f'"{p["engine"]}": {p["tier"]}' in ts
     assert '0: "Gratuit", 1: "Gratuit à quota", 2: "Payant"' in ts
+
+
+def test_reserve_des_fiches_existantes_les_campagnes_s_arretent_avant(conn, pool_factory, monkeypatch):
+    monkeypatch.setattr(engines, "DAILY_BUDGET", 10)
+    campagne = pool_factory({}, engines_list="google")
+    campagne.reserve = 5                                                               # plafonnée au cinquième du budget : 2 requêtes gardées
+    for i in range(8):
+        campagne(f"q{i}")
+    assert campagne.available() == []                                                  # la campagne s'arrête à 8 / 10
+    enrichissement = engines.SearchPool(conn, "google", "http://searx.test")          # l'enrichissement a encore ses 2 requêtes
+    assert enrichissement.available() == ["google"]
+    enrichissement("q8")
+    enrichissement("q9")
+    assert enrichissement.available() == [] and health(conn, "google")["window_requests"] == 10   # budget du moteur jamais dépassé

@@ -1,7 +1,8 @@
 import { query } from "@/lib/db";
 import { READY_SQL } from "@/lib/local";
 import { AUTO_DEFAULTS, AutoSend } from "@/lib/autosend";
-import { qualitySql } from "@/lib/complete";
+import { CONTACT_REASONS, ContactReason, SITE_REASONS, SiteReason, qualitySql } from "@/lib/complete";
+import { DAY_RUNS_SQL, EnrichRun, LAST_FULL_RUN_SQL, LAST_RUN_SQL, parseSteps } from "@/lib/enrich";
 
 /** Colonnes d'une ligne de liste (pas les gros champs JSON de l'audit). */
 export const LIST_COLUMNS = `p.id, p.siret, p.company_name, p.trade_name, p.activity_key, p.activity_label, p.city, p.postal_code, p.distance_km,
@@ -68,8 +69,7 @@ export async function getPlacesStats() {
       WHERE p.website_status IN ('NOT_FOUND','UNCERTAIN') AND p.contacted_at IS NULL AND (p.auto_state IS NULL OR p.auto_state = 'queued')
         AND p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.is_chain = 0 AND p.pipeline_stage = 'DONE'
         AND (p.category IS NULL OR p.category <> 'IGNORER') AND p.status NOT IN ('LOST','WON','DO_NOT_CONTACT','CONTACTED')
-        AND JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.places') IS NULL
-        AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)`);
+        AND JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.places') IS NULL`);
   // découverte des campagnes (worker/local/placesdiscovery.py) : fiches rattachées à SIRENE, dont celles qu'aucune autre source n'avait ; résultats ignorés
   const [f] = await safeRows<any>(`SELECT COUNT(*) AS n, COALESCE(SUM(NOT EXISTS (SELECT 1 FROM local_prospect_sources o WHERE o.prospect_id = s.prospect_id
       AND o.source IN ('sirene','sirene_bulk'))),0) AS only FROM local_prospect_sources s WHERE s.source = 'places'`);
@@ -84,8 +84,7 @@ export async function getPlacesStats() {
   const [left] = await safeRows<any>(`SELECT COUNT(*) AS n, COALESCE(SUM(p.website_status IN ('NOT_FOUND','UNCERTAIN') AND p.contacted_at IS NULL
         AND (p.auto_state IS NULL OR p.auto_state = 'queued') AND p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.is_chain = 0
         AND p.pipeline_stage = 'DONE' AND (p.category IS NULL OR p.category <> 'IGNORER') AND p.status NOT IN ('LOST','WON','DO_NOT_CONTACT','CONTACTED')
-        AND JSON_TYPE(JSON_EXTRACT(p.provenance, '$.places.place_id')) = 'STRING'
-        AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)),0) AS queued
+        AND JSON_TYPE(JSON_EXTRACT(p.provenance, '$.places.place_id')) = 'STRING'),0) AS queued
       FROM local_prospects p WHERE ${HAD} AND JSON_EXTRACT(p.provenance, '$.places.site_checked_at') IS NULL`);
   const backfill = await getSetting<{ enabled?: boolean }>("local_places_backfill", {});
   return { pending: Number(t?.n ?? 0), backfillOn: backfill?.enabled === true,
@@ -103,5 +102,19 @@ export async function getQualityStats() {
   const [q] = await safeRows<any>(qualitySql(auto.personal_emails));
   const n = (k: string) => Number(q?.[k] ?? 0);
   return { total: n("total"), email: n("complete_email"), phone: n("complete_phone"),
-    missing: { processing: n("processing"), noMetier: n("no_metier"), siteTodo: n("site_todo"), noContact: n("no_contact"), emailInvalid: n("email_invalid") } };
+    missing: { processing: n("processing"), noMetier: n("no_metier"), siteTodo: n("site_todo"), noContact: n("no_contact"), emailInvalid: n("email_invalid") },
+    // raisons (lib/complete.ts siteReason / contactReason), dans l'ordre d'affichage, seulement celles qui comptent
+    siteReasons: (Object.keys(SITE_REASONS) as SiteReason[]).map((c) => ({ code: c, label: SITE_REASONS[c], n: n(`site_${c}`) })).filter((r) => r.n > 0),
+    contactReasons: (["none", "form", "refused"] as ContactReason[]).map((c) => ({ code: c, label: CONTACT_REASONS[c], n: n(`contact_${c}`) })).filter((r) => r.n > 0),
+    processing: { campaign: n("processing_campaign"), abandoned: n("processing_abandoned"), imported: n("processing_imported") } };
+}
+
+/** Statistiques → « Dernier passage d'enrichissement » (worker/local/enrich.py, table local_enrich_runs : absente avant la migration 033 → null). */
+export async function getEnrichStats() {
+  const run = (r: any): EnrichRun | null => r ? { started_at: r.started_at, duration_ms: Number(r.duration_ms ?? 0), mode: String(r.mode ?? ""),
+    stopped: r.stopped ?? null, steps: parseSteps(r.steps) } : null;
+  const [last] = await safeRows<any>(LAST_RUN_SQL);
+  const [full] = await safeRows<any>(LAST_FULL_RUN_SQL);
+  const [day] = await safeRows<any>(DAY_RUNS_SQL);
+  return { last: run(last), lastFull: run(full), day: { runs: Number(day?.runs ?? 0), skipped: Number(day?.skipped ?? 0), locked: Number(day?.locked ?? 0) } };
 }

@@ -15,6 +15,10 @@ trancher…) attend sans partir. Juste avant, sans rien demander au propriétair
     score), brouillon « sans site » effacé, fiche sortie de la file — elle reviendra seule dans la file de rédaction, en refonte. Doute ou réseau
     en échec : pas d'envoi ce passage-ci, nouvel essai PRESEND_RETRY plus tard, PRESEND_MAX_TRIES fois au plus (ensuite : sortie de la file, site
     « à trancher »).
+  * message « site inaccessible » : l'URL du site est rouverte juste avant (`presend_unreachable`, PRESEND_PROBE_TIMEOUT secondes au plus). Le site
+    répond normalement : rien n'est envoyé, le site est revérifié sans moteur (enregistré s'il est le sien, sinon la fiche redevient « sans site »,
+    à chercher), brouillon effacé, fiche sortie de la file, aucune alerte. Toujours injoignable (DNS, connexion refusée, erreur HTTP) : le message
+    part. Doute (délai dépassé de notre côté, site qui bloque les robots) : reporté comme ci-dessus (PRESEND_RETRY, PRESEND_MAX_TRIES).
 """
 from __future__ import annotations
 
@@ -40,6 +44,7 @@ PRESEND_TIMEOUT = 45.0                   # secondes : dernière vérification du
 PRESEND_RETRY = dt.timedelta(hours=1)    # doute ou réseau en échec : nouvel essai une heure plus tard
 PRESEND_MAX_TRIES = 3
 PRESEND_FRESH = dt.timedelta(days=3)     # vérification réussie (rien trouvé) : pas refaite avant 3 jours (envoi repoussé par une erreur SMTP…)
+PRESEND_PROBE_TIMEOUT = 8.0              # secondes : réouverture de l'URL avant un message « site inaccessible »
 
 
 def mail_config() -> dict:
@@ -283,6 +288,72 @@ def presend_site(conn, p: dict, now: dt.datetime, fetch=None, timeout: float = P
     return "none", ""
 
 
+def _site_down_draft(p: dict) -> bool:
+    return "site_inaccessible" in (p.get("draft_kind") or "")
+
+
+def _probe_bounded(fetch, url: str, timeout: float):
+    """UNE lecture de l'URL dans un fil borné à `timeout`. Renvoie (réponse ou None, terminé à temps ?)."""
+    out: list = []
+
+    def work():
+        try:
+            out.append(fetch(url))
+        except Exception as exc:  # noqa: BLE001 — une erreur de lecture = site injoignable (le Fetcher ne lève jamais)
+            log.info("[mail] lecture de %s en échec : %s", url[:100], exc)
+            out.append(None)
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(timeout)
+    return (out[0] if out else None), bool(out)
+
+
+def presend_unreachable(conn, p: dict, now: dt.datetime, fetch=None, timeout: float | None = None) -> tuple[str, str]:
+    """Dernière vérification avant un message « site inaccessible ». Renvoie (verdict, détail) : 'down' (toujours injoignable : le message peut
+    partir), 'up' (le site répond : revérifié sans moteur, brouillon effacé, fiche sortie de la file, rien d'envoyé), 'retry' (doute)."""
+    from . import errors, runner, siterecheck
+    timeout = PRESEND_PROBE_TIMEOUT if timeout is None else timeout
+    url = (p.get("website_url") or "").strip()
+    if not url:
+        return "down", "aucune adresse de site connue"
+    if fetch is None:
+        from . import fetch as fetch_mod
+        fetch = fetch_mod.Fetcher(timeout=min(6.0, timeout))
+    before = len(getattr(fetch, "failures", []) or [])
+    got, finished = _probe_bounded(fetch, url, timeout)
+    if not finished:
+        return "retry", "site trop lent à répondre (délai dépassé de notre côté)"
+    cats = {c for c, _u in (getattr(fetch, "failures", []) or [])[before:]}
+    if got is None:
+        if errors.SITE_TIMEOUT in cats:
+            return "retry", "délai dépassé en lisant le site (réseau de notre côté ?)"
+        return "down", ", ".join(sorted(cats)) or "injoignable"
+    status = int(getattr(got, "status", 0) or 0)
+    if status in (401, 403, 429) or errors.SITE_BLOCKED in cats and status != 503:
+        return "retry", f"le site refuse les robots (HTTP {status}) : peut-être joignable"
+    if status >= 400 or not getattr(got, "text", ""):
+        return "down", f"HTTP {status}"
+    # le site répond normalement : le message serait faux. Revérifié sans moteur, comme enrich.unreachable_retry.
+    pid = p["id"]
+    camp = siterecheck._campaign(conn, pid) or siterecheck.DEFAULT_CAMPAIGN
+    ctx, company = runner.Ctx(conn, camp), runner._company(conn, p)
+    res = _resolve_bounded(company, fetch, ctx.site_thresholds, runner._known_urls(conn, p), None, [url], PRESEND_TIMEOUT)
+    try:
+        if res is not None and res.accepted:
+            siterecheck._conclude(conn, p, ctx, company, res, fetch, only_if_found=True)
+        elif res is not None and res.status != "UNREACHABLE":
+            store.save_resolution(conn, pid, res)                     # répond mais n'est plus le sien : « sans site », à chercher
+        # sinon (vérification trop longue) : statut inchangé, revu par enrich.unreachable_retry ; le brouillon, lui, est faux
+        siterecheck._drop_no_site_draft(conn, pid)                    # brouillon « site inaccessible » effacé, fiche sortie de la file
+        store.set_provenance(conn, pid, "presend_site", {"at": _iso(now), "result": "site_up", "url": url[:200],
+                                                         "status": res.status if res is not None else None})
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001 — enregistrement en échec : rien d'envoyé, nouvel essai plus tard
+        conn.rollback()
+        return "retry", f"enregistrement en échec ({type(exc).__name__})"
+    return "up", url
+
+
 def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None, personal: bool = False,
              mx_query=maildns.doh, site_fetch=None) -> str:
     """Envoie UN e-mail. Renvoie 'sent', 'error' (problème du serveur : on réessaiera) ou, sans envoi : 'skipped' (prospect retiré),
@@ -321,6 +392,14 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
                 _defer(conn, p, now, detail)
                 return "deferred"
             p = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (p["id"],)) or p   # verdict Google éventuel posé
+        elif _site_down_draft(p):
+            verdict, detail = presend_unreachable(conn, p, now, fetch=site_fetch)
+            if verdict == "up":
+                log.info("[mail] prospect %s : le site répond de nouveau (%s), message « site inaccessible » effacé, rien d'envoyé", p["id"], detail)
+                return "found_site"
+            if verdict == "retry":
+                _defer(conn, p, now, detail)
+                return "deferred"
         if (why := complete.reason(p, personal)) is not None:
             log.info("[mail] prospect %s en attente : %s", p["id"], why)
             return "waiting"

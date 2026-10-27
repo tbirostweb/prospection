@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
 import PlacesBackfillButton from "@/components/PlacesBackfillButton";
-import { getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
+import { getEnrichStats, getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
+import { MODE_LABELS, STEP_LABELS, STOP_LABELS, enrichSummary, type EnrichRun } from "@/lib/enrich";
 import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engineTier } from "@/lib/local";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +78,11 @@ export default async function LocalStats() {
       FROM local_prospect_sources s GROUP BY s.source`);
   const places = await getPlacesStats();
   const quality = await getQualityStats();
+  const enrich = await getEnrichStats();
+  const hhmm = (d: any) => new Date(d).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const runLine = (r: EnrichRun) => `${hhmm(r.started_at)} (${MODE_LABELS[r.mode] ?? r.mode}, ${Math.max(1, Math.round(r.duration_ms / 60000))} min) : ${enrichSummary(r.steps)}`;
+  // sous-passages arrêtés par autre chose que « rien à faire » / « plafond » : ce qui freine l'avancement
+  const blocked = (r: EnrichRun) => r.steps.filter((x) => !["nothing", "limit", "off"].includes(x.stop));
   const complete = quality.email + quality.phone;
   const gaps: [string, number][] = ([["Sans contact fiable", quality.missing.noContact], ["Site à trancher", quality.missing.siteTodo],
     ["Métier inconnu", quality.missing.noMetier], ["E-mail invalide", quality.missing.emailInvalid], ["Traitement en cours", quality.missing.processing]] as [string, number][])
@@ -113,6 +119,29 @@ export default async function LocalStats() {
           <div className="mt-4 text-xs text-muted">Ce qui manque aux {quality.total - complete} autres (une fiche peut cumuler) — l'app continue à les compléter seule :</div>
           <ul className="mt-2 flex flex-wrap gap-2 text-sm">{gaps.map(([label, v]) => <li key={label} className="chip">{label} · {v}</li>)}</ul>
         </>}
+        {quality.siteReasons.length > 0 && <div className="mt-4 text-sm">
+          <div className="mono mb-1">Site à trancher : pourquoi</div>
+          <ul className="flex flex-col gap-0.5">{quality.siteReasons.map((r) => <li key={r.code} className="flex justify-between gap-3 border-b border-line py-1">
+            <span className="min-w-0">{r.label}</span><span className="font-mono text-xs">{r.n}</span></li>)}</ul>
+        </div>}
+        {quality.contactReasons.length > 0 && <div className="mt-4 text-sm">
+          <div className="mono mb-1">Sans contact fiable : pourquoi (un téléphone suffit : ces fiches n'en ont pas)</div>
+          <ul className="flex flex-col gap-0.5">{quality.contactReasons.map((r) => <li key={r.code} className="flex justify-between gap-3 border-b border-line py-1">
+            <span className="min-w-0">{r.label}</span><span className="font-mono text-xs">{r.n}</span></li>)}</ul>
+        </div>}
+        {quality.missing.processing > 0 && <p className="mt-3 text-xs text-muted">Traitement en cours : {quality.processing.campaign} dans une campagne en cours
+          {quality.processing.imported > 0 && `, ${quality.processing.imported} importée(s) en attente`}{quality.processing.abandoned > 0 && `, ${quality.processing.abandoned} en erreur abandonnée`},
+          {" "}les autres sont reprises par l'enrichissement.</p>}
+        <div className="mt-4 border-t border-line pt-3 text-sm">
+          {!enrich.last ? <p className="text-muted">Aucun passage d'enrichissement enregistré (migration 033 pas encore jouée, ou worker pas encore passé).</p> : <>
+            <p><b>Dernier passage d'enrichissement</b> : {runLine(enrich.last)}{enrich.last.stopped && <> ; arrêté : {enrich.last.stopped}</>}.</p>
+            {enrich.lastFull && enrich.last.mode !== "full" && <p className="mt-1">Dernier passage complet : {runLine(enrich.lastFull)}{enrich.lastFull.stopped && <> ; arrêté : {enrich.lastFull.stopped}</>}.</p>}
+            {blocked(enrich.lastFull ?? enrich.last).length > 0 && <ul className="mt-1 text-xs text-amber-900">
+              {blocked(enrich.lastFull ?? enrich.last).map((x) => <li key={x.key}>{STEP_LABELS[x.key]?.[1] ?? x.key} : {STOP_LABELS[x.stop] ?? x.stop}{x.detail ? ` — ${x.detail}` : ""}</li>)}</ul>}
+            <p className="mt-1 text-xs text-muted">Sur 24 h : {enrich.day.runs} passage(s){enrich.day.locked > 0 && `, dont ${enrich.day.locked} sans recherche faute de verrou (campagne en cours)`}
+              {enrich.day.skipped > 0 && `, ${enrich.day.skipped} pas lancé(s) (précédent encore en cours)`}. Passages complets à :20 et :50, sans moteur à :05 et :35 (8 h-20 h).</p>
+          </>}
+        </div>
       </section>
       <div className="stat-grid mb-8 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
         {cards.map(([label, v, sub], i) => (
@@ -173,7 +202,7 @@ export default async function LocalStats() {
         <div className="mt-3 border-t border-line pt-3">
           <p className="text-sm">{places.pending} fiche(s) sans site pas encore interrogée(s){places.backfillOn ? " — passage en cours." : "."}</p>
           {(places.pending > 0 || places.backfillOn) && <div className="mt-2"><PlacesBackfillButton on={places.backfillOn} /></div>}
-          <p className="mt-1 text-xs text-muted">Au plus ~26 fiches par jour (quota Google de 30/jour) ; s'arrête seul quand toutes sont faites ou au plafond mensuel.</p>
+          <p className="mt-1 text-xs text-muted">Une fiche par passage d'enrichissement (~52 par jour), dans le quota Google du jour (une réserve est gardée aux fiches existantes) ; s'arrête seul quand toutes sont faites ou au plafond mensuel.</p>
         </div>
       </section>
       <Table title="Répartition par activité et taux de réponse" rows={byActivity} cols={[["Entreprises", (r) => r.n], ["Sans site", (r) => r.no_site],

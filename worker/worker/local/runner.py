@@ -506,7 +506,7 @@ def run_campaign(conn, camp: dict, search=None, fetch=None, deadline: float | No
                             WHERE c.campaign_id=%s AND p.pipeline_stage='DONE' AND p.deep_enriched_at IS NULL""", (cid,))
         conn.commit()
 
-        pool = search or engines.SearchPool(conn)
+        pool = search or engines.SearchPool(conn, reserve=engines.ENRICH_RESERVE)   # part du jour laissée aux fiches existantes (emailsearch)
         searcher = pool                                    # remplacé par un « moteur coupé » après une SearchUnavailable (pool garde ses métriques)
         # jamais traités d'abord : des fiches en attente de moteur (recherche indisponible) ne doivent pas bloquer les nouvelles
         # fiches dont la fiche Google a donné un site (candidat en mémoire seulement, perdu à la fin du processus) : traitées en premier
@@ -657,10 +657,12 @@ def run_pending() -> int:
         return len(camps)
 
 
-def _acquire_lock():
-    """Verrou inter-processus propre à la prospection locale (indépendant de celui du pipeline d'opportunités)."""
+def _lock_path() -> str:
+    return os.getenv("LOCAL_LOCK", "/app/logs/local.lock")
+
+
+def _flock(path: str):
     import fcntl
-    path = os.getenv("LOCAL_LOCK", "/app/logs/local.lock")
     try:
         fh = open(path, "w")
     except OSError:
@@ -673,8 +675,52 @@ def _acquire_lock():
     return fh
 
 
+def _acquire_lock(wait_s: float = 0.0, poll_s: float = 5.0, sleep=time.sleep):
+    """Verrou inter-processus des MOTEURS de recherche (campagnes, et passages d'enrichissement qui cherchent) : le rythme par moteur
+    (`engines.INTERVAL_S`) est tenu en mémoire du processus, deux processus qui cherchent en même temps doubleraient le débit vers les moteurs.
+    `wait_s` : attente bornée (essai toutes les `poll_s` secondes) avant d'abandonner. None si toujours pris."""
+    tries = int(max(0.0, wait_s) // poll_s) if poll_s > 0 else 0
+    for i in range(tries + 1):
+        fh = _flock(_lock_path())
+        if fh is not None or i == tries:
+            return fh
+        sleep(poll_s)
+    return None
+
+
+def _acquire_enrich_lock():
+    """Verrou propre à l'enrichissement des fiches existantes (`enrich.main`) : deux passages d'enrichissement ne se chevauchent jamais, mais il
+    n'empêche pas une campagne de tourner (les sous-passages sans moteur ne touchent pas les fiches des campagnes en cours). Même dossier que
+    LOCAL_LOCK."""
+    return _flock(os.path.join(os.path.dirname(_lock_path()) or ".", "enrich.lock"))
+
+
+class _Both:
+    def __init__(self, *locks):
+        self.locks = locks
+
+    def close(self) -> None:
+        for lk in self.locks:
+            lk.close()
+
+
+def acquire_all_locks():
+    """Verrou des moteurs ET de l'enrichissement (remise à zéro : aucun passage ne doit écrire pendant qu'on vide la base). None si l'un est pris."""
+    first = _acquire_lock()
+    if first is None:
+        return None
+    second = _acquire_enrich_lock()
+    if second is None:
+        first.close()
+        return None
+    return _Both(first, second)
+
+
+CAMPAIGN_LOCK_WAIT_S = 360           # une campagne attend la fin d'un passage d'enrichissement qui cherche (borné, LOCAL_ENRICH_ENGINE_BUDGET_S)
+
+
 def main() -> None:
-    lock = _acquire_lock()
+    lock = _acquire_lock(wait_s=CAMPAIGN_LOCK_WAIT_S)       # passage d'enrichissement en cours : on attend sa fin (bornée) plutôt que de sauter
     if lock is None:
         log.warning("[local] un passage de prospection locale est déjà en cours")
         return

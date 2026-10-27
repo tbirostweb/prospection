@@ -36,8 +36,10 @@ JOBS: list[tuple[str, list[str] | None, str | None]] = [
     ("* * * * *", ["-m", "worker.reset", "--pending"], "local.log"),
     # Envoi automatique des e-mails (désactivé par défaut, Réglages) : lit les réponses (toutes les 10 min, et avant chaque relance) puis envoie au plus UN e-mail par passage.
     ("*/2 * * * *", ["-m", "worker.local.outbox"], "mail.log"),
-    # Nouvelle recherche d'e-mail pour les prospects qui n'en ont pas (LOCAL_EMAIL_SEARCH_PER_RUN par passage, même verrou que les campagnes).
+    # Enrichissement des fiches existantes (worker/local/enrich.py) : sites à trancher, contacts, fiches bloquées. Passage complet (moteurs sous le
+    # verrou des campagnes) à :20 et :50 ; passages intermédiaires SANS moteur (Google Places, devinettes, sites relus) à :05 et :35. Verrou propre.
     ("20,50 8-20 * * *", ["-m", "worker.local.emailsearch"], "local.log"),
+    ("5,35 8-20 * * *", ["-m", "worker.local.emailsearch", "--no-engines"], "local.log"),
     # Surveillance des dégradations : alerte Telegram throttlée.
     ("5 * * * *", ["-m", "worker.local.monitor"], "local.log"),
     ("15 7 * * *", ["-m", "worker.digest", "daily"], "digest.log"),

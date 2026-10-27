@@ -13,8 +13,14 @@ OLD_CRONTAB = {
     ("* * * * *", "worker.reset"), ("5 * * * *", "worker.local.monitor"), ("15 7 * * *", "worker.digest"),
     ("0 8 * * 1", "worker.digest"), ("30 4 * * *", "worker.local.retention"), ("0 4 * * *", None),
     ("*/2 * * * *", "worker.local.outbox"),             # ajout : envoi automatique (désactivé par défaut)
-    ("20,50 8-20 * * *", "worker.local.emailsearch"),     # ajout : nouvelle recherche d'e-mail
+    ("20,50 8-20 * * *", "worker.local.emailsearch"),     # ajout : enrichissement des fiches existantes (avec moteurs)
+    ("5,35 8-20 * * *", "worker.local.emailsearch"),      # ajout : enrichissement sans moteur (--no-engines)
 }
+
+
+def test_enrichissement_sans_moteur_entre_deux_passages_complets():
+    jobs = {e: a for e, a, _ in scheduler.JOBS if a and a[1] == "worker.local.emailsearch"}
+    assert jobs["5,35 8-20 * * *"][2:] == ["--no-engines"] and jobs["20,50 8-20 * * *"][2:] == []
 
 
 def test_memes_taches_et_horaires_que_l_ancienne_crontab():

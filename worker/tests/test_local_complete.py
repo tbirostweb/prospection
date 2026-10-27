@@ -19,6 +19,17 @@ def test_cas_partages(case):
     assert complete.channel(p, case["personal"]) == case["channel"]
     why = complete.reason(p, case["personal"])
     assert (why is None) == (case["channel"] == "email")
+    assert complete.site_reason(p) == case["site_reason"]
+    assert (complete.site_reason(p) is None) == ("site" not in case["missing"])        # une raison pour chaque « site à trancher »
+    assert complete.contact_reason(p, case["personal"]) == case["contact_reason"]
+
+
+def test_raisons_libelles_et_ordre():
+    assert all(code in complete.SITE_REASONS for code in ("review", "search", "recheck", "places", "presend", "uncertain", "uncertain_user", "unreachable"))
+    assert set(complete.CONTACT_REASONS) == {"invalid", "refused", "form", "none"}
+    # une fiche avec un téléphone n'est jamais « sans contact », même sans e-mail
+    p = {**DATA["base"], "email": None, "email_kind": None, "phone": "0325000000"}
+    assert complete.contact_reason(p, False) is None and "contact" not in complete.missing(p, False)
 
 
 def test_raison_lisible():

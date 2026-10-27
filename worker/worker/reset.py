@@ -211,7 +211,7 @@ def main() -> None:
 
 def _acquire_lock():
     from .local import runner
-    return runner._acquire_lock()
+    return runner.acquire_all_locks()                 # ni campagne, ni enrichissement en cours
 
 
 if __name__ == "__main__":

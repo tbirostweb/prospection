@@ -41,6 +41,10 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+# Part des moteurs gratuits (palier 0) gardée chaque jour à l'enrichissement des fiches existantes (emailsearch) : une campagne s'arrête de chercher
+# avant (SearchPool(reserve=…), au plus un cinquième du budget du moteur), pour que la découverte ne prive jamais les fiches déjà en base.
+ENRICH_RESERVE = _env_int("LOCAL_ENGINE_ENRICH_RESERVE", 40)
+
 # Palier 1 — API GRATUITES à quota (aucun scraping). Interrogées SEULEMENT quand aucun moteur SearXNG n'a répondu. Sans clé, rien ne change.
 BRAVE_API = "brave_api"
 BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search"
@@ -285,8 +289,9 @@ class SearchPool:
     """
 
     def __init__(self, conn, engines: str | None = None, url: str | None = None, api_key: str | None = None,
-                 tavily_key: str | None = None, serper_key: str | None = None):
+                 tavily_key: str | None = None, serper_key: str | None = None, reserve: int = 0):
         self.conn, self.url = conn, url or SEARXNG_URL
+        self.reserve = max(0, int(reserve or 0))         # requêtes du jour laissées par ce passage à l'enrichissement (palier 0 seulement)
         explicit = engines or os.getenv("LOCAL_SEARCH_ENGINES")
         found = [] if explicit else discover_enabled(self.url)
         searx_names = [e.strip() for e in (explicit or ",".join(found) or DEFAULT_ENGINES).split(",") if e.strip() and e.strip() not in API_PROVIDERS]
@@ -325,7 +330,8 @@ class SearchPool:
         def in_budget(n: str, r) -> bool:
             p = self.providers[n]
             fresh = r["window_start"] is not None and (now - r["window_start"]).total_seconds() < 24 * 3600
-            if fresh and int(r["window_requests"] or 0) >= p.daily_budget:
+            keep = min(self.reserve, p.daily_budget // 5) if p.tier == 0 else 0
+            if fresh and int(r["window_requests"] or 0) >= p.daily_budget - keep:
                 return False
             if p.monthly_budget > 0 and month_used(r) >= p.monthly_budget:
                 return False

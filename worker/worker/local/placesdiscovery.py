@@ -142,12 +142,12 @@ def _page(conn, b: dict) -> tuple[dict | None, str | None]:
     if not places.enabled():
         return None, "Google Places coupé pour ce passage"
     if not places.reserve(conn):
-        return None, f"budget mensuel Google Places atteint ({places.MONTHLY_BUDGET} requêtes)"
+        return None, places.stop_reason or f"budget mensuel Google Places atteint ({places.MONTHLY_BUDGET} requêtes)"
     data, err, status = places.post_search(b, FIELD_MASK)
     if data is None:
         places._refund(conn)
         if status in (401, 403, 429):
-            places._blocked = True                       # clé refusée / quota : plus aucun appel pendant ce processus
+            places.block(status)                         # clé refusée / quota : plus aucun appel pendant ce processus
         return None, err or "Google Places : échec"
     return data, None
 

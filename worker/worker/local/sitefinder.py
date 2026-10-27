@@ -645,12 +645,13 @@ def suggested_verdict(res: "Resolution", url: str) -> str:
 
 def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresholds | None = None, strategy_budget: int = STRATEGY_BUDGET,
             known_urls: list[str] | None = None, dns: Callable[[list[str]], list[str]] | None = None,
-            candidate_urls: list[str] | None = None) -> Resolution:
+            candidate_urls: list[str] | None = None, skip_strategies: set[str] | frozenset[str] | None = None) -> Resolution:
     """Trouve et VÉRIFIE le site officiel. Voir `Resolution.status` ; `known_urls` : sites déjà fournis par une source structurée.
     `dns` (résolveur) active les domaines devinés d'après le nom, essayés AVANT toute recherche : un site confirmé ainsi ne coûte aucune requête
     aux moteurs, et si les moteurs sont saturés, un site déjà probable est retenu au lieu d'attendre.
     `candidate_urls` : sites DÉCLARÉS sur la fiche Google Maps — sans le bonus d'une source structurée : lus et jugés sur le site lui-même par
-    `owner_verdict` ; lié à l'entreprise = au moins PROBABLE (le propriétaire l'a déclaré). Verdict dans `res.suggested` (`suggested_verdict`)."""
+    `owner_verdict` ; lié à l'entreprise = au moins PROBABLE (le propriétaire l'a déclaré). Verdict dans `res.suggested` (`suggested_verdict`).
+    `skip_strategies` : stratégies déjà essayées sans résultat (recherche complétée, `enrich.search_more`) : pas refaites, ni comptées ici."""
     th = thresholds or Thresholds()
     strategies = build_strategies(company)
     res = Resolution(status="NOT_FOUND", strategies_total=len(strategies))
@@ -724,6 +725,8 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
 
     extra_after_probable = 0
     for name, query in strategies:
+        if skip_strategies and name in skip_strategies:
+            continue
         # Site confirmé : on s'arrête. Seule une contradiction sur un candidat PLAUSIBLE (>= probable : il pourrait être le meilleur ou un rival)
         # justifie de continuer ; un homonyme lointain déjà écarté (confiance faible) ne coûtait autrefois que des requêtes inutiles.
         if len(res.strategies_tried) >= strategy_budget or best_conf() >= th.confirmed and not any(

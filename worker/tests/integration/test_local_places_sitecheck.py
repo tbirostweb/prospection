@@ -77,7 +77,7 @@ def test_place_details_recupere_l_url_perdue_site_probable_et_email_ajoute(env, 
     calls, web = _lost(conn, monkeypatch)
     stats = siterecheck.places_site_check(conn, fetch=web, limit=10)
     p = prospect(conn, DUPONT)
-    assert stats == {"asked": 1, "found": 1, "rejected": 0}
+    assert stats == {"asked": 1, "found": 1, "rejected": 0, "stop": "nothing"}
     assert p["website_status"] == "PROBABLE" and p["website_url"] == f"https://www.{SITE}/"
     assert p["email"] == "bonjour@pains-d-antan.fr"                                          # adresse masquée, lue sur la page contact
     assert p["draft_message"] is None and p["auto_state"] is None and p["category"] is not None   # brouillon « sans site » effacé, fiche rescorée
@@ -115,7 +115,7 @@ def test_annuaire_reseau_social_ou_sans_site_rejetes_sans_lecture(env, conn, mon
     socials_before = prospect(conn, DUPONT)["social_links"]
     stats = siterecheck.places_site_check(conn, fetch=web, limit=10)
     p = prospect(conn, DUPONT)
-    assert stats == {"asked": 1, "found": 0, "rejected": 1} and len(calls) == 1 and web.calls == []
+    assert stats == {"asked": 1, "found": 0, "rejected": 1, "stop": "nothing"} and len(calls) == 1 and web.calls == []
     assert p["website_status"] == "NOT_FOUND" and _places(conn)["site_checked"] == verdict
     assert p["social_links"] == socials_before                                               # profil venu de Google : jamais conservé (conditions Places)
 

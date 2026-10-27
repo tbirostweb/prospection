@@ -67,3 +67,87 @@ def test_doute_ou_delai_depasse_pas_d_envoi_puis_sortie_de_file(mail, conn, monk
     assert p["auto_state"] is None and json.loads(p["provenance"])["presend_site"]["doubt"] is True   # sortie de la file
     assert complete.missing(p, True) == ["site"] and mail.tg.texts == []                               # site « à trancher », sans alerte
     assert mail.run(t, fetch=web)["status"] == "idle"
+
+
+# ── Message « site inaccessible » : l'URL est rouverte juste avant l'envoi ───────────────────────────────────
+DOWN = "dupont-en-panne.fr"
+LEGAL_DOWN = ("<html><head><title>Mentions légales</title></head><body><p>BOULANGERIE DUPONT - SIRET 222 222 222 00011 - 5 rue Voltaire 10000 Troyes"
+              "</p></body></html>")
+
+
+def row_by_siret(conn) -> int:
+    return db.fetch_one(conn, "SELECT id FROM local_prospects WHERE siret=%s", (DUPONT,))["id"]
+
+
+def _queue_down(conn, monkeypatch):
+    """Fiche complète au site « en panne » (2 nouveaux essais déjà faits), brouillon « site inaccessible » en file."""
+    web, _search = _setup(conn, monkeypatch)
+    sets = {"email": "boulangerie.dupont@gmail.com", "email_kind": "UNCERTAIN", "activity_label": "Boulangeries, pâtisseries", "draft_message": BODY,
+            "website_status": "UNREACHABLE", "website_url": f"https://{DOWN}/", "draft_kind": "site_inaccessible"}
+    db.execute(conn, f"UPDATE local_prospects SET {', '.join(f'{k}=%s' for k in sets)} WHERE siret=%s", (*sets.values(), DUPONT))
+    db.execute(conn, """UPDATE local_prospects SET provenance = JSON_SET(COALESCE(provenance, JSON_OBJECT()), '$.unreachable_retry',
+                        JSON_OBJECT('tries', 2, 'status', 'UNREACHABLE', 'checked_at', '2026-10-20T10:00:00Z')) WHERE siret=%s""", (DUPONT,))
+    conn.commit()
+    pid = row_by_siret(conn)
+    monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])
+    assert complete.missing(row(conn, pid), True) == []
+    return pid, web
+
+
+def test_site_toujours_injoignable_le_message_part(mail, conn, monkeypatch):
+    pid, web = _queue_down(conn, monkeypatch)                                          # domaine inconnu du faux web : injoignable
+    mail.enable()
+    r = mail.run(T0, fetch=web)
+    assert r["status"] == "sent" and len(mail.smtp.sent) == 1 and f"https://{DOWN}/" in web.calls
+
+
+def test_site_revenu_rien_n_est_envoye_brouillon_efface_fiche_revue(mail, conn, monkeypatch):
+    pid, web = _queue_down(conn, monkeypatch)
+    web.add_site(DOWN, "<html><head><title>Boulangerie Dupont Troyes</title></head><body><h1>Boulangerie Dupont</h1>"
+                       "<a href='/mentions-legales'>Mentions légales</a></body></html>",
+                 legal=LEGAL_DOWN)
+    mail.enable()
+    r = mail.run(T0, fetch=web)
+    p = row(conn, pid)
+    assert r["status"] == "found_site" and mail.smtp.sent == [] and mail.tg.texts == []          # rien d'envoyé, aucune alerte
+    assert p["website_status"] in ("CONFIRMED", "PROBABLE") and p["draft_message"] is None and p["draft_kind"] is None
+    assert p["auto_state"] is None and p["contacted_at"] is None
+    assert json.loads(p["provenance"])["presend_site"]["result"] == "site_up"
+    assert mail.run(T0 + dt.timedelta(minutes=2), fetch=web)["status"] == "idle"                  # sortie de la file
+
+
+def test_domaine_qui_repond_mais_n_est_plus_le_sien_retour_en_recherche(mail, conn, monkeypatch):
+    pid, web = _queue_down(conn, monkeypatch)
+    web.add_site(DOWN, "<html><head><title>Domaine à vendre</title></head><body><p>Ce domaine est à vendre.</p></body></html>")
+    mail.enable()
+    assert mail.run(T0, fetch=web)["status"] == "found_site" and mail.smtp.sent == []
+    p = row(conn, pid)
+    assert p["website_status"] in ("NOT_FOUND", "UNCERTAIN") and p["draft_message"] is None and p["auto_state"] is None
+    assert complete.site_reason(p) in ("search", "uncertain", "uncertain_user")                  # à chercher par l'enrichissement
+
+
+def test_delai_depasse_de_notre_cote_report_sans_envoi(mail, conn, monkeypatch):
+    from worker.local import errors
+    pid, _web = _queue_down(conn, monkeypatch)
+
+    class SlowNet:                                                                     # transport factice : délai dépassé à la lecture
+        failures: list = []
+
+        def __call__(self, url):
+            self.failures.append((errors.SITE_TIMEOUT, url))
+            return None
+    mail.enable()
+    r = mail.run(T0, fetch=SlowNet())
+    p = row(conn, pid)
+    assert r["status"] == "deferred" and mail.smtp.sent == [] and p["auto_state"] == "queued"
+    assert json.loads(p["provenance"])["presend_site"]["result"] == "retry"
+
+
+def test_fil_trop_lent_report_et_site_qui_bloque_les_robots(mail, conn, monkeypatch):
+    import time as _t
+    pid, web = _queue_down(conn, monkeypatch)
+    monkeypatch.setattr(outbox, "PRESEND_PROBE_TIMEOUT", 0.05)
+    mail.enable()
+    assert mail.run(T0, fetch=lambda url: _t.sleep(0.5))["status"] == "deferred" and mail.smtp.sent == []
+    verdict, _detail = outbox.presend_unreachable(conn, row(conn, pid), T0, fetch=lambda url: type("R", (), {"status": 403, "text": "", "ok": False})())
+    assert verdict == "retry"                                                          # 403 : peut-être joignable, jamais « inaccessible »

@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 import mysql from "mysql2/promise";
-import { completeSql, ficheChannel, ficheMissing, qualitySql } from "../lib/complete";
+import { CONTACT_REASONS, SITE_REASONS, completeSql, contactReason, ficheChannel, ficheMissing, qualitySql, siteReason } from "../lib/complete";
+import { DAY_RUNS_SQL, LAST_FULL_RUN_SQL, LAST_RUN_SQL, enrichSummary, parseSteps } from "../lib/enrich";
 
 const BASE = process.env.TEST_DATABASE_URL;
 const DB = "prospection_complete_test";
@@ -68,4 +69,46 @@ test("bloc « Qualité de la liste » : requête exécutée, comptes cohérents"
   assert.equal(Number(q.no_contact), pertinent.filter((p: any) => ficheMissing(p, true).includes("contact")).length);
   assert.equal(Number(q.email_invalid), pertinent.filter((p: any) => ficheMissing(p, true).includes("email_invalide")).length);
   assert.equal(Number(q.processing), pertinent.filter((p: any) => ficheMissing(p, true).includes("traitement")).length);
+});
+
+test("raisons en SQL : même raison que siteReason / contactReason sur chaque cas", { skip }, async () => {
+  await insertCases();
+  for (const personal of [false, true]) {
+    const s = completeSql(personal);
+    const rows = await conn.query(`SELECT p.id, ${s.siteReason} AS site, ${s.contactReason} AS contact FROM local_prospects p ORDER BY p.id`).then((r) => r[0] as any[]);
+    CASES.cases.forEach((c: any, i: number) => {
+      const p = { ...CASES.base, ...c.p };
+      assert.equal(rows[i].site, siteReason(p), `${c.name} : site (personal=${personal})`);
+      assert.equal(rows[i].contact, contactReason(p, personal), `${c.name} : contact (personal=${personal})`);
+    });
+  }
+});
+
+test("bloc « Qualité de la liste » : ventilations cohérentes", { skip }, async () => {
+  await insertCases();
+  const [q] = (await conn.query(qualitySql(true)))[0] as any[];
+  const pertinent = CASES.cases.map((c: any) => ({ ...CASES.base, ...c.p })).filter((p: any) => !ficheMissing(p, true).includes("entreprise"));
+  const incomplete = pertinent.filter((p: any) => ficheChannel(p, true) === null);
+  for (const code of Object.keys(SITE_REASONS)) assert.equal(Number(q[`site_${code}`]), incomplete.filter((p: any) => siteReason(p) === code).length, code);
+  for (const code of ["refused", "form", "none"]) assert.equal(Number(q[`contact_${code}`]), incomplete.filter((p: any) => contactReason(p, true) === code).length, code);
+  const sites = Object.keys(SITE_REASONS).reduce((a, c) => a + Number(q[`site_${c}`]), 0);
+  assert.equal(sites, Number(q.site_todo));                                       // chaque « site à trancher » a une raison
+  assert.equal(Number(q.contact_refused) + Number(q.contact_form) + Number(q.contact_none), Number(q.no_contact));
+  assert.ok(Object.keys(CONTACT_REASONS).includes("invalid"));
+  for (const k of ["processing_campaign", "processing_abandoned", "processing_imported"]) assert.ok(k in q, k);
+});
+
+test("état des passages d'enrichissement : requêtes exécutées", { skip }, async () => {
+  await conn.query("DELETE FROM local_enrich_runs");
+  await conn.query(`INSERT INTO local_enrich_runs (started_at, duration_ms, mode, stopped, steps) VALUES
+    (UTC_TIMESTAMP() - INTERVAL 40 MINUTE, 120000, 'full', 'verrou pris : une campagne tournait', ?),
+    (UTC_TIMESTAMP() - INTERVAL 10 MINUTE, 30000, 'no_engines', 'rien d''autre à faire', ?)`,
+    [JSON.stringify([{ key: "places_site", done: 10, found: 3, stop: "limit" }, { key: "email", done: 0, found: 0, stop: "lock" }]),
+     JSON.stringify([{ key: "site_guess", done: 4, found: 0, stop: "nothing" }])]);
+  const [last] = (await conn.query(LAST_RUN_SQL))[0] as any[];
+  const [full] = (await conn.query(LAST_FULL_RUN_SQL))[0] as any[];
+  const [day] = (await conn.query(DAY_RUNS_SQL))[0] as any[];
+  assert.equal(last.mode, "no_engines");
+  assert.equal(enrichSummary(parseSteps(full.steps)), "10 sites Google vérifiés (3 trouvés)");
+  assert.deepEqual([Number(day.runs), Number(day.locked), Number(day.skipped)], [2, 1, 0]);
 });
