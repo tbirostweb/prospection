@@ -83,6 +83,14 @@ def main() -> int:
         with db.connect() as conn:
             pool = engines.SearchPool(conn)
             try:
+                from . import naflabels
+                labels = naflabels.backfill(conn)                  # fiches sans métier : intitulé officiel du code NAF (borné, idempotent)
+                if labels["examined"]:
+                    log.info("[local] métiers d'après le code NAF : %s", json.dumps(labels))
+            except Exception as exc:  # noqa: BLE001
+                conn.rollback()
+                log.warning("[local] métiers d'après le code NAF en échec : %s", exc)
+            try:
                 from . import siterecheck
                 sites = siterecheck.run(conn, pool)
                 if sites["rechecked"]:

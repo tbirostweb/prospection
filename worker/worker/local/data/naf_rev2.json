@@ -1,0 +1,1848 @@
+{
+ "version": "2026-10-naf-rev2-v1",
+ "source": "Nomenclature d'activités française NAF rév. 2 (INSEE, 2008), divisions et sous-classes pertinentes pour des TPE locales, saisies à la main (pas d'import du fichier INSEE) ; une sous-classe absente retombe sur sa division, une division absente reste inconnue. 'court' = libellé affiché (abrégé), 'intitule' = intitulé officiel. À recouper avec la NAF rév. 2.1 (2025) en cas de doute.",
+ "divisions": {
+  "10": {
+   "intitule": "Industries alimentaires",
+   "court": "Industries alimentaires"
+  },
+  "11": {
+   "intitule": "Fabrication de boissons",
+   "court": "Fabrication de boissons"
+  },
+  "13": {
+   "intitule": "Fabrication de textiles",
+   "court": "Fabrication de textiles"
+  },
+  "14": {
+   "intitule": "Industrie de l'habillement",
+   "court": "Industrie de l'habillement"
+  },
+  "15": {
+   "intitule": "Industrie du cuir et de la chaussure",
+   "court": "Cuir et chaussure"
+  },
+  "16": {
+   "intitule": "Travail du bois et fabrication d'articles en bois et en liège, à l'exception des meubles ; fabrication d'articles en vannerie et sparterie",
+   "court": "Travail du bois"
+  },
+  "23": {
+   "intitule": "Fabrication d'autres produits minéraux non métalliques",
+   "court": "Produits minéraux non métalliques"
+  },
+  "25": {
+   "intitule": "Fabrication de produits métalliques, à l'exception des machines et des équipements",
+   "court": "Produits métalliques"
+  },
+  "31": {
+   "intitule": "Fabrication de meubles",
+   "court": "Fabrication de meubles"
+  },
+  "32": {
+   "intitule": "Autres industries manufacturières",
+   "court": "Autres industries manufacturières"
+  },
+  "33": {
+   "intitule": "Réparation et installation de machines et d'équipements",
+   "court": "Réparation de machines et équipements"
+  },
+  "41": {
+   "intitule": "Construction de bâtiments",
+   "court": "Construction de bâtiments"
+  },
+  "42": {
+   "intitule": "Génie civil",
+   "court": "Génie civil"
+  },
+  "43": {
+   "intitule": "Travaux de construction spécialisés",
+   "court": "Travaux de construction spécialisés"
+  },
+  "45": {
+   "intitule": "Commerce et réparation d'automobiles et de motocycles",
+   "court": "Automobile et motos"
+  },
+  "47": {
+   "intitule": "Commerce de détail, à l'exception des automobiles et des motocycles",
+   "court": "Commerce de détail"
+  },
+  "49": {
+   "intitule": "Transports terrestres et transport par conduites",
+   "court": "Transports terrestres"
+  },
+  "55": {
+   "intitule": "Hébergement",
+   "court": "Hébergement"
+  },
+  "56": {
+   "intitule": "Restauration",
+   "court": "Restauration"
+  },
+  "58": {
+   "intitule": "Édition",
+   "court": "Édition"
+  },
+  "59": {
+   "intitule": "Production de films cinématographiques, de vidéo et de programmes de télévision ; enregistrement sonore et édition musicale",
+   "court": "Production audiovisuelle et musicale"
+  },
+  "60": {
+   "intitule": "Programmation et diffusion",
+   "court": "Programmation et diffusion"
+  },
+  "61": {
+   "intitule": "Télécommunications",
+   "court": "Télécommunications"
+  },
+  "63": {
+   "intitule": "Services d'information",
+   "court": "Services d'information"
+  },
+  "68": {
+   "intitule": "Activités immobilières",
+   "court": "Activités immobilières"
+  },
+  "69": {
+   "intitule": "Activités juridiques et comptables",
+   "court": "Activités juridiques et comptables"
+  },
+  "70": {
+   "intitule": "Activités des sièges sociaux ; conseil de gestion",
+   "court": "Conseil de gestion"
+  },
+  "71": {
+   "intitule": "Activités d'architecture et d'ingénierie ; activités de contrôle et analyses techniques",
+   "court": "Architecture et ingénierie"
+  },
+  "72": {
+   "intitule": "Recherche-développement scientifique",
+   "court": "Recherche-développement"
+  },
+  "73": {
+   "intitule": "Publicité et études de marché",
+   "court": "Publicité et études de marché"
+  },
+  "74": {
+   "intitule": "Autres activités spécialisées, scientifiques et techniques",
+   "court": "Activités spécialisées et techniques"
+  },
+  "75": {
+   "intitule": "Activités vétérinaires",
+   "court": "Vétérinaires"
+  },
+  "77": {
+   "intitule": "Activités de location et location-bail",
+   "court": "Location de biens et matériels"
+  },
+  "78": {
+   "intitule": "Activités liées à l'emploi",
+   "court": "Emploi et recrutement"
+  },
+  "79": {
+   "intitule": "Activités des agences de voyage, voyagistes, services de réservation et activités connexes",
+   "court": "Voyages et réservations"
+  },
+  "80": {
+   "intitule": "Enquêtes et sécurité",
+   "court": "Sécurité et enquêtes"
+  },
+  "81": {
+   "intitule": "Services relatifs aux bâtiments et aménagement paysager",
+   "court": "Services aux bâtiments et paysage"
+  },
+  "82": {
+   "intitule": "Activités administratives et autres activités de soutien aux entreprises",
+   "court": "Soutien administratif aux entreprises"
+  },
+  "85": {
+   "intitule": "Enseignement",
+   "court": "Enseignement et formation"
+  },
+  "86": {
+   "intitule": "Activités pour la santé humaine",
+   "court": "Santé humaine"
+  },
+  "87": {
+   "intitule": "Hébergement médico-social et social",
+   "court": "Hébergement médico-social"
+  },
+  "88": {
+   "intitule": "Action sociale sans hébergement",
+   "court": "Action sociale sans hébergement"
+  },
+  "90": {
+   "intitule": "Activités créatives, artistiques et de spectacle",
+   "court": "Arts et spectacles"
+  },
+  "91": {
+   "intitule": "Bibliothèques, archives, musées et autres activités culturelles",
+   "court": "Culture, musées, patrimoine"
+  },
+  "92": {
+   "intitule": "Organisation de jeux de hasard et d'argent",
+   "court": "Jeux de hasard et d'argent"
+  },
+  "93": {
+   "intitule": "Activités sportives, récréatives et de loisirs",
+   "court": "Sport et loisirs"
+  },
+  "94": {
+   "intitule": "Activités des organisations associatives",
+   "court": "Associations et organisations"
+  },
+  "95": {
+   "intitule": "Réparation d'ordinateurs et de biens personnels et domestiques",
+   "court": "Réparation de biens personnels"
+  },
+  "96": {
+   "intitule": "Autres services personnels",
+   "court": "Services personnels"
+  }
+ },
+ "sous_classes": {
+  "10.11Z": {
+   "intitule": "Transformation et conservation de la viande de boucherie",
+   "court": "Transformation de viande de boucherie"
+  },
+  "10.12Z": {
+   "intitule": "Transformation et conservation de la viande de volaille",
+   "court": "Transformation de viande de volaille"
+  },
+  "10.13A": {
+   "intitule": "Préparation industrielle de produits à base de viande",
+   "court": "Produits à base de viande"
+  },
+  "10.13B": {
+   "intitule": "Charcuterie",
+   "court": "Charcuteries"
+  },
+  "10.20Z": {
+   "intitule": "Transformation et conservation de poisson, de crustacés et de mollusques",
+   "court": "Transformation de poisson"
+  },
+  "10.31Z": {
+   "intitule": "Transformation et conservation de pommes de terre",
+   "court": "Transformation de pommes de terre"
+  },
+  "10.32Z": {
+   "intitule": "Préparation de jus de fruits et légumes",
+   "court": "Jus de fruits et légumes"
+  },
+  "10.39A": {
+   "intitule": "Autre transformation et conservation de légumes",
+   "court": "Transformation de légumes"
+  },
+  "10.39B": {
+   "intitule": "Transformation et conservation de fruits",
+   "court": "Transformation de fruits"
+  },
+  "10.41A": {
+   "intitule": "Fabrication d'huiles et graisses brutes",
+   "court": "Huiles et graisses"
+  },
+  "10.41B": {
+   "intitule": "Fabrication d'huiles et graisses raffinées",
+   "court": "Huiles et graisses"
+  },
+  "10.42Z": {
+   "intitule": "Fabrication de margarine et graisses comestibles similaires",
+   "court": "Margarine et graisses comestibles"
+  },
+  "10.51A": {
+   "intitule": "Fabrication de lait liquide et de produits frais",
+   "court": "Produits laitiers frais"
+  },
+  "10.51B": {
+   "intitule": "Fabrication de beurre",
+   "court": "Beurre"
+  },
+  "10.51C": {
+   "intitule": "Fabrication de fromage",
+   "court": "Fromagers"
+  },
+  "10.51D": {
+   "intitule": "Fabrication d'autres produits laitiers",
+   "court": "Produits laitiers"
+  },
+  "10.52Z": {
+   "intitule": "Fabrication de glaces et sorbets",
+   "court": "Glaces et sorbets"
+  },
+  "10.61A": {
+   "intitule": "Meunerie",
+   "court": "Meuneries"
+  },
+  "10.61B": {
+   "intitule": "Autres activités du travail des grains",
+   "court": "Travail des grains"
+  },
+  "10.62Z": {
+   "intitule": "Fabrication de produits amylacés",
+   "court": "Produits amylacés"
+  },
+  "10.71A": {
+   "intitule": "Fabrication industrielle de pain et de pâtisserie fraîche",
+   "court": "Pain et pâtisserie industriels"
+  },
+  "10.71B": {
+   "intitule": "Cuisson de produits de boulangerie",
+   "court": "Cuisson de produits de boulangerie"
+  },
+  "10.71C": {
+   "intitule": "Boulangerie et boulangerie-pâtisserie",
+   "court": "Boulangeries, pâtisseries"
+  },
+  "10.71D": {
+   "intitule": "Pâtisserie",
+   "court": "Pâtisseries"
+  },
+  "10.72Z": {
+   "intitule": "Fabrication de biscuits, biscottes et pâtisseries de conservation",
+   "court": "Biscuits et pâtisseries de conservation"
+  },
+  "10.73Z": {
+   "intitule": "Fabrication de pâtes alimentaires",
+   "court": "Pâtes alimentaires"
+  },
+  "10.81Z": {
+   "intitule": "Fabrication de sucre",
+   "court": "Sucre"
+  },
+  "10.82Z": {
+   "intitule": "Fabrication de cacao, chocolat et de produits de confiserie",
+   "court": "Chocolatiers, confiseurs"
+  },
+  "10.83Z": {
+   "intitule": "Transformation du thé et du café",
+   "court": "Thé et café"
+  },
+  "10.84Z": {
+   "intitule": "Fabrication de condiments et assaisonnements",
+   "court": "Condiments et assaisonnements"
+  },
+  "10.85Z": {
+   "intitule": "Fabrication de plats préparés",
+   "court": "Plats préparés"
+  },
+  "10.86Z": {
+   "intitule": "Fabrication d'aliments homogénéisés et diététiques",
+   "court": "Aliments diététiques"
+  },
+  "10.89Z": {
+   "intitule": "Fabrication d'autres produits alimentaires n.c.a.",
+   "court": "Autres produits alimentaires"
+  },
+  "10.91Z": {
+   "intitule": "Fabrication d'aliments pour animaux de ferme",
+   "court": "Aliments pour animaux de ferme"
+  },
+  "10.92Z": {
+   "intitule": "Fabrication d'aliments pour animaux de compagnie",
+   "court": "Aliments pour animaux de compagnie"
+  },
+  "11.01Z": {
+   "intitule": "Production de boissons alcooliques distillées",
+   "court": "Boissons alcooliques distillées"
+  },
+  "11.02A": {
+   "intitule": "Fabrication de vins effervescents",
+   "court": "Vins effervescents"
+  },
+  "11.02B": {
+   "intitule": "Vinification",
+   "court": "Vinification"
+  },
+  "11.03Z": {
+   "intitule": "Fabrication de cidre et de vins de fruits",
+   "court": "Cidre et vins de fruits"
+  },
+  "11.04Z": {
+   "intitule": "Production d'autres boissons fermentées non distillées",
+   "court": "Boissons fermentées"
+  },
+  "11.05Z": {
+   "intitule": "Fabrication de bière",
+   "court": "Brasseries"
+  },
+  "11.06Z": {
+   "intitule": "Fabrication de malt",
+   "court": "Malterie"
+  },
+  "11.07A": {
+   "intitule": "Industrie des eaux de table",
+   "court": "Eaux de table"
+  },
+  "11.07B": {
+   "intitule": "Production de boissons rafraîchissantes",
+   "court": "Boissons rafraîchissantes"
+  },
+  "13.10Z": {
+   "intitule": "Préparation de fibres textiles et filature",
+   "court": "Filature"
+  },
+  "13.20Z": {
+   "intitule": "Tissage",
+   "court": "Tissage"
+  },
+  "13.30Z": {
+   "intitule": "Ennoblissement textile",
+   "court": "Ennoblissement textile"
+  },
+  "13.91Z": {
+   "intitule": "Fabrication d'étoffes à mailles",
+   "court": "Étoffes à mailles"
+  },
+  "13.92Z": {
+   "intitule": "Fabrication d'articles textiles, sauf habillement",
+   "court": "Articles textiles"
+  },
+  "13.93Z": {
+   "intitule": "Fabrication de tapis et moquettes",
+   "court": "Tapis et moquettes"
+  },
+  "13.94Z": {
+   "intitule": "Fabrication de ficelles, cordes et filets",
+   "court": "Cordes et filets"
+  },
+  "13.95Z": {
+   "intitule": "Fabrication de non-tissés, sauf habillement",
+   "court": "Non-tissés"
+  },
+  "13.96Z": {
+   "intitule": "Fabrication d'autres textiles techniques et industriels",
+   "court": "Textiles techniques"
+  },
+  "13.99Z": {
+   "intitule": "Fabrication d'autres textiles n.c.a.",
+   "court": "Autres textiles"
+  },
+  "14.11Z": {
+   "intitule": "Fabrication de vêtements en cuir",
+   "court": "Vêtements en cuir"
+  },
+  "14.12Z": {
+   "intitule": "Fabrication de vêtements de travail",
+   "court": "Vêtements de travail"
+  },
+  "14.13Z": {
+   "intitule": "Fabrication de vêtements de dessus",
+   "court": "Vêtements"
+  },
+  "14.14Z": {
+   "intitule": "Fabrication de vêtements de dessous",
+   "court": "Sous-vêtements"
+  },
+  "14.19Z": {
+   "intitule": "Fabrication d'autres vêtements et accessoires",
+   "court": "Vêtements et accessoires"
+  },
+  "14.20Z": {
+   "intitule": "Fabrication d'articles en fourrure",
+   "court": "Articles en fourrure"
+  },
+  "14.31Z": {
+   "intitule": "Fabrication d'articles chaussants à mailles",
+   "court": "Articles chaussants à mailles"
+  },
+  "14.39Z": {
+   "intitule": "Fabrication d'autres articles à mailles",
+   "court": "Articles à mailles"
+  },
+  "15.11Z": {
+   "intitule": "Apprêt et tannage des cuirs ; préparation et teinture des fourrures",
+   "court": "Tannerie"
+  },
+  "15.12Z": {
+   "intitule": "Fabrication d'articles de voyage, de maroquinerie et de sellerie",
+   "court": "Maroquinerie et sellerie"
+  },
+  "15.20Z": {
+   "intitule": "Fabrication de chaussures",
+   "court": "Fabrication de chaussures"
+  },
+  "16.10A": {
+   "intitule": "Sciage et rabotage du bois, hors imprégnation",
+   "court": "Scieries"
+  },
+  "16.10B": {
+   "intitule": "Imprégnation du bois",
+   "court": "Imprégnation du bois"
+  },
+  "16.21Z": {
+   "intitule": "Fabrication de placage et de panneaux de bois",
+   "court": "Panneaux de bois"
+  },
+  "16.22Z": {
+   "intitule": "Fabrication de parquets assemblés",
+   "court": "Parquets"
+  },
+  "16.23Z": {
+   "intitule": "Fabrication de charpentes et d'autres menuiseries",
+   "court": "Charpentes et menuiseries"
+  },
+  "16.24Z": {
+   "intitule": "Fabrication d'emballages en bois",
+   "court": "Emballages en bois"
+  },
+  "16.29Z": {
+   "intitule": "Fabrication d'objets divers en bois ; fabrication d'objets en liège, vannerie et sparterie",
+   "court": "Objets en bois, vannerie"
+  },
+  "23.11Z": {
+   "intitule": "Fabrication de verre plat",
+   "court": "Verre plat"
+  },
+  "23.12Z": {
+   "intitule": "Façonnage et transformation du verre plat",
+   "court": "Façonnage du verre plat"
+  },
+  "23.13Z": {
+   "intitule": "Fabrication de verre creux",
+   "court": "Verre creux"
+  },
+  "23.14Z": {
+   "intitule": "Fabrication de fibres de verre",
+   "court": "Fibres de verre"
+  },
+  "23.19Z": {
+   "intitule": "Fabrication et façonnage d'autres articles en verre, y compris verre technique",
+   "court": "Articles en verre"
+  },
+  "23.20Z": {
+   "intitule": "Fabrication de produits réfractaires",
+   "court": "Produits réfractaires"
+  },
+  "23.31Z": {
+   "intitule": "Fabrication de carreaux en céramique",
+   "court": "Carreaux en céramique"
+  },
+  "23.32Z": {
+   "intitule": "Fabrication de briques, tuiles et produits de construction, en terre cuite",
+   "court": "Briques et tuiles"
+  },
+  "23.41Z": {
+   "intitule": "Fabrication d'articles céramiques à usage domestique ou ornemental",
+   "court": "Céramistes"
+  },
+  "23.42Z": {
+   "intitule": "Fabrication d'appareils sanitaires en céramique",
+   "court": "Appareils sanitaires en céramique"
+  },
+  "23.43Z": {
+   "intitule": "Fabrication d'isolateurs et pièces isolantes en céramique",
+   "court": "Isolateurs en céramique"
+  },
+  "23.44Z": {
+   "intitule": "Fabrication d'autres produits céramiques à usage technique",
+   "court": "Céramiques techniques"
+  },
+  "23.49Z": {
+   "intitule": "Fabrication d'autres produits céramiques",
+   "court": "Autres produits céramiques"
+  },
+  "23.51Z": {
+   "intitule": "Fabrication de ciment",
+   "court": "Ciment"
+  },
+  "23.52Z": {
+   "intitule": "Fabrication de chaux et plâtre",
+   "court": "Chaux et plâtre"
+  },
+  "23.61Z": {
+   "intitule": "Fabrication d'éléments en béton pour la construction",
+   "court": "Éléments en béton"
+  },
+  "23.62Z": {
+   "intitule": "Fabrication d'éléments en plâtre pour la construction",
+   "court": "Éléments en plâtre"
+  },
+  "23.63Z": {
+   "intitule": "Fabrication de béton prêt à l'emploi",
+   "court": "Béton prêt à l'emploi"
+  },
+  "23.64Z": {
+   "intitule": "Fabrication de mortiers et bétons secs",
+   "court": "Mortiers et bétons secs"
+  },
+  "23.65Z": {
+   "intitule": "Fabrication d'ouvrages en fibre-ciment",
+   "court": "Ouvrages en fibre-ciment"
+  },
+  "23.69Z": {
+   "intitule": "Fabrication d'autres ouvrages en béton, en ciment ou en plâtre",
+   "court": "Ouvrages en béton ou plâtre"
+  },
+  "23.70Z": {
+   "intitule": "Taille, façonnage et finissage de pierres",
+   "court": "Tailleurs de pierre"
+  },
+  "23.91Z": {
+   "intitule": "Fabrication de produits abrasifs",
+   "court": "Produits abrasifs"
+  },
+  "23.99Z": {
+   "intitule": "Fabrication d'autres produits minéraux non métalliques n.c.a.",
+   "court": "Autres produits minéraux"
+  },
+  "25.11Z": {
+   "intitule": "Fabrication de structures métalliques et de parties de structures",
+   "court": "Structures métalliques"
+  },
+  "25.12Z": {
+   "intitule": "Fabrication de portes et fenêtres en métal",
+   "court": "Portes et fenêtres en métal"
+  },
+  "25.21Z": {
+   "intitule": "Fabrication de radiateurs et de chaudières pour le chauffage central",
+   "court": "Radiateurs et chaudières"
+  },
+  "25.29Z": {
+   "intitule": "Fabrication d'autres réservoirs, citernes et conteneurs métalliques",
+   "court": "Réservoirs et citernes"
+  },
+  "25.30Z": {
+   "intitule": "Fabrication de générateurs de vapeur, à l'exception des chaudières pour le chauffage central",
+   "court": "Générateurs de vapeur"
+  },
+  "25.50A": {
+   "intitule": "Forge, estampage, matriçage ; métallurgie des poudres",
+   "court": "Forge et estampage"
+  },
+  "25.50B": {
+   "intitule": "Découpage, emboutissage",
+   "court": "Découpage, emboutissage"
+  },
+  "25.61Z": {
+   "intitule": "Traitement et revêtement des métaux",
+   "court": "Traitement des métaux"
+  },
+  "25.62A": {
+   "intitule": "Décolletage",
+   "court": "Décolletage"
+  },
+  "25.62B": {
+   "intitule": "Mécanique industrielle",
+   "court": "Mécanique industrielle"
+  },
+  "25.71Z": {
+   "intitule": "Fabrication de coutellerie",
+   "court": "Coutellerie"
+  },
+  "25.72Z": {
+   "intitule": "Fabrication de serrures et de ferrures",
+   "court": "Serrures et ferrures"
+  },
+  "25.73A": {
+   "intitule": "Fabrication de moules et modèles",
+   "court": "Moules et modèles"
+  },
+  "25.73B": {
+   "intitule": "Fabrication d'autres outillages",
+   "court": "Outillages"
+  },
+  "25.91Z": {
+   "intitule": "Fabrication de fûts et emballages métalliques similaires",
+   "court": "Fûts métalliques"
+  },
+  "25.92Z": {
+   "intitule": "Fabrication d'emballages métalliques légers",
+   "court": "Emballages métalliques"
+  },
+  "25.93Z": {
+   "intitule": "Fabrication d'articles en fils métalliques, de chaînes et de ressorts",
+   "court": "Articles en fils métalliques"
+  },
+  "25.94Z": {
+   "intitule": "Fabrication de vis et de boulons",
+   "court": "Vis et boulons"
+  },
+  "25.99A": {
+   "intitule": "Fabrication d'articles métalliques ménagers",
+   "court": "Articles métalliques ménagers"
+  },
+  "25.99B": {
+   "intitule": "Fabrication d'autres articles métalliques",
+   "court": "Articles métalliques"
+  },
+  "31.01Z": {
+   "intitule": "Fabrication de meubles de bureau et de magasin",
+   "court": "Meubles de bureau et de magasin"
+  },
+  "31.02Z": {
+   "intitule": "Fabrication de meubles de cuisine",
+   "court": "Cuisinistes"
+  },
+  "31.03Z": {
+   "intitule": "Fabrication de matelas",
+   "court": "Matelas"
+  },
+  "31.09A": {
+   "intitule": "Fabrication de sièges d'ameublement d'intérieur",
+   "court": "Sièges d'ameublement"
+  },
+  "31.09B": {
+   "intitule": "Fabrication d'autres meubles et industries connexes de l'ameublement",
+   "court": "Meubles et ameublement"
+  },
+  "32.11Z": {
+   "intitule": "Frappe de monnaie",
+   "court": "Frappe de monnaie"
+  },
+  "32.12Z": {
+   "intitule": "Fabrication d'articles de joaillerie et bijouterie",
+   "court": "Joailliers, bijoutiers"
+  },
+  "32.13Z": {
+   "intitule": "Fabrication d'articles de bijouterie fantaisie et articles similaires",
+   "court": "Bijouterie fantaisie"
+  },
+  "32.20Z": {
+   "intitule": "Fabrication d'instruments de musique",
+   "court": "Instruments de musique"
+  },
+  "32.30Z": {
+   "intitule": "Fabrication d'articles de sport",
+   "court": "Articles de sport"
+  },
+  "32.40Z": {
+   "intitule": "Fabrication de jeux et jouets",
+   "court": "Jeux et jouets"
+  },
+  "32.50A": {
+   "intitule": "Fabrication de matériel médico-chirurgical et dentaire",
+   "court": "Matériel médico-chirurgical et dentaire"
+  },
+  "32.50B": {
+   "intitule": "Fabrication de lunettes",
+   "court": "Fabrication de lunettes"
+  },
+  "32.91Z": {
+   "intitule": "Fabrication d'articles de brosserie",
+   "court": "Brosserie"
+  },
+  "32.99Z": {
+   "intitule": "Autres activités manufacturières n.c.a.",
+   "court": "Autres activités manufacturières"
+  },
+  "33.11Z": {
+   "intitule": "Réparation d'ouvrages en métaux",
+   "court": "Réparation d'ouvrages en métaux"
+  },
+  "33.12Z": {
+   "intitule": "Réparation de machines et équipements mécaniques",
+   "court": "Réparation de machines"
+  },
+  "33.13Z": {
+   "intitule": "Réparation de matériels électroniques et optiques",
+   "court": "Réparation de matériels électroniques"
+  },
+  "33.14Z": {
+   "intitule": "Réparation d'équipements électriques",
+   "court": "Réparation d'équipements électriques"
+  },
+  "33.15Z": {
+   "intitule": "Réparation et maintenance navale",
+   "court": "Réparation navale"
+  },
+  "33.16Z": {
+   "intitule": "Réparation et maintenance d'aéronefs et d'engins spatiaux",
+   "court": "Maintenance d'aéronefs"
+  },
+  "33.17Z": {
+   "intitule": "Réparation et maintenance d'autres équipements de transport",
+   "court": "Réparation d'équipements de transport"
+  },
+  "33.19Z": {
+   "intitule": "Réparation d'autres équipements",
+   "court": "Réparation d'équipements"
+  },
+  "33.20A": {
+   "intitule": "Installation de structures métalliques, chaudronnées et de tuyauterie",
+   "court": "Installation de structures métalliques"
+  },
+  "33.20B": {
+   "intitule": "Installation de machines et équipements mécaniques",
+   "court": "Installation de machines"
+  },
+  "33.20C": {
+   "intitule": "Conception d'ensemble et assemblage sur site industriel d'équipements de contrôle des processus industriels",
+   "court": "Assemblage d'équipements industriels"
+  },
+  "33.20D": {
+   "intitule": "Installation d'équipements électriques, de matériels électroniques et optiques ou d'autres matériels",
+   "court": "Installation d'équipements électriques"
+  },
+  "41.10A": {
+   "intitule": "Promotion immobilière de logements",
+   "court": "Promotion immobilière"
+  },
+  "41.10B": {
+   "intitule": "Promotion immobilière de bureaux",
+   "court": "Promotion immobilière"
+  },
+  "41.10C": {
+   "intitule": "Promotion immobilière d'autres bâtiments",
+   "court": "Promotion immobilière"
+  },
+  "41.10D": {
+   "intitule": "Supports juridiques de programmes",
+   "court": "Supports juridiques de programmes"
+  },
+  "41.20A": {
+   "intitule": "Construction de maisons individuelles",
+   "court": "Constructeurs de maisons"
+  },
+  "41.20B": {
+   "intitule": "Construction d'autres bâtiments",
+   "court": "Construction de bâtiments"
+  },
+  "42.11Z": {
+   "intitule": "Construction de routes et autoroutes",
+   "court": "Construction de routes"
+  },
+  "42.12Z": {
+   "intitule": "Construction de voies ferrées de surface et souterraines",
+   "court": "Construction de voies ferrées"
+  },
+  "42.13A": {
+   "intitule": "Construction d'ouvrages d'art",
+   "court": "Ouvrages d'art"
+  },
+  "42.13B": {
+   "intitule": "Construction et entretien de tunnels",
+   "court": "Tunnels"
+  },
+  "42.21Z": {
+   "intitule": "Construction de réseaux pour fluides",
+   "court": "Réseaux pour fluides"
+  },
+  "42.22Z": {
+   "intitule": "Construction de réseaux électriques et de télécommunications",
+   "court": "Réseaux électriques et télécoms"
+  },
+  "42.91Z": {
+   "intitule": "Construction d'ouvrages maritimes et fluviaux",
+   "court": "Ouvrages maritimes et fluviaux"
+  },
+  "42.99Z": {
+   "intitule": "Construction d'autres ouvrages de génie civil n.c.a.",
+   "court": "Autres ouvrages de génie civil"
+  },
+  "43.11Z": {
+   "intitule": "Travaux de démolition",
+   "court": "Démolition"
+  },
+  "43.12A": {
+   "intitule": "Travaux de terrassement courants et travaux préparatoires",
+   "court": "Terrassement"
+  },
+  "43.12B": {
+   "intitule": "Travaux de terrassement spécialisés ou de grande masse",
+   "court": "Terrassement spécialisé"
+  },
+  "43.13Z": {
+   "intitule": "Forages et sondages",
+   "court": "Forages et sondages"
+  },
+  "43.21A": {
+   "intitule": "Travaux d'installation électrique dans tous locaux",
+   "court": "Électriciens"
+  },
+  "43.21B": {
+   "intitule": "Travaux d'installation électrique sur la voie publique",
+   "court": "Installation électrique sur voie publique"
+  },
+  "43.22A": {
+   "intitule": "Travaux d'installation d'eau et de gaz en tous locaux",
+   "court": "Plombiers"
+  },
+  "43.22B": {
+   "intitule": "Travaux d'installation d'équipements thermiques et de climatisation",
+   "court": "Chauffage et climatisation"
+  },
+  "43.29A": {
+   "intitule": "Travaux d'isolation",
+   "court": "Isolation"
+  },
+  "43.29B": {
+   "intitule": "Autres travaux d'installation n.c.a.",
+   "court": "Autres travaux d'installation"
+  },
+  "43.31Z": {
+   "intitule": "Travaux de plâtrerie",
+   "court": "Plâtriers"
+  },
+  "43.32A": {
+   "intitule": "Travaux de menuiserie bois et PVC",
+   "court": "Menuisiers"
+  },
+  "43.32B": {
+   "intitule": "Travaux de menuiserie métallique et serrurerie",
+   "court": "Métalliers, serruriers"
+  },
+  "43.32C": {
+   "intitule": "Agencement de lieux de vente",
+   "court": "Agencement de lieux de vente"
+  },
+  "43.33Z": {
+   "intitule": "Travaux de revêtement des sols et des murs",
+   "court": "Revêtements de sols et de murs"
+  },
+  "43.34Z": {
+   "intitule": "Travaux de peinture et vitrerie",
+   "court": "Peintres"
+  },
+  "43.39Z": {
+   "intitule": "Autres travaux de finition",
+   "court": "Travaux de finition"
+  },
+  "43.91A": {
+   "intitule": "Travaux de charpente",
+   "court": "Charpentiers"
+  },
+  "43.91B": {
+   "intitule": "Travaux de couverture par éléments",
+   "court": "Couvreurs"
+  },
+  "43.99A": {
+   "intitule": "Travaux d'étanchéification",
+   "court": "Étanchéité"
+  },
+  "43.99B": {
+   "intitule": "Travaux de montage de structures métalliques",
+   "court": "Montage de structures métalliques"
+  },
+  "43.99C": {
+   "intitule": "Travaux de maçonnerie générale et gros œuvre de bâtiment",
+   "court": "Maçons"
+  },
+  "43.99D": {
+   "intitule": "Autres travaux spécialisés de construction",
+   "court": "Autres travaux spécialisés de construction"
+  },
+  "43.99E": {
+   "intitule": "Location avec opérateur de matériel de construction",
+   "court": "Location de matériel de construction avec opérateur"
+  },
+  "45.11Z": {
+   "intitule": "Commerce de voitures et de véhicules automobiles légers",
+   "court": "Vente de voitures"
+  },
+  "45.19Z": {
+   "intitule": "Commerce d'autres véhicules automobiles",
+   "court": "Vente de véhicules automobiles"
+  },
+  "45.20A": {
+   "intitule": "Entretien et réparation de véhicules automobiles légers",
+   "court": "Garages automobiles"
+  },
+  "45.20B": {
+   "intitule": "Entretien et réparation d'autres véhicules automobiles",
+   "court": "Garages poids lourds"
+  },
+  "45.31Z": {
+   "intitule": "Commerce de gros d'équipements automobiles",
+   "court": "Équipements automobiles (gros)"
+  },
+  "45.32Z": {
+   "intitule": "Commerce de détail d'équipements automobiles",
+   "court": "Équipements automobiles"
+  },
+  "45.40Z": {
+   "intitule": "Commerce et réparation de motocycles",
+   "court": "Motos et scooters"
+  },
+  "47.11A": {
+   "intitule": "Commerce de détail de produits surgelés",
+   "court": "Produits surgelés"
+  },
+  "47.11B": {
+   "intitule": "Commerce d'alimentation générale",
+   "court": "Alimentation générale"
+  },
+  "47.11C": {
+   "intitule": "Supérettes",
+   "court": "Supérettes"
+  },
+  "47.11D": {
+   "intitule": "Supermarchés",
+   "court": "Supermarchés"
+  },
+  "47.11E": {
+   "intitule": "Magasins multi-commerces",
+   "court": "Magasins multi-commerces"
+  },
+  "47.11F": {
+   "intitule": "Hypermarchés",
+   "court": "Hypermarchés"
+  },
+  "47.19A": {
+   "intitule": "Grands magasins",
+   "court": "Grands magasins"
+  },
+  "47.19B": {
+   "intitule": "Autres commerces de détail en magasin non spécialisé",
+   "court": "Commerces non spécialisés"
+  },
+  "47.21Z": {
+   "intitule": "Commerce de détail de fruits et légumes en magasin spécialisé",
+   "court": "Primeurs"
+  },
+  "47.22Z": {
+   "intitule": "Commerce de détail de viandes et de produits à base de viande en magasin spécialisé",
+   "court": "Bouchers"
+  },
+  "47.23Z": {
+   "intitule": "Commerce de détail de poissons, crustacés et mollusques en magasin spécialisé",
+   "court": "Poissonniers"
+  },
+  "47.24Z": {
+   "intitule": "Commerce de détail de pain, pâtisserie et confiserie en magasin spécialisé",
+   "court": "Boulangeries, pâtisseries"
+  },
+  "47.25Z": {
+   "intitule": "Commerce de détail de boissons en magasin spécialisé",
+   "court": "Cavistes"
+  },
+  "47.26Z": {
+   "intitule": "Commerce de détail de produits à base de tabac en magasin spécialisé",
+   "court": "Tabacs"
+  },
+  "47.29Z": {
+   "intitule": "Autres commerces de détail alimentaires en magasin spécialisé",
+   "court": "Commerces alimentaires spécialisés"
+  },
+  "47.30Z": {
+   "intitule": "Commerce de détail de carburants en magasin spécialisé",
+   "court": "Stations-service"
+  },
+  "47.41Z": {
+   "intitule": "Commerce de détail d'ordinateurs, d'unités périphériques et de logiciels en magasin spécialisé",
+   "court": "Magasins d'informatique"
+  },
+  "47.42Z": {
+   "intitule": "Commerce de détail de matériels de télécommunication en magasin spécialisé",
+   "court": "Magasins de téléphonie"
+  },
+  "47.43Z": {
+   "intitule": "Commerce de détail de matériels audio et vidéo en magasin spécialisé",
+   "court": "Magasins audio et vidéo"
+  },
+  "47.51Z": {
+   "intitule": "Commerce de détail de textiles en magasin spécialisé",
+   "court": "Magasins de textiles"
+  },
+  "47.52A": {
+   "intitule": "Commerce de détail de quincaillerie, peintures et verres en petites surfaces (moins de 400 m²)",
+   "court": "Quincailleries"
+  },
+  "47.52B": {
+   "intitule": "Commerce de détail de quincaillerie, peintures et verres en grandes surfaces (400 m² et plus)",
+   "court": "Magasins de bricolage"
+  },
+  "47.53Z": {
+   "intitule": "Commerce de détail de tapis, moquettes et revêtements de murs et de sols en magasin spécialisé",
+   "court": "Magasins de revêtements"
+  },
+  "47.54Z": {
+   "intitule": "Commerce de détail d'appareils électroménagers en magasin spécialisé",
+   "court": "Magasins d'électroménager"
+  },
+  "47.59A": {
+   "intitule": "Commerce de détail de meubles",
+   "court": "Magasins de meubles"
+  },
+  "47.59B": {
+   "intitule": "Commerce de détail d'autres équipements du foyer",
+   "court": "Magasins d'équipements du foyer"
+  },
+  "47.61Z": {
+   "intitule": "Commerce de détail de livres en magasin spécialisé",
+   "court": "Librairies"
+  },
+  "47.62Z": {
+   "intitule": "Commerce de détail de journaux et papeterie en magasin spécialisé",
+   "court": "Presse et papeterie"
+  },
+  "47.63Z": {
+   "intitule": "Commerce de détail d'enregistrements musicaux et vidéo en magasin spécialisé",
+   "court": "Magasins de musique et vidéo"
+  },
+  "47.64Z": {
+   "intitule": "Commerce de détail d'articles de sport en magasin spécialisé",
+   "court": "Magasins de sport"
+  },
+  "47.65Z": {
+   "intitule": "Commerce de détail de jeux et jouets en magasin spécialisé",
+   "court": "Magasins de jeux et jouets"
+  },
+  "47.71Z": {
+   "intitule": "Commerce de détail d'habillement en magasin spécialisé",
+   "court": "Boutiques de vêtements"
+  },
+  "47.72A": {
+   "intitule": "Commerce de détail de la chaussure",
+   "court": "Magasins de chaussures"
+  },
+  "47.72B": {
+   "intitule": "Commerce de détail de maroquinerie et d'articles de voyage",
+   "court": "Maroquinerie"
+  },
+  "47.73Z": {
+   "intitule": "Commerce de détail de produits pharmaceutiques en magasin spécialisé",
+   "court": "Pharmacies"
+  },
+  "47.74Z": {
+   "intitule": "Commerce de détail d'articles médicaux et orthopédiques en magasin spécialisé",
+   "court": "Matériel médical et orthopédique"
+  },
+  "47.75Z": {
+   "intitule": "Commerce de détail de parfumerie et de produits de beauté en magasin spécialisé",
+   "court": "Parfumeries"
+  },
+  "47.76Z": {
+   "intitule": "Commerce de détail de fleurs, plantes, graines, engrais, animaux de compagnie et aliments pour ces animaux en magasin spécialisé",
+   "court": "Fleuristes, animaleries"
+  },
+  "47.77Z": {
+   "intitule": "Commerce de détail d'articles d'horlogerie et de bijouterie en magasin spécialisé",
+   "court": "Bijouteries, horlogeries"
+  },
+  "47.78A": {
+   "intitule": "Commerces de détail d'optique",
+   "court": "Opticiens"
+  },
+  "47.78B": {
+   "intitule": "Commerces de détail de charbons et combustibles",
+   "court": "Combustibles"
+  },
+  "47.78C": {
+   "intitule": "Autres commerces de détail spécialisés divers",
+   "court": "Commerces spécialisés"
+  },
+  "47.79Z": {
+   "intitule": "Commerce de détail de biens d'occasion en magasin",
+   "court": "Biens d'occasion"
+  },
+  "47.81Z": {
+   "intitule": "Commerce de détail alimentaire sur éventaires et marchés",
+   "court": "Alimentaire sur les marchés"
+  },
+  "47.82Z": {
+   "intitule": "Commerce de détail de textiles, d'habillement et de chaussures sur éventaires et marchés",
+   "court": "Textile sur les marchés"
+  },
+  "47.89Z": {
+   "intitule": "Autres commerces de détail sur éventaires et marchés",
+   "court": "Commerces sur les marchés"
+  },
+  "47.91A": {
+   "intitule": "Vente à distance sur catalogue général",
+   "court": "Vente à distance sur catalogue"
+  },
+  "47.91B": {
+   "intitule": "Vente à distance sur catalogue spécialisé",
+   "court": "Vente à distance spécialisée"
+  },
+  "47.99A": {
+   "intitule": "Vente à domicile",
+   "court": "Vente à domicile"
+  },
+  "47.99B": {
+   "intitule": "Vente par automates et autres commerces de détail hors magasin, éventaires ou marchés n.c.a.",
+   "court": "Vente hors magasin"
+  },
+  "49.10Z": {
+   "intitule": "Transport ferroviaire interurbain de voyageurs",
+   "court": "Transport ferroviaire de voyageurs"
+  },
+  "49.20Z": {
+   "intitule": "Transports ferroviaires de fret",
+   "court": "Transport ferroviaire de fret"
+  },
+  "49.31Z": {
+   "intitule": "Transports urbains et suburbains de voyageurs",
+   "court": "Transports urbains de voyageurs"
+  },
+  "49.32Z": {
+   "intitule": "Transports de voyageurs par taxis",
+   "court": "Taxis"
+  },
+  "49.39A": {
+   "intitule": "Transports routiers réguliers de voyageurs",
+   "court": "Transports routiers réguliers de voyageurs"
+  },
+  "49.39B": {
+   "intitule": "Autres transports routiers de voyageurs",
+   "court": "Transports routiers de voyageurs"
+  },
+  "49.39C": {
+   "intitule": "Téléphériques et remontées mécaniques",
+   "court": "Remontées mécaniques"
+  },
+  "49.41A": {
+   "intitule": "Transports routiers de fret interurbains",
+   "court": "Transport routier de marchandises"
+  },
+  "49.41B": {
+   "intitule": "Transports routiers de fret de proximité",
+   "court": "Transport de marchandises de proximité"
+  },
+  "49.41C": {
+   "intitule": "Location de camions avec chauffeur",
+   "court": "Location de camions avec chauffeur"
+  },
+  "49.42Z": {
+   "intitule": "Services de déménagement",
+   "court": "Déménageurs"
+  },
+  "49.50Z": {
+   "intitule": "Transports par conduites",
+   "court": "Transport par conduites"
+  },
+  "55.10Z": {
+   "intitule": "Hôtels et hébergement similaire",
+   "court": "Hôtels"
+  },
+  "55.20Z": {
+   "intitule": "Hébergement touristique et autre hébergement de courte durée",
+   "court": "Hébergements touristiques"
+  },
+  "55.30Z": {
+   "intitule": "Terrains de camping et parcs pour caravanes ou véhicules de loisirs",
+   "court": "Campings"
+  },
+  "55.90Z": {
+   "intitule": "Autres hébergements",
+   "court": "Autres hébergements"
+  },
+  "56.10A": {
+   "intitule": "Restauration traditionnelle",
+   "court": "Restaurants"
+  },
+  "56.10B": {
+   "intitule": "Cafétérias et autres libres-services",
+   "court": "Cafétérias et libres-services"
+  },
+  "56.10C": {
+   "intitule": "Restauration de type rapide",
+   "court": "Restauration rapide"
+  },
+  "56.21Z": {
+   "intitule": "Services des traiteurs",
+   "court": "Traiteurs"
+  },
+  "56.29A": {
+   "intitule": "Restauration collective sous contrat",
+   "court": "Restauration collective"
+  },
+  "56.29B": {
+   "intitule": "Autres services de restauration n.c.a.",
+   "court": "Autres services de restauration"
+  },
+  "56.30Z": {
+   "intitule": "Débits de boissons",
+   "court": "Bars, cafés"
+  },
+  "58.11Z": {
+   "intitule": "Édition de livres",
+   "court": "Édition de livres"
+  },
+  "58.12Z": {
+   "intitule": "Édition de répertoires et de fichiers d'adresses",
+   "court": "Édition de répertoires"
+  },
+  "58.13Z": {
+   "intitule": "Édition de journaux",
+   "court": "Édition de journaux"
+  },
+  "58.14Z": {
+   "intitule": "Édition de revues et périodiques",
+   "court": "Édition de revues et périodiques"
+  },
+  "58.19Z": {
+   "intitule": "Autres activités d'édition",
+   "court": "Autres activités d'édition"
+  },
+  "58.21Z": {
+   "intitule": "Édition de jeux électroniques",
+   "court": "Édition de jeux électroniques"
+  },
+  "59.11A": {
+   "intitule": "Production de films et de programmes pour la télévision",
+   "court": "Production audiovisuelle"
+  },
+  "59.11B": {
+   "intitule": "Production de films institutionnels et publicitaires",
+   "court": "Production de films institutionnels"
+  },
+  "59.11C": {
+   "intitule": "Production de films pour le cinéma",
+   "court": "Production de films"
+  },
+  "59.12Z": {
+   "intitule": "Post-production de films cinématographiques, de vidéo et de programmes de télévision",
+   "court": "Post-production audiovisuelle"
+  },
+  "59.13A": {
+   "intitule": "Distribution de films cinématographiques",
+   "court": "Distribution de films"
+  },
+  "59.13B": {
+   "intitule": "Édition et distribution vidéo",
+   "court": "Édition et distribution vidéo"
+  },
+  "59.14Z": {
+   "intitule": "Projection de films cinématographiques",
+   "court": "Cinémas"
+  },
+  "59.20Z": {
+   "intitule": "Enregistrement sonore et édition musicale",
+   "court": "Studios d'enregistrement, édition musicale"
+  },
+  "60.10Z": {
+   "intitule": "Édition et diffusion de programmes radio",
+   "court": "Radios"
+  },
+  "60.20A": {
+   "intitule": "Édition de chaînes généralistes",
+   "court": "Chaînes de télévision"
+  },
+  "60.20B": {
+   "intitule": "Édition de chaînes thématiques",
+   "court": "Chaînes thématiques"
+  },
+  "61.10Z": {
+   "intitule": "Télécommunications filaires",
+   "court": "Télécommunications filaires"
+  },
+  "61.20Z": {
+   "intitule": "Télécommunications sans fil",
+   "court": "Télécommunications sans fil"
+  },
+  "61.30Z": {
+   "intitule": "Télécommunications par satellite",
+   "court": "Télécommunications par satellite"
+  },
+  "61.90Z": {
+   "intitule": "Autres activités de télécommunication",
+   "court": "Autres télécommunications"
+  },
+  "63.91Z": {
+   "intitule": "Activités des agences de presse",
+   "court": "Agences de presse"
+  },
+  "63.99Z": {
+   "intitule": "Autres services d'information n.c.a.",
+   "court": "Autres services d'information"
+  },
+  "68.10Z": {
+   "intitule": "Activités des marchands de biens immobiliers",
+   "court": "Marchands de biens"
+  },
+  "68.20A": {
+   "intitule": "Location de logements",
+   "court": "Location de logements"
+  },
+  "68.20B": {
+   "intitule": "Location de terrains et d'autres biens immobiliers",
+   "court": "Location de biens immobiliers"
+  },
+  "68.31Z": {
+   "intitule": "Agences immobilières",
+   "court": "Agences immobilières"
+  },
+  "68.32A": {
+   "intitule": "Administration d'immeubles et autres biens immobiliers",
+   "court": "Administration d'immeubles"
+  },
+  "68.32B": {
+   "intitule": "Supports juridiques de gestion de patrimoine immobilier",
+   "court": "Gestion de patrimoine immobilier"
+  },
+  "69.10Z": {
+   "intitule": "Activités juridiques",
+   "court": "Avocats, juristes"
+  },
+  "69.20Z": {
+   "intitule": "Activités comptables",
+   "court": "Experts-comptables"
+  },
+  "70.10Z": {
+   "intitule": "Activités des sièges sociaux",
+   "court": "Sièges sociaux"
+  },
+  "70.21Z": {
+   "intitule": "Conseil en relations publiques et communication",
+   "court": "Conseil en communication"
+  },
+  "70.22Z": {
+   "intitule": "Conseil pour les affaires et autres conseils de gestion",
+   "court": "Conseil aux entreprises"
+  },
+  "71.11Z": {
+   "intitule": "Activités d'architecture",
+   "court": "Architectes"
+  },
+  "71.12A": {
+   "intitule": "Activité des géomètres",
+   "court": "Géomètres"
+  },
+  "71.12B": {
+   "intitule": "Ingénierie, études techniques",
+   "court": "Bureaux d'études techniques"
+  },
+  "71.20A": {
+   "intitule": "Contrôle technique automobile",
+   "court": "Contrôle technique automobile"
+  },
+  "71.20B": {
+   "intitule": "Analyses, essais et inspections techniques",
+   "court": "Analyses et inspections techniques"
+  },
+  "72.11Z": {
+   "intitule": "Recherche-développement en biotechnologie",
+   "court": "Recherche en biotechnologie"
+  },
+  "72.19Z": {
+   "intitule": "Recherche-développement en autres sciences physiques et naturelles",
+   "court": "Recherche scientifique"
+  },
+  "72.20Z": {
+   "intitule": "Recherche-développement en sciences humaines et sociales",
+   "court": "Recherche en sciences humaines"
+  },
+  "73.11Z": {
+   "intitule": "Activités des agences de publicité",
+   "court": "Agences de publicité"
+  },
+  "73.12Z": {
+   "intitule": "Régie publicitaire de médias",
+   "court": "Régie publicitaire"
+  },
+  "73.20Z": {
+   "intitule": "Études de marché et sondages",
+   "court": "Études de marché"
+  },
+  "74.10Z": {
+   "intitule": "Activités spécialisées de design",
+   "court": "Design"
+  },
+  "74.20Z": {
+   "intitule": "Activités photographiques",
+   "court": "Photographes"
+  },
+  "74.30Z": {
+   "intitule": "Traduction et interprétation",
+   "court": "Traducteurs, interprètes"
+  },
+  "74.90A": {
+   "intitule": "Activité des économistes de la construction",
+   "court": "Économistes de la construction"
+  },
+  "74.90B": {
+   "intitule": "Activités spécialisées, scientifiques et techniques diverses",
+   "court": "Activités spécialisées diverses"
+  },
+  "75.00Z": {
+   "intitule": "Activités vétérinaires",
+   "court": "Vétérinaires"
+  },
+  "77.11A": {
+   "intitule": "Location de courte durée de voitures et de véhicules automobiles légers",
+   "court": "Location de voitures"
+  },
+  "77.11B": {
+   "intitule": "Location de longue durée de voitures et de véhicules automobiles légers",
+   "court": "Location longue durée de voitures"
+  },
+  "77.12Z": {
+   "intitule": "Location et location-bail de camions",
+   "court": "Location de camions"
+  },
+  "77.21Z": {
+   "intitule": "Location et location-bail d'articles de loisirs et de sport",
+   "court": "Location d'articles de loisirs et de sport"
+  },
+  "77.22Z": {
+   "intitule": "Location de vidéocassettes et disques vidéo",
+   "court": "Location de vidéos"
+  },
+  "77.29Z": {
+   "intitule": "Location et location-bail d'autres biens personnels et domestiques",
+   "court": "Location de biens personnels"
+  },
+  "77.31Z": {
+   "intitule": "Location et location-bail de machines et équipements agricoles",
+   "court": "Location de matériel agricole"
+  },
+  "77.32Z": {
+   "intitule": "Location et location-bail de machines et équipements pour la construction",
+   "court": "Location de matériel de chantier"
+  },
+  "77.33Z": {
+   "intitule": "Location et location-bail de machines de bureau et de matériel informatique",
+   "court": "Location de matériel de bureau"
+  },
+  "77.34Z": {
+   "intitule": "Location et location-bail de matériels de transport par eau",
+   "court": "Location de matériel nautique"
+  },
+  "77.35Z": {
+   "intitule": "Location et location-bail de matériels de transport aérien",
+   "court": "Location de matériel aérien"
+  },
+  "77.39Z": {
+   "intitule": "Location et location-bail d'autres machines, équipements et biens matériels n.c.a.",
+   "court": "Location de machines et équipements"
+  },
+  "77.40Z": {
+   "intitule": "Location-bail de propriété intellectuelle et de produits similaires, à l'exception des œuvres soumises à copyright",
+   "court": "Location-bail de propriété intellectuelle"
+  },
+  "78.10Z": {
+   "intitule": "Activités des agences de placement de main-d'œuvre",
+   "court": "Agences de placement"
+  },
+  "78.20Z": {
+   "intitule": "Activités des agences de travail temporaire",
+   "court": "Agences d'intérim"
+  },
+  "78.30Z": {
+   "intitule": "Autre mise à disposition de ressources humaines",
+   "court": "Mise à disposition de personnel"
+  },
+  "79.11Z": {
+   "intitule": "Activités des agences de voyage",
+   "court": "Agences de voyage"
+  },
+  "79.12Z": {
+   "intitule": "Activités des voyagistes",
+   "court": "Voyagistes"
+  },
+  "79.90Z": {
+   "intitule": "Autres services de réservation et activités connexes",
+   "court": "Services de réservation"
+  },
+  "80.10Z": {
+   "intitule": "Activités de sécurité privée",
+   "court": "Sécurité privée"
+  },
+  "80.20Z": {
+   "intitule": "Activités liées aux systèmes de sécurité",
+   "court": "Systèmes de sécurité"
+  },
+  "80.30Z": {
+   "intitule": "Activités d'enquête",
+   "court": "Enquêtes privées"
+  },
+  "81.10Z": {
+   "intitule": "Activités combinées de soutien lié aux bâtiments",
+   "court": "Services aux bâtiments"
+  },
+  "81.21Z": {
+   "intitule": "Nettoyage courant des bâtiments",
+   "court": "Nettoyage de bâtiments"
+  },
+  "81.22Z": {
+   "intitule": "Autres activités de nettoyage des bâtiments et nettoyage industriel",
+   "court": "Nettoyage industriel"
+  },
+  "81.29A": {
+   "intitule": "Désinfection, désinsectisation, dératisation",
+   "court": "Désinfection, dératisation"
+  },
+  "81.29B": {
+   "intitule": "Autres activités de nettoyage n.c.a.",
+   "court": "Autres activités de nettoyage"
+  },
+  "81.30Z": {
+   "intitule": "Services d'aménagement paysager",
+   "court": "Paysagistes"
+  },
+  "82.11Z": {
+   "intitule": "Services administratifs combinés de bureau",
+   "court": "Services administratifs de bureau"
+  },
+  "82.19Z": {
+   "intitule": "Photocopie, préparation de documents et autres activités spécialisées de soutien de bureau",
+   "court": "Photocopie et soutien de bureau"
+  },
+  "82.20Z": {
+   "intitule": "Activités de centres d'appels",
+   "court": "Centres d'appels"
+  },
+  "82.30Z": {
+   "intitule": "Organisation de foires, salons professionnels et congrès",
+   "court": "Organisation de salons et congrès"
+  },
+  "82.91Z": {
+   "intitule": "Activités des agences de recouvrement de factures et des sociétés d'information financière sur la clientèle",
+   "court": "Recouvrement de factures"
+  },
+  "82.92Z": {
+   "intitule": "Activités de conditionnement",
+   "court": "Conditionnement"
+  },
+  "82.99Z": {
+   "intitule": "Autres activités de soutien aux entreprises n.c.a.",
+   "court": "Soutien aux entreprises"
+  },
+  "85.10Z": {
+   "intitule": "Enseignement pré-primaire",
+   "court": "Enseignement pré-primaire"
+  },
+  "85.20Z": {
+   "intitule": "Enseignement primaire",
+   "court": "Enseignement primaire"
+  },
+  "85.31Z": {
+   "intitule": "Enseignement secondaire général",
+   "court": "Enseignement secondaire général"
+  },
+  "85.32Z": {
+   "intitule": "Enseignement secondaire technique ou professionnel",
+   "court": "Enseignement secondaire professionnel"
+  },
+  "85.41Z": {
+   "intitule": "Enseignement post-secondaire non supérieur",
+   "court": "Enseignement post-secondaire"
+  },
+  "85.42Z": {
+   "intitule": "Enseignement supérieur",
+   "court": "Enseignement supérieur"
+  },
+  "85.51Z": {
+   "intitule": "Enseignement de disciplines sportives et d'activités de loisirs",
+   "court": "Cours de sport et de loisirs"
+  },
+  "85.52Z": {
+   "intitule": "Enseignement culturel",
+   "court": "Cours artistiques et culturels"
+  },
+  "85.53Z": {
+   "intitule": "Enseignement de la conduite",
+   "court": "Auto-écoles"
+  },
+  "85.59A": {
+   "intitule": "Formation continue d'adultes",
+   "court": "Formation continue"
+  },
+  "85.59B": {
+   "intitule": "Autres enseignements",
+   "court": "Cours et formations"
+  },
+  "85.60Z": {
+   "intitule": "Activités de soutien à l'enseignement",
+   "court": "Soutien à l'enseignement"
+  },
+  "86.10Z": {
+   "intitule": "Activités hospitalières",
+   "court": "Hôpitaux, cliniques"
+  },
+  "86.21Z": {
+   "intitule": "Activité des médecins généralistes",
+   "court": "Médecins généralistes"
+  },
+  "86.22A": {
+   "intitule": "Activités de radiodiagnostic et de radiothérapie",
+   "court": "Radiologie et radiothérapie"
+  },
+  "86.22B": {
+   "intitule": "Activités chirurgicales",
+   "court": "Chirurgiens"
+  },
+  "86.22C": {
+   "intitule": "Autres activités des médecins spécialistes",
+   "court": "Médecins spécialistes"
+  },
+  "86.23Z": {
+   "intitule": "Pratique dentaire",
+   "court": "Dentistes"
+  },
+  "86.90A": {
+   "intitule": "Ambulances",
+   "court": "Ambulances"
+  },
+  "86.90B": {
+   "intitule": "Laboratoires d'analyses médicales",
+   "court": "Laboratoires d'analyses médicales"
+  },
+  "86.90C": {
+   "intitule": "Centres de collecte et banques d'organes",
+   "court": "Centres de collecte et banques d'organes"
+  },
+  "86.90D": {
+   "intitule": "Activités des infirmiers et des sages-femmes",
+   "court": "Infirmiers, sages-femmes"
+  },
+  "86.90E": {
+   "intitule": "Activités des professionnels de la rééducation, de l'appareillage et des pédicures-podologues",
+   "court": "Kinés, rééducation, podologues"
+  },
+  "86.90F": {
+   "intitule": "Activités de santé humaine non classées ailleurs",
+   "court": "Autres activités de santé"
+  },
+  "88.10A": {
+   "intitule": "Aide à domicile",
+   "court": "Aide à domicile"
+  },
+  "88.10B": {
+   "intitule": "Accueil ou accompagnement sans hébergement d'adultes handicapés ou de personnes âgées",
+   "court": "Accompagnement de personnes âgées ou handicapées"
+  },
+  "88.10C": {
+   "intitule": "Aide par le travail",
+   "court": "Aide par le travail"
+  },
+  "90.01Z": {
+   "intitule": "Arts du spectacle vivant",
+   "court": "Spectacle vivant"
+  },
+  "90.02Z": {
+   "intitule": "Activités de soutien au spectacle vivant",
+   "court": "Soutien au spectacle vivant"
+  },
+  "90.03A": {
+   "intitule": "Création artistique relevant des arts plastiques",
+   "court": "Artistes plasticiens"
+  },
+  "90.03B": {
+   "intitule": "Autre création artistique",
+   "court": "Créateurs artistiques"
+  },
+  "90.04Z": {
+   "intitule": "Gestion de salles de spectacles",
+   "court": "Salles de spectacles"
+  },
+  "91.01Z": {
+   "intitule": "Gestion des bibliothèques et des archives",
+   "court": "Bibliothèques et archives"
+  },
+  "91.02Z": {
+   "intitule": "Gestion des musées",
+   "court": "Musées"
+  },
+  "91.03Z": {
+   "intitule": "Gestion des sites et monuments historiques et des attractions touristiques similaires",
+   "court": "Sites et monuments historiques"
+  },
+  "91.04Z": {
+   "intitule": "Gestion des jardins botaniques et zoologiques et des réserves naturelles",
+   "court": "Jardins botaniques et zoologiques"
+  },
+  "92.00Z": {
+   "intitule": "Organisation de jeux de hasard et d'argent",
+   "court": "Jeux de hasard et d'argent"
+  },
+  "93.11Z": {
+   "intitule": "Gestion d'installations sportives",
+   "court": "Installations sportives"
+  },
+  "93.12Z": {
+   "intitule": "Activités de clubs de sports",
+   "court": "Clubs de sport"
+  },
+  "93.13Z": {
+   "intitule": "Activités des centres de culture physique",
+   "court": "Salles de sport"
+  },
+  "93.19Z": {
+   "intitule": "Autres activités liées au sport",
+   "court": "Activités sportives"
+  },
+  "93.21Z": {
+   "intitule": "Activités des parcs d'attractions et parcs à thèmes",
+   "court": "Parcs d'attractions"
+  },
+  "93.29Z": {
+   "intitule": "Autres activités récréatives et de loisirs",
+   "court": "Loisirs"
+  },
+  "94.11Z": {
+   "intitule": "Activités des organisations patronales et consulaires",
+   "court": "Organisations patronales et consulaires"
+  },
+  "94.12Z": {
+   "intitule": "Activités des organisations professionnelles",
+   "court": "Organisations professionnelles"
+  },
+  "94.20Z": {
+   "intitule": "Activités des syndicats de salariés",
+   "court": "Syndicats de salariés"
+  },
+  "94.91Z": {
+   "intitule": "Activités des organisations religieuses",
+   "court": "Organisations religieuses"
+  },
+  "94.92Z": {
+   "intitule": "Activités des organisations politiques",
+   "court": "Partis politiques"
+  },
+  "94.99Z": {
+   "intitule": "Autres organisations fonctionnant par adhésion volontaire",
+   "court": "Associations"
+  },
+  "95.11Z": {
+   "intitule": "Réparation d'ordinateurs et d'équipements périphériques",
+   "court": "Réparation d'ordinateurs"
+  },
+  "95.12Z": {
+   "intitule": "Réparation d'équipements de communication",
+   "court": "Réparation de téléphones"
+  },
+  "95.21Z": {
+   "intitule": "Réparation de produits électroniques grand public",
+   "court": "Réparation de produits électroniques"
+  },
+  "95.22Z": {
+   "intitule": "Réparation d'appareils électroménagers et d'équipements pour la maison et le jardin",
+   "court": "Réparation d'électroménager"
+  },
+  "95.23Z": {
+   "intitule": "Réparation de chaussures et d'articles en cuir",
+   "court": "Cordonniers"
+  },
+  "95.24Z": {
+   "intitule": "Réparation de meubles et d'équipements du foyer",
+   "court": "Réparation de meubles"
+  },
+  "95.25Z": {
+   "intitule": "Réparation d'articles d'horlogerie et de bijouterie",
+   "court": "Réparation d'horlogerie et bijouterie"
+  },
+  "95.29Z": {
+   "intitule": "Réparation d'autres biens personnels et domestiques",
+   "court": "Réparation de biens personnels"
+  },
+  "96.01A": {
+   "intitule": "Blanchisserie-teinturerie de gros",
+   "court": "Blanchisseries de gros"
+  },
+  "96.01B": {
+   "intitule": "Blanchisserie-teinturerie de détail",
+   "court": "Pressings, blanchisseries"
+  },
+  "96.02A": {
+   "intitule": "Coiffure",
+   "court": "Salons de coiffure"
+  },
+  "96.02B": {
+   "intitule": "Soins de beauté",
+   "court": "Instituts de beauté"
+  },
+  "96.03Z": {
+   "intitule": "Services funéraires",
+   "court": "Services funéraires"
+  },
+  "96.04Z": {
+   "intitule": "Entretien corporel",
+   "court": "Entretien corporel, spas"
+  },
+  "96.09Z": {
+   "intitule": "Autres services personnels n.c.a.",
+   "court": "Autres services personnels"
+  }
+ }
+}

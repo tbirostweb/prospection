@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { shortActivity } from "@/lib/activity";
 import { Offer, Sender, buildDraft, cap, photosOffered } from "@/lib/draft";
 import { CONTACT_QUEUE_SQL, LIST_COLUMNS, getAutoSend, getSetting, safeRows } from "@/lib/localdb";
 import { splitByTrigger, strongSignals } from "@/lib/local";
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
       id: p.id, entreprise: cap((p.trade_name || p.company_name || "").trim()),
       nom_commercial: p.trade_name ? cap(String(p.trade_name).trim()) : null,   // jamais la raison sociale : chez un entrepreneur individuel, elle contient son nom
       ville: p.city ? cap(p.city) : null,
-      activite: p.activity_label ? String(p.activity_label).split(",")[0] : null,
+      activite: shortActivity(p.activity_label),   // forme courte : jamais un intitulé long dans la phrase
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,
       faits: d.facts, type: d.kind, photos_en_option: photosOffered(p, offer), canal: p.email && p.auto_state !== "bounced" ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
       // envoi automatique possible (fiche complète avec e-mail, jamais contactée) ; sinon Théo contacte lui-même (jamais sans métier connu)

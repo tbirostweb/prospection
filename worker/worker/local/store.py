@@ -49,6 +49,10 @@ def upsert_establishment(conn, est, campaign_id: int, catalog: dict | None = Non
         pid, created = row["id"], False
         if est.distance_km is not None and (row["distance_km"] is None or est.distance_km < float(row["distance_km"])):
             db.execute(conn, "UPDATE local_prospects SET distance_km=%s WHERE id=%s", (est.distance_km, pid))
+        if label:                                                    # fiche trouvée sans métier (import, ancienne source) : complétée d'après le NAF SIRENE
+            db.execute(conn, """UPDATE local_prospects SET activity_key=COALESCE(activity_key, %s), activity_label=%s
+                                WHERE id=%s AND (activity_label IS NULL OR TRIM(activity_label)='' OR LOWER(TRIM(activity_label))='non classée')""",
+                       (key, label, pid))
         if getattr(est, "revenue", None) is not None or getattr(est, "manager_name", None):
             db.execute(conn, """UPDATE local_prospects SET revenue=COALESCE(%s, revenue), revenue_year=COALESCE(%s, revenue_year),
                                 manager_name=COALESCE(%s, manager_name) WHERE id=%s""", (est.revenue, est.revenue_year, est.manager_name, pid))

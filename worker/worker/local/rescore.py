@@ -20,6 +20,14 @@ def rescore_all(conn) -> int:
 
 def main() -> None:
     with db.connect() as conn:
+        try:
+            from . import naflabels
+            stats = naflabels.backfill(conn)                       # métier des fiches « Non classée » d'après leur code NAF, avant le recalcul
+            if stats["examined"]:
+                log.info("[local] métiers d'après le code NAF : %s", stats)
+        except Exception as exc:  # noqa: BLE001 — n'empêche jamais le recalcul des scores
+            conn.rollback()
+            log.warning("[local] métiers d'après le code NAF en échec : %s", exc)
         log.info("[local] %d prospect(s) rescoré(s)", rescore_all(conn))
 
 

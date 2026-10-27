@@ -1,6 +1,7 @@
 // Fiche de VENTE d'un prospect : pourquoi lui, pourquoi maintenant, quel argument, quelle action, quel message.
 // Construite UNIQUEMENT à partir des données déjà en base (score, signaux, audit, SIRENE, contacts) : aucune source externe, rien d'inventé.
 // Une donnée absente n'est jamais comblée ; sans fait objectif, pas de message conseillé.
+import { searchedAs } from "./activity";
 import { EVENT_OPENINGS, ISSUE_PHRASES, PRIORITY, Sender, cap } from "./draft";
 import { NETWORK_ICONS, bestTime, followupDue, monthsSince, siteSearched, verifiedSocials } from "./local";
 
@@ -95,10 +96,10 @@ export function salesBrief(p: any, sender: Sender = {}): Brief {
 
   // Argument
   const issueAngle = siteOk ? ISSUE_ANGLES.find(([c]) => codes.has(c))?.[1] : undefined;
-  const activity = p.activity_label ? String(p.activity_label).split(",")[0].toLowerCase() : null;
+  const activity = searchedAs(p.activity_label);
   let angle = (top && ANGLES[top.code]) || issueAngle
     || (status === "NOT_FOUND" && !searched ? "vérifier d'abord s'il a un site (recherche incomplète), puis adapter l'approche" : "")
-    || (status === "NOT_FOUND" ? `être trouvé sur Google par les clients qui cherchent ${activity ? `des ${activity}` : "ses services"}${city ? ` à ${city}` : ""}` : "")
+    || (status === "NOT_FOUND" ? `être trouvé sur Google par les clients qui cherchent ${activity ?? "ses services"}${city ? ` à ${city}` : ""}` : "")
     || (siteOk && (p.seo_score ?? 100) < 75 ? "mieux ressortir sur Google dans sa zone" : "")
     || "pas d'angle évident : site déjà correct, prospect secondaire";
   if (p.budget_level === "élevé" && !angle.startsWith("pas d'angle")) angle += " — un seul client gagné peut rembourser le site";

@@ -152,13 +152,51 @@ def resolve_activities(selection: list[str], catalog: dict | None = None) -> tup
     return list(dict.fromkeys(codes)), unknown
 
 
+_NAF_ANY = re.compile(r"^(\d{2})\.?(\d{2})([A-Z])$")
+
+
+def normalize_code(naf: str | None) -> str | None:
+    """« 4322a », « 43.22A », « 43.22 A » → « 43.22A » ; None si ce n'est pas un code NAF complet (sous-classe)."""
+    m = _NAF_ANY.match(re.sub(r"[\s\-_]", "", str(naf or "")).upper())
+    return f"{m.group(1)}.{m.group(2)}{m.group(3)}" if m else None
+
+
+_OFFICIAL: dict | None = None
+
+
+def official() -> dict:
+    """Table locale des intitulés NAF rév. 2 (`data/naf_rev2.json`) : divisions et sous-classes."""
+    global _OFFICIAL
+    if _OFFICIAL is None:
+        import json
+        from pathlib import Path
+        _OFFICIAL = json.loads((Path(__file__).parent / "data" / "naf_rev2.json").read_text(encoding="utf-8"))
+    return _OFFICIAL
+
+
+def official_label(naf: str | None) -> tuple[str | None, str | None]:
+    """(libellé court, origine) d'après l'intitulé officiel : « subclass » (sous-classe connue), « division » (sous-classe inconnue de la table :
+    intitulé de la division à 2 chiffres) ou (None, None). Jamais d'intitulé inventé."""
+    code = normalize_code(naf)
+    if not code:
+        return None, None
+    table = official()
+    if hit := table["sous_classes"].get(code):
+        return hit["court"], "subclass"
+    if hit := table["divisions"].get(code[:2]):
+        return hit["court"], "division"
+    return None, None
+
+
 def activity_of(naf: str | None, catalog: dict | None = None) -> tuple[str | None, str | None, float]:
-    """(clé, libellé, dépendance web) de l'activité qui contient ce code NAF ; (None, None, 0.5) sinon (neutre, jamais inventé)."""
+    """(clé, libellé, dépendance web) de l'activité qui contient ce code NAF (avec ou sans point). Hors catalogue : (None, libellé court tiré de
+    l'intitulé officiel NAF, 0.5) — la clé reste vide (poids neutre, rien n'est deviné) ; (None, None, 0.5) si même la division est inconnue."""
+    code = normalize_code(naf)
     # à l'envers : les activités ajoutées dans les réglages (en fin de catalogue) priment sur le catalogue de base pour un même code NAF
     for key, v in reversed(list((catalog or CATALOG).items())):
-        if naf and naf.upper() in v["naf"]:
+        if code and code in {normalize_code(c) or str(c).upper() for c in v["naf"]}:
             return key, v["label"], float(v.get("web", 0.6))
-    return None, None, 0.5
+    return None, official_label(code)[0], 0.5
 
 
 def excluded_reason(naf: str | None, name: str | None = None, site_text: str | None = None, legal_category: str | None = None) -> str | None:
@@ -166,9 +204,10 @@ def excluded_reason(naf: str | None, name: str | None = None, site_text: str | N
     for prefix, label in EXCLUDED_LEGAL:
         if legal_category and str(legal_category).startswith(prefix):
             return f"forme juridique {legal_category} ({label}) : pas une cible"
-    if naf and naf.upper() in EXCLUDED_NAF:
-        return f"activité NAF {naf.upper()} ({EXCLUDED_NAF[naf.upper()]}) : ce n'est pas une cible"
-    if naf and naf.upper().startswith("45.") and name and (m := _CAR_WASH.search(name)):
+    code = normalize_code(naf) or (naf or "").upper()
+    if code in EXCLUDED_NAF:
+        return f"activité NAF {code} ({EXCLUDED_NAF[code]}) : ce n'est pas une cible"
+    if (normalize_code(naf) or "").startswith("45.") and name and (m := _CAR_WASH.search(name)):
         return f"nom : « {m.group(0).lower()} » — station de lavage, pas besoin de site"
     for label, text in (("nom", name), ("site", site_text)):
         if text and (m := _EXCLUDED_WORDS.search(text)):

@@ -155,7 +155,6 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const first = event ? `${EVENT_OPENINGS[event.code](name, where)}${opening}`
     : opening.trim();   // jamais de « félicitations pour le lancement » d'après la seule date d'immatriculation
   const who = [sender.name, sender.role ? sender.role : "développeur web", sender.company ? `(${sender.company})` : ""].filter(Boolean).join(", ").replace(", (", " (");
-  const activity = p.activity_label ? p.activity_label.split(",")[0].toLowerCase() : null;
   const pitch = sender.pitch?.trim()
     || (kind === "sans_site"
       ? `Je crée des sites simples et efficaces pour les indépendants et les petites entreprises de la région : être trouvé sur Google, présenter vos services et être joignable facilement depuis un téléphone.`   // jamais de spécialisation inventée par métier
