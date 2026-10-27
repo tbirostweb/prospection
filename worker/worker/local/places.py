@@ -24,6 +24,7 @@ import datetime as _dt
 import json
 import math
 import os
+import re
 import time
 from urllib.parse import quote, urlparse
 
@@ -388,7 +389,8 @@ def candidate_url(conn, row: dict, company: dict) -> str | None:
     if places is None:
         _refund(conn)
         if "refusée" in (err or ""):
-            block(None)                                      # inutile de brûler le reste du passage sur une clé refusée
+            code = re.search(r"HTTP (\d{3})", err or "")
+            block(int(code.group(1)) if code else None)      # inutile de brûler le reste du passage sur une clé refusée
         log.warning("[local] %s", err)
         return None
     located = {**company, "latitude": row.get("latitude"), "longitude": row.get("longitude")}
