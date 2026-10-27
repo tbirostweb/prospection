@@ -15,6 +15,7 @@ Conditions de Google Maps Platform (impératif) :
   * un résultat sans correspondance SIRENE sûre est IGNORÉ (compté : `unmatched`) ;
   * le `websiteUri` n'est qu'une URL candidate, gardée en mémoire (`places._session`) et VÉRIFIÉE sur le site lui-même par le résolveur
     (`sitefinder.resolve(candidate_urls=…)`) quand la fiche est traitée — en tête du passage. Une fiche déjà « sans site » est vérifiée aussitôt.
+    Fiche non traitée dans ce processus : l'URL est redemandée par Place Details (`places.recover_url`) ; le verdict (`site_checked`) est gardé.
 Mémoire des requêtes (`local_places_queries`, migration 032) : mot-clé, code INSEE, date, compteurs — aucun contenu Google — et les fiches
 rattachées (`local_places_query_prospects`, nos identifiants) : la même requête n'est pas refaite avant RECHECK_DAYS jours ; une autre campagne
 sur la même commune récupère ses fiches sans appel. Plafond par passage (PER_RUN pages, une requête commencée va jusqu'à sa dernière page),
@@ -218,7 +219,7 @@ def _attach(conn, camp: dict, ctx, place: dict, counts: dict, fetch, url_ids: se
     if row is AMBIGUOUS:
         counts["unmatched"] += 1
         return None
-    asked_before = False
+    before: dict = {}
     if row is None:
         est = sirene_match(conn, place, cp, camp)
         if est is None or est is AMBIGUOUS:
@@ -237,18 +238,23 @@ def _attach(conn, camp: dict, ctx, place: dict, counts: dict, fetch, url_ids: se
     else:
         prov = row.get("provenance")
         prov = json.loads(prov) if isinstance(prov, (str, bytes)) else (prov or {})
-        asked_before = isinstance(prov.get("places"), dict)
+        before = prov["places"] if isinstance(prov.get("places"), dict) else {}
         db.execute(conn, "INSERT IGNORE INTO local_prospect_campaigns (prospect_id, campaign_id) VALUES (%s,%s)", (row["id"], camp["id"]))
     pid = row["id"]
     counts["matched"] += 1
     url = places.usable_website(place.get("websiteUri"), _as_company(row))
     store.add_source(conn, pid, "places", place["id"])
-    store.set_provenance(conn, pid, "places", {"checked_at": _now_iso(), "place_id": place["id"], "had_website": bool(place.get("websiteUri"))})
+    flag = {"checked_at": _now_iso(), "place_id": place["id"], "had_website": bool(place.get("websiteUri"))}
+    if before.get("site_checked_at") and before.get("place_id") == place["id"]:
+        flag.update(site_checked_at=before["site_checked_at"], site_checked=before.get("site_checked"))   # site déjà jugé : pas de nouvelle vérification
+    elif place.get("websiteUri") and not url:
+        flag.update(places.site_check(places.website_rejection(place.get("websiteUri"), _as_company(row))))   # réseau social, annuaire : rien à vérifier
+    store.set_provenance(conn, pid, "places", flag)
     if row.get("website_status") is None:
         if url:
             places._session[pid] = url                  # candidat EN MÉMOIRE seulement : vérifié quand la fiche est traitée (en tête du passage)
             url_ids.add(pid)
-    elif url and row.get("website_status") in NO_SITE and not asked_before:
+    elif url and row.get("website_status") in NO_SITE and not flag.get("site_checked_at"):     # site jamais jugé (même interrogée avant) : URL en main
         conn.commit()
         try:
             from . import siterecheck

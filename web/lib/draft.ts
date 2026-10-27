@@ -130,15 +130,24 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
     kind = "site_inaccessible";
     opening = ` En voulant consulter le site de ${name}, je n'ai pas pu y accéder lors de ma vérification${p.website_url ? ` (${p.website_url})` : ""}.`;
     facts.push("site inaccessible lors de ma vérification");
-  } else if ((status === "CONFIRMED" || status === "PROBABLE") && issues.length) {
+  } else if (status === "CONFIRMED" || status === "PROBABLE") {
     const codes = new Set(issues.map((i) => i.code));
     const found = PRIORITY.filter((c) => codes.has(c)).map((c) => ISSUE_PHRASES[c]);
     const year = Number(p.site_year);
     if (year && year <= new Date().getFullYear() - OLD_SITE_YEARS) found.unshift(`la mention de copyright du site date de ${year}, il a sans doute vieilli`);
-    if (!found.length) return null;
-    kind = "site_ameliorable";
-    facts.push(...found.slice(0, 3));
-    opening = ` J'ai regardé le site de ${name}${p.website_url ? ` (${p.website_url.replace(/^https?:\/\//, "").replace(/\/$/, "")})` : ""}, seulement ce qui est visible publiquement, et j'ai relevé quelques points :`;
+    const addr = p.website_url ? String(p.website_url).replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
+    if (found.length) {
+      kind = "site_ameliorable";
+      facts.push(...found.slice(0, 3));
+      opening = ` J'ai regardé le site de ${name}${addr ? ` (${addr})` : ""}, seulement ce qui est visible publiquement, et j'ai relevé quelques points :`;
+    } else {
+      // Aucun défaut vérifié : on le dit honnêtement (« j'ai regardé »), on n'invente aucune faiblesse et on propose seulement un regard neuf.
+      // Site récent (© d'il y a moins de 2 ans) : pas de refonte à proposer (même seuil que worker/local/scoring.py RECENT_SITE_YEAR).
+      if (!addr || (year && year >= new Date().getFullYear() - 2)) return null;
+      kind = "site_refonte";
+      facts.push(`site regardé (${addr}), aucun défaut précis relevé : ne pas en citer`);
+      opening = ` J'ai regardé le site de ${name} (${addr}), seulement ce qui est visible publiquement.`;
+    }
   } else {
     return null;
   }
@@ -150,18 +159,22 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const pitch = sender.pitch?.trim()
     || (kind === "sans_site"
       ? `Je crée des sites simples et efficaces pour les indépendants et les petites entreprises de la région : être trouvé sur Google, présenter vos services et être joignable facilement depuis un téléphone.`   // jamais de spécialisation inventée par métier
+      : kind === "site_refonte"
+        ? "Je n'ai rien relevé à lui reprocher. Je propose simplement un regard neuf : un site plus moderne, que vous pouvez mettre à jour plus facilement, qui facilite les demandes de devis et met mieux en valeur vos réalisations."
       : kind === "site_inaccessible"
         ? "Je peux vous aider à le remettre en ligne rapidement, et si besoin à le moderniser pour qu'il soit trouvé et consultable sur téléphone."
         : "Je peux vous proposer une refonte : un nouveau site, plus actuel, agréable à consulter sur téléphone et pensé pour qu'on vous trouve sur Google, dont j'écris les textes avec vous.");   // une refonte, jamais « corriger » le site actuel
   const list = kind === "site_ameliorable" ? "\n" + facts.map((f) => `- ${f}`).join("\n") : "";
   const area = offer.enabled && offer.area?.trim() ? `, ${offer.area.trim()}` : "";
-  const ask = offer.enabled
+  const question = kind === "site_refonte" ? "Est-ce un sujet pour vous en ce moment, ou votre site actuel vous convient-il tel qu'il est ?\n\n" : "";
+  const ask = question + (offer.enabled
     ? `${offerParagraphs(offer, { photos: photosOffered(p, offer) }).join("\n\n")}\n\n${callToAction(sender.website)}`
-    : "Seriez-vous d'accord pour un échange de 10 minutes, sans engagement ? Je peux aussi vous envoyer quelques exemples de réalisations.";
+    : "Seriez-vous d'accord pour un échange de 10 minutes, sans engagement ? Je peux aussi vous envoyer quelques exemples de réalisations.");
   const core = `${first}${list}\n\nJe suis ${who || "développeur web indépendant"}${area}. ${pitch}\n\n${ask}`;
   const body = wrapDraft(p, sender, core);
   const subject = kind === "sans_site" ? `${name} : votre présence en ligne${city ? ` à ${city}` : ""}`
     : kind === "site_inaccessible" ? `${name} : votre site semble inaccessible`
+    : kind === "site_refonte" ? `${name} : un regard neuf sur votre site ?`
     : `${name} : quelques remarques sur votre site`;
   return { subject, body, core, facts, kind: event ? `${event.code}_${kind}` : kind };  // type mesuré par l'apprentissage (quel message obtient des réponses)
 }

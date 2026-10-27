@@ -87,6 +87,9 @@ def main() -> int:
                 sites = siterecheck.run(conn, pool)
                 if sites["rechecked"]:
                     log.info("[local] nouvelle recherche de sites : %s", json.dumps(sites))
+                lost = siterecheck.places_site_check(conn)
+                if lost["asked"]:
+                    log.info("[local] sites de fiche Google redemandés (Place Details) : %s", json.dumps(lost))
                 places_stats = siterecheck.places_backfill(conn)
                 if places_stats["asked"]:
                     log.info("[local] Google Places sur les fiches déjà trouvées : %s", json.dumps(places_stats))

@@ -142,6 +142,7 @@ class Resolution:
     search_domains: dict = field(default_factory=dict)   # domaine → sort réservé dans les résultats de recherche (« candidat », « annuaire », « réseau social », « nom absent »)
     degraded: bool = False                    # au moins une recherche s'est faite avec un moteur en échec
     identity: identity.SiteIdentity | None = None
+    suggested: dict = field(default_factory=dict)        # site suggéré (fiche Google) → (domaine lu, verdict de `owner_verdict`)
 
     @property
     def accepted(self) -> bool:
@@ -273,6 +274,18 @@ def digits_groups(text: str) -> set[str]:
 # Sites gratuits dont l'adresse contient le NOM DU SITE dans le chemin : « moncompte.wixsite.com/salon-lea ». Ce sont de VRAIS sites officiels
 # (souvent de très bons prospects de refonte) : autrefois écartés comme des annuaires, ils faisaient passer l'entreprise pour « sans site ».
 PATH_SITE_HOSTS = ("wixsite.com",)
+# Plateformes où CHAQUE entreprise a son sous-domaine (« quentin-cheron.artizo.fr ») : le nom de l'entreprise est dans le SOUS-DOMAINE, pas dans
+# « artizo ». Liste courte et sûre (plateformes dont le format est connu), à compléter seulement sur un cas constaté.
+PLATFORM_SUBDOMAIN_HOSTS = ("artizo.fr", "e-monsite.com", "jimdofree.com", "jimdosite.com", "webself.net", "over-blog.com", "pagesperso-orange.fr",
+                            "wordpress.com", "blogspot.com")
+PLATFORM_GUESS_HOSTS = ("artizo.fr",)  # devinettes « {nom}.artizo.fr » (sites d'artisans), après les domaines devinés
+PLATFORM_GUESS_MAX = 3
+
+
+def platform_host(host: str) -> str | None:
+    """Plateforme à sous-domaines dont `host` est un sous-domaine (« quentin-cheron.artizo.fr » → « artizo.fr »), sinon None."""
+    host = (host or "").lower().removeprefix("www.").partition("/")[0]
+    return next((h for h in PLATFORM_SUBDOMAIN_HOSTS if host.endswith("." + h)), None)
 
 
 def _path_site(p) -> str | None:
@@ -420,13 +433,16 @@ def _domain_label(domain: str) -> str:
     host, _, path = (domain or "").lower().removeprefix("www.").partition("/")
     parts = host.split(".")
     label = path or (parts[-2] if len(parts) >= 2 else host)
+    if not path and (plat := platform_host(host)):
+        label = host[:-len(plat) - 1].split(".")[-1]           # plateforme à sous-domaines : « quentin-cheron.artizo.fr » → « quentincheron »
     return re.sub(r"[^a-z0-9]", "", fold(label))
 
 
 def domain_matches_name(company: dict | None, domain: str) -> bool:
     """Le libellé du domaine est-il EXACTEMENT les mots du nom collés (enseigne ou raison sociale), éventuellement suivis du département ou de la
     ville ? « karrossperformance.fr », « karross-performance.fr », « metalex-10.com », « metalex-troyes.fr » : oui ; « metalexpro.fr » : non.
-    Moins de 4 lettres : jamais (trop d'homonymes)."""
+    Nom de deux mots : aussi dans l'autre ordre (SIRENE écrit « CHERON QUENTIN », le site « quentin-cheron »). Plateforme à sous-domaines
+    (`PLATFORM_SUBDOMAIN_HOSTS`) : le sous-domaine est comparé. Moins de 4 lettres : jamais (trop d'homonymes)."""
     if not company:
         return False
     label = _domain_label(domain)
@@ -439,9 +455,9 @@ def domain_matches_name(company: dict | None, domain: str) -> bool:
             forms.add(label[:-len(suffix)])
     for name in (company.get("trade_name"), company.get("company_name")):
         for toks in (name_tokens(name), distinctive_tokens(name)):
-            stem = "".join(toks)
-            if len(stem) >= 4 and stem in forms:
-                return True
+            for stem in {"".join(toks), "".join(reversed(toks)) if len(toks) == 2 else ""}:
+                if len(stem) >= 4 and stem in forms:
+                    return True
     return False
 
 
@@ -522,7 +538,23 @@ def guess_domains(company: dict) -> list[str]:
         if city:
             tiers[4].append("-".join(toks) + "-" + city)
     out = [f"{stem}.{tld}" for tier in tiers for stem in tier if 4 <= len(stem) <= 50 for tld in GUESS_TLDS]
-    return list(dict.fromkeys(out))[:GUESS_MAX]
+    return list(dict.fromkeys(out))[:GUESS_MAX] + platform_guesses(company)
+
+
+def platform_guesses(company: dict) -> list[str]:
+    """Sous-domaines plausibles sur les plateformes de sites d'artisans (« quentin-cheron.artizo.fr », « cheron-quentin.artizo.fr »,
+    « boulangeriedupont.artizo.fr »), PLATFORM_GUESS_MAX au plus, après les domaines devinés. Noms de 2 ou 3 mots seulement."""
+    stems: list[str] = []
+    for label in (company.get("trade_name"), company.get("company_name")):
+        toks = name_tokens(label)
+        if not distinctive_tokens(label) or not 2 <= len(toks) <= 3:
+            continue
+        stems.append("-".join(toks))
+        if len(toks) == 2:
+            stems.append("-".join(reversed(toks)))
+        stems.append("".join(toks))
+    out = [f"{stem}.{host}" for host in PLATFORM_GUESS_HOSTS for stem in dict.fromkeys(stems) if 4 <= len(stem) <= 50]
+    return out[:PLATFORM_GUESS_MAX]
 
 
 def email_site_urls(company: dict) -> list[str]:
@@ -555,14 +587,70 @@ def dns_resolves(domains: list[str], timeout: float = 4.0) -> list[str]:
     return [d for d, f in futs.items() if f.done() and not f.exception() and f.result()]
 
 
+# Site DÉCLARÉ par l'entreprise sur sa fiche Google : c'est le propriétaire qui l'a saisi. Le barème des résultats de recherche (SIRET, adresse,
+# téléphone exigés pour 0,80) en rejetait la plupart (constaté : 197 sites Google sur 315 perdus). Ici, joignable + lié à l'entreprise suffit
+# pour PROBABLE ; annuaires, réseaux sociaux, domaines parqués et pages d'une autre entreprise restent rejetés (`owner_verdict`).
+OWNER_NAME_FRACTION = 0.67
+OWNER_EVIDENCE = {"siret", "siren", "phone", "address_exact", "address_street", "schema_org"}
+PARKED_RX = re.compile(r"domain (?:name )?(?:is )?for sale|buy this domain|this domain (?:is|may be) (?:parked|for sale)|parked (?:free|domain)|"
+                       r"domaine (?:est )?(?:[àa] vendre|en vente)|nom de domaine (?:est )?(?:[àa] vendre|disponible|r[ée]serv[ée])|"
+                       r"ce domaine (?:a [ée]t[ée]|est) (?:r[ée]serv[ée]|enregistr[ée])|sedoparking|parkingcrew|bodis\.com|afternic|"
+                       r"welcome to nginx|apache2? (?:ubuntu |debian )?default page|^index of /", re.I | re.M)
+
+
+def looks_parked(page: htmlinfo.Page) -> bool:
+    """Domaine parqué / page par défaut d'hébergeur : aucun site d'entreprise derrière."""
+    return bool(PARKED_RX.search(f"{page.title}\n{page.text[:3000]}") or re.search(r"sedoparking|parkingcrew|bodis\.com|afternic", page.raw[:20000], re.I))
+
+
+def owner_verdict(company: dict, a: Assessment) -> str:
+    """Verdict sur le site de la fiche Google, LU : « ok » (joignable et lié à l'entreprise : nom dans le titre / le contenu, OU SIRET / téléphone /
+    adresse sur le site, OU domaine = nom, OU ville / code postal avec un mot du nom), sinon « unreachable » ou « rejected:<raison> »
+    (social, directory, parked, other_company, no_match)."""
+    d = a.domain
+    if _in_set(d, SOCIAL):
+        return "rejected:social"
+    if _in_set(d, NOT_OFFICIAL) or looks_like_directory(d, company):
+        return "rejected:directory"
+    if not a.pages or not a.reachable:
+        return "unreachable"
+    if looks_parked(a.pages[0]):
+        return "rejected:parked"
+    if a.contradictions:
+        return "rejected:other_company"                 # autre SIREN, ou autre localisation sans notre ville ni notre code postal
+    codes = {e["code"] for e in a.evidence}
+    head = f"{a.pages[0].title} {' '.join(a.pages[0].h1)} {domain_tokens(d)}"
+    text = " ".join(f"{p.title} {' '.join(p.h1)} {p.text}" for p in a.pages)
+    full = partial = False
+    for name in (company.get("trade_name"), company.get("company_name")):
+        toks = distinctive_tokens(name) or name_tokens(name)
+        if toks:
+            full = full or token_fraction(toks, head) >= OWNER_NAME_FRACTION or token_fraction(toks, text) >= 0.999
+            partial = partial or token_fraction(toks, f"{head} {text}") > 0
+    if full or domain_matches_name(company, d) or codes & OWNER_EVIDENCE or (partial and codes & {"city", "postal"}):
+        return "ok"
+    return "rejected:no_match"
+
+
+def suggested_verdict(res: "Resolution", url: str) -> str:
+    """Issue de la vérification du site de la fiche Google `url` dans cette résolution : « confirmed » / « probable » (retenu), « unreachable »,
+    ou « rejected:<raison> » (dont « ambiguous » : un autre site plausible ou une contradiction, et « other_site » : un autre site retenu)."""
+    dom, verdict = res.suggested.get(canonical_domain(url), (None, "rejected:not_assessed"))
+    if verdict != "ok":
+        return verdict
+    if res.accepted and res.canonical_domain == dom:
+        return res.status.lower()
+    return "rejected:other_site" if res.accepted else "rejected:ambiguous"
+
+
 def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresholds | None = None, strategy_budget: int = STRATEGY_BUDGET,
             known_urls: list[str] | None = None, dns: Callable[[list[str]], list[str]] | None = None,
             candidate_urls: list[str] | None = None) -> Resolution:
     """Trouve et VÉRIFIE le site officiel. Voir `Resolution.status` ; `known_urls` : sites déjà fournis par une source structurée.
     `dns` (résolveur) active les domaines devinés d'après le nom, essayés AVANT toute recherche : un site confirmé ainsi ne coûte aucune requête
     aux moteurs, et si les moteurs sont saturés, un site déjà probable est retenu au lieu d'attendre.
-    `candidate_urls` : sites SUGGÉRÉS (fiche Google Maps) — simples candidats, sans le bonus d'une source structurée : seule la preuve lue sur le
-    site lui-même (SIRET, adresse, mentions légales) les confirme."""
+    `candidate_urls` : sites DÉCLARÉS sur la fiche Google Maps — sans le bonus d'une source structurée : lus et jugés sur le site lui-même par
+    `owner_verdict` ; lié à l'entreprise = au moins PROBABLE (le propriétaire l'a déclaré). Verdict dans `res.suggested` (`suggested_verdict`)."""
     th = thresholds or Thresholds()
     strategies = build_strategies(company)
     res = Resolution(status="NOT_FOUND", strategies_total=len(strategies))
@@ -593,13 +681,24 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
         return max((a.confidence for a in assessed.values()), default=0.0)
 
     for u in candidate_urls or []:
-        if canonical_domain(u) in assessed:
-            continue
+        key0 = canonical_domain(u)
         before = set(assessed)
-        consider(u, None)
-        for key in set(assessed) - before:
+        if key0 not in assessed:
+            consider(u, None)
+        new = set(assessed) - before
+        for key in new:
             guessed.add(key)                                 # sans rapport : ne prend pas la place des résultats de recherche
             assessed[key].evidence.append(ev("suggested_site", "site suggéré par une fiche en ligne, puis vérifié sur le site", 0.0))
+        a = assessed.get(next(iter(new))) if new else assessed.get(key0)
+        if a is None:
+            res.suggested[key0] = (None, "rejected:bad_domain")     # signalé « mauvais site » par l'utilisateur
+            continue
+        verdict = owner_verdict(company, a)
+        res.suggested[key0] = (a.domain, verdict)
+        if verdict == "ok" and a.confidence < th.probable:
+            a.confidence = th.probable
+            a.evidence.append(ev("owner_site", "site déclaré sur la fiche Google de l'entreprise, joignable et lié à elle (nom, coordonnées ou domaine) : "
+                                               "au moins probable", 0.0))
 
     for u in email_site_urls(company):                   # domaine de l'adresse e-mail : le candidat le plus probable, lu avant toute devinette
         if best_conf() >= th.confirmed or canonical_domain(u) in assessed:

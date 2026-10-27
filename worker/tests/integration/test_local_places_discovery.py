@@ -143,7 +143,8 @@ def test_campagne_pagination_rattachement_sirene_et_site_verifie(env, conn, monk
     assert dupont["website_status"] == "CONFIRMED" and dupont["website_url"] == f"https://www.{SITE}/"                              # vérifié sur le site
     assert dupont["email"] == "contact@dupont-plomberie.fr" and dupont["phone"] == "0325708090"                                     # lus sur le site
     prov = json.loads(dupont["provenance"])["places"]
-    assert set(prov) == {"checked_at", "place_id", "had_website"} and prov["place_id"] == "ChIJdupont" and prov["had_website"] is True
+    assert set(prov) == {"checked_at", "place_id", "had_website", "site_checked_at", "site_checked"} and prov["place_id"] == "ChIJdupont"
+    assert prov["had_website"] is True and prov["site_checked"] == "confirmed"
     src = {r["source"]: r["source_ref"] for r in db.fetch_all(conn, "SELECT source, source_ref FROM local_prospect_sources WHERE prospect_id=%s", (dupont["id"],))}
     assert src["places"] == "ChIJdupont" and "sirene" not in src
 

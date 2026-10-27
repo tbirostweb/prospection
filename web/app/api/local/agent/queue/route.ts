@@ -20,12 +20,19 @@ export async function GET(req: NextRequest) {
     .filter((p) => withDrafts || !p.draft_message)
     .filter((p) => !emailOnly || autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null);
   const { triggered, others } = splitByTrigger(rows);
-  // Les entreprises qui ONT un site passent en premier (défauts constatés → refonte ; e-mail presque toujours publié sur le site),
-  // puis les déclencheurs forts, puis les autres. L'ordre d'origine est gardé à égalité.
-  const hasSite = (kind: string) => /site_ameliorable|site_inaccessible/.test(kind);
-  const drafted = [...triggered, ...others].map((p) => ({ p, d: buildDraft(p, sender, offer) }))
+  const hasSite = (kind: string) => /site_ameliorable|site_refonte|site_inaccessible/.test(kind);
+  const allDrafted = [...triggered, ...others].map((p) => ({ p, d: buildDraft(p, sender, offer) }))
     .filter((x): x is { p: any; d: NonNullable<ReturnType<typeof buildDraft>> } => x.d !== null)   // aucun fait objectif : on n'écrit pas
-    .map((x, i) => ({ ...x, i })).sort((a, b) => Number(hasSite(b.d.kind)) - Number(hasSite(a.d.kind)) || a.i - b.i);
+    .map((x, i) => ({ ...x, i }));
+  // Ceux qui peuvent partir par e-mail d'abord ; puis on ENTRELACE « avec site » (refonte) et « sans site » pour que les deux soient rédigés,
+  // au lieu que l'un écrase l'autre (chaque groupe garde son ordre : déclencheurs forts, score).
+  const canMail = (p: any) => autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null;
+  const order = (list: typeof allDrafted) => {
+    const w = list.filter((x) => hasSite(x.d.kind)), n = list.filter((x) => !hasSite(x.d.kind)), out: typeof allDrafted = [];
+    for (let k = 0; k < Math.max(w.length, n.length); k++) { if (k < w.length) out.push(w[k]); if (k < n.length) out.push(n[k]); }
+    return out;
+  };
+  const drafted = [...order(allDrafted.filter((x) => canMail(x.p))), ...order(allDrafted.filter((x) => !canMail(x.p)))];
   const items = [];
   for (const { p, d } of drafted) {
     if (items.length >= limit) break;

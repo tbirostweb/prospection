@@ -108,5 +108,30 @@ test("site existant avec défauts vérifiés : refonte proposée, jamais « corr
   assert.match(d.core, /refonte/);
   assert.doesNotMatch(d.core, /corriger|—|perdre des clients/);
   assert.deepEqual(checkWrittenCore("J'ai regardé votre site : la mention de copyright date de 2015 et l'affichage sur téléphone ne semble pas adapté. Je m'appelle Théo, je suis développeur web près de Troyes. Une refonte vous intéresserait ?", "Votre site", d), []);
-  assert.equal(buildDraft({ ...site, issues: "[]", site_year: new Date().getFullYear() - 1 }, SENDER, OFFER), null);   // aucun défaut : aucun message
+  assert.equal(buildDraft({ ...site, issues: "[]", site_year: new Date().getFullYear() - 1 }, SENDER, OFFER), null);   // site récent : pas de refonte à proposer
+});
+
+test("site sans défaut relevé : message prudent « site_refonte », aucune faiblesse inventée, adresse du site citée", () => {
+  const site = { ...P, website_status: "CONFIRMED", website_url: "https://www.garage-exemple.test/", site_year: null, issues: "[]" };
+  const d = buildDraft(site, SENDER, OFFER)!;
+  assert.equal(d.kind, "site_refonte");
+  assert.match(d.core, /garage-exemple\.test/);
+  assert.doesNotMatch(d.core, /je n'ai pas trouvé de site|pas de site|lent|ancien|dépassé|obsolète|mauvais|problème|défaut relevé|—/i);
+  assert.match(d.core, /regard neuf/);
+  assert.match(d.core, /\?/);
+  assert.ok(!d.kind.includes("sans_site"));
+  assert.equal(buildDraft({ ...site, website_url: null }, SENDER, OFFER), null);
+  const old = buildDraft({ ...site, site_year: 2015, issues: null }, SENDER, OFFER)!;
+  assert.equal(old.kind, "site_ameliorable");   // un fait vérifié (© 2015) reste cité comme fait
+});
+
+test("file de rédaction : les fiches avec site (CONFIRMED/PROBABLE/UNREACHABLE) entrent même en « À examiner », exclusions gardées", async () => {
+  const src = readFileSync(path.resolve(__dirname, "..", "..", "lib/localdb.ts"), "utf-8");
+  const CONTACT_QUEUE_SQL = src.slice(src.indexOf("export const CONTACT_QUEUE_SQL"), src.indexOf("/** Page « Entreprises »"));
+  assert.match(CONTACT_QUEUE_SQL, /website_status IN \('CONFIRMED','PROBABLE','UNREACHABLE'\)/);
+  for (const guard of ["p.do_not_contact = 0", "p.excluded_reason IS NULL", "p.status <> 'DO_NOT_CONTACT'", "p.is_chain = 0", "p.contacted_at IS NULL", "<> 'IGNORER'"])
+    assert.ok(CONTACT_QUEUE_SQL.includes(guard), guard);
+  assert.doesNotMatch(CONTACT_QUEUE_SQL, /'(LOST|WON|CONTACTED)'/);   // statuts fermés absents de la liste des statuts admis
+  const route = readFileSync(path.resolve(__dirname, "..", "..", "app/api/local/agent/queue/route.ts"), "utf-8");
+  assert.match(route, /site_refonte/);
 });

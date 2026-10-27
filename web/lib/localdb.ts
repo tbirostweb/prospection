@@ -15,7 +15,9 @@ export const LIST_COLUMNS = `p.id, p.siret, p.company_name, p.trade_name, p.acti
 export const CONTACT_QUEUE_LIMIT = 300;
 export const CONTACT_QUEUE_SQL = `FROM local_prospects p
     WHERE p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.status <> 'DO_NOT_CONTACT'
-      AND (p.status = 'TO_CONTACT' OR (p.status IN ('QUALIFIED','AUDITED','ENRICHED') AND p.category IN ('TRES_BON','A_CONTACTER')))
+      AND (p.status = 'TO_CONTACT' OR (p.status IN ('QUALIFIED','AUDITED','ENRICHED') AND p.category IN ('TRES_BON','A_CONTACTER'))
+        OR (p.status IN ('QUALIFIED','AUDITED','ENRICHED','DISCOVERED') AND p.website_status IN ('CONFIRMED','PROBABLE','UNREACHABLE')
+            AND p.is_chain = 0 AND p.contacted_at IS NULL AND COALESCE(p.category, '') <> 'IGNORER'))
       AND (p.status = 'TO_CONTACT' OR (${READY_SQL}))
     ORDER BY p.status = 'TO_CONTACT' DESC, p.prospect_score DESC LIMIT ${CONTACT_QUEUE_LIMIT}`;
 
@@ -71,8 +73,23 @@ export async function getPlacesStats() {
   const [f] = await safeRows<any>(`SELECT COUNT(*) AS n, COALESCE(SUM(NOT EXISTS (SELECT 1 FROM local_prospect_sources o WHERE o.prospect_id = s.prospect_id
       AND o.source IN ('sirene','sirene_bulk'))),0) AS only FROM local_prospect_sources s WHERE s.source = 'places'`);
   const [qd] = await safeRows<any>(`SELECT COUNT(*) AS queries, COALESCE(SUM(unmatched),0) AS unmatched FROM local_places_queries`);   // table absente avant la migration 032 : []
+  // site de la fiche Google : verdict de la vérification (provenance `places.site_checked`, worker/local/siterecheck.py places_site_check)
+  const HAD = `JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.places.had_website')) = 'true' AND COALESCE(p.website_status, '') NOT IN ('CONFIRMED','PROBABLE')`;
+  const CHECK = `JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.places.site_checked'))`;
+  const reasons = (await safeRows<any>(`SELECT ${CHECK} AS reason, COUNT(*) AS n FROM local_prospects p
+      WHERE ${HAD} AND JSON_EXTRACT(p.provenance, '$.places.site_checked_at') IS NOT NULL GROUP BY reason ORDER BY n DESC`))
+    .map((r) => ({ reason: String(r.reason ?? ""), n: Number(r.n ?? 0) }));
+  // restant à vérifier : mêmes critères que le passage du worker (NO_SITE_FILTER + LOST_SITE), le reste est hors file (contactée, écartée…)
+  const [left] = await safeRows<any>(`SELECT COUNT(*) AS n, COALESCE(SUM(p.website_status IN ('NOT_FOUND','UNCERTAIN') AND p.contacted_at IS NULL
+        AND (p.auto_state IS NULL OR p.auto_state = 'queued') AND p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.is_chain = 0
+        AND p.pipeline_stage = 'DONE' AND (p.category IS NULL OR p.category <> 'IGNORER') AND p.status NOT IN ('LOST','WON','DO_NOT_CONTACT','CONTACTED')
+        AND JSON_TYPE(JSON_EXTRACT(p.provenance, '$.places.place_id')) = 'STRING'
+        AND EXISTS (SELECT 1 FROM local_prospect_campaigns pc WHERE pc.prospect_id = p.id)),0) AS queued
+      FROM local_prospects p WHERE ${HAD} AND JSON_EXTRACT(p.provenance, '$.places.site_checked_at') IS NULL`);
   const backfill = await getSetting<{ enabled?: boolean }>("local_places_backfill", {});
   return { pending: Number(t?.n ?? 0), backfillOn: backfill?.enabled === true,
+    siteRejected: reasons.reduce((a, r) => a + r.n, 0), siteReasons: reasons, siteToCheck: Number(left?.queued ?? 0),
+    siteOutOfQueue: Number(left?.n ?? 0) - Number(left?.queued ?? 0),
      requests: Number(u?.requests ?? 0), budget: Number(b?.budget ?? 900), asked, hadSite: Number(c?.had_site ?? 0), verified: Number(c?.verified ?? 0),
     found: Number(f?.n ?? 0), onlyPlaces: Number(f?.only ?? 0), queries: Number(qd?.queries ?? 0), unmatched: Number(qd?.unmatched ?? 0),
     ever: asked > 0 || Number(ever?.n ?? 0) > 0 };

@@ -71,7 +71,8 @@ def test_site_de_google_verifie_confirme_et_contacts_lus_sur_le_site(env, conn, 
     ev = json.loads(p["website_evidence"])["evidence"]
     assert any(e["code"] == "siret" for e in ev) and not any(e["code"] == "structured_source" for e in ev)   # preuve = le site lui-même
     prov = json.loads(p["provenance"])["places"]
-    assert set(prov) == {"checked_at", "place_id", "had_website"} and prov["place_id"] == "ChIJdupont" and prov["had_website"] is True
+    assert set(prov) == {"checked_at", "place_id", "had_website", "site_checked_at", "site_checked"} and prov["place_id"] == "ChIJdupont"
+    assert prov["had_website"] is True and prov["site_checked"] == "confirmed"                # verdict : plus jamais redemandé
     assert SITE not in json.dumps(json.loads(p["provenance"])["places"]) and "Voltaire" not in p["provenance"]   # aucune URL ni contenu Places en base
     dupont_calls = [c for c in calls if b"DUPONT" in c.content]
     assert len(dupont_calls) == 1                                                            # une seule requête pour ce prospect

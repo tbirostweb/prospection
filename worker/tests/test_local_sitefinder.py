@@ -120,7 +120,7 @@ def test_requetes_construites_sans_le_nom_seul(company, expected):
 # ── domaines devinés d'après le nom : aucun moteur de recherche consommé ──────────────────────────────────
 def test_domaines_devines_d_apres_le_nom():
     g = sf.guess_domains(MARTIN)
-    assert "boulangerie-martin.fr" in g and "boulangeriemartin.fr" in g and len(g) <= sf.GUESS_MAX
+    assert "boulangerie-martin.fr" in g and "boulangeriemartin.fr" in g and len(g) <= sf.GUESS_MAX + sf.PLATFORM_GUESS_MAX
     assert sf.guess_domains(dict(company_name="BOULANGERIE PATISSERIE SARL", city="TROYES")) == []     # que des mots d'activité : rien à deviner
 
 
@@ -233,7 +233,7 @@ def test_departement_du_code_postal_et_outre_mer():
 
 def test_domaines_devines_avec_le_departement():
     g = sf.guess_domains(METALEX)
-    assert "metalex-10.com" in g and "metalex10.fr" in g and len(g) <= sf.GUESS_MAX
+    assert "metalex-10.com" in g and "metalex10.fr" in g and len(g) <= sf.GUESS_MAX + sf.PLATFORM_GUESS_MAX
     assert "metalex-10.com" in sf.guess_domains(dict(METALEX, department=None))            # département déduit du code postal
     both = sf.guess_domains(dict(MARTIN, department="10"))
     assert "martinboulangerie.fr" in both[:4]                                              # la raison sociale n'est plus évincée par l'enseigne
@@ -289,3 +289,76 @@ def test_domaine_de_l_e_mail_sans_www():
     web = FakeWeb().add_site("karrossperformance.fr", GENERIC_HOME, legal=KARROSS_LEGAL)
     res = sf.resolve(dict(KARROSS, email="contact@karrossperformance.fr"), FakeSearch(), web, dns=lambda ds: [])
     assert res.status == "CONFIRMED" and res.url == "https://karrossperformance.fr/"
+
+
+# ── Plateformes de sites d'artisans en sous-domaine (« quentin-cheron.artizo.fr ») ──────────────────────────────
+CHERON = dict(siret="90000000000011", siren="900000000", company_name="QUENTIN CHERON", trade_name=None, city="SAINT-JEAN-DE-BONNEVAL",
+              postal_code="10320", address="2 RUE DE L EGLISE 10320 SAINT-JEAN-DE-BONNEVAL", phone=None, activity_label="Travaux de plomberie")
+ARTIZO = "quentin-cheron.artizo.fr"
+
+
+def cheron_site(web: FakeWeb, domain=ARTIZO):
+    home = html(title="Quentin Cheron - Plombier chauffagiste", h1="Quentin Cheron, plombier", desc="Plomberie, chauffage, dépannage",
+                canonical=False, body='<a href="/contact">Contact</a><p>Intervient autour de Saint-Jean-de-Bonneval</p>')
+    web.add_site(domain, home)
+    web.pages[f"https://{domain}/contact"] = (200, html(title="Contact", h1="Contact", canonical=False,
+                                                         body="<p>Écrivez-moi : quentin.cheron [at] gmail [point] com</p>"))
+    return web
+
+
+def test_sous_domaine_de_plateforme_compare_au_nom():
+    assert sf._domain_label(ARTIZO) == "quentincheron" and sf._domain_label("www.metalex-10.com") == "metalex10"
+    assert sf.domain_matches_name(CHERON, ARTIZO)
+    assert sf.domain_matches_name({**CHERON, "company_name": "CHERON QUENTIN"}, ARTIZO)          # SIRENE : nom puis prénom
+    assert not sf.domain_matches_name({**CHERON, "company_name": "MARTIN DUPONT"}, ARTIZO)
+    assert not sf.domain_matches_name(CHERON, "artizo.fr") and not sf.domain_matches_name({**CHERON, "company_name": "ARTIZO"}, ARTIZO)
+    assert sf.platform_host("www." + ARTIZO) == "artizo.fr" and sf.platform_host("artizo.fr") is None
+
+
+def test_devinettes_artizo_bornees():
+    g = sf.guess_domains({**CHERON, "company_name": "CHERON QUENTIN"})
+    plat = [d for d in g if d.endswith(".artizo.fr")]
+    assert "cheron-quentin.artizo.fr" in plat and "quentin-cheron.artizo.fr" in plat and len(plat) <= sf.PLATFORM_GUESS_MAX
+    assert not [d for d in sf.guess_domains({**CHERON, "company_name": "SARL"}) if d.endswith(".artizo.fr")]
+
+
+def test_adresse_de_la_plateforme_n_est_pas_celle_de_l_artisan():
+    from worker.local import audit, contacts
+    assert contacts.classify_email("contact@artizo.fr", ARTIZO) is None
+    assert contacts.classify_email("bob@autre-artisan.artizo.fr", ARTIZO) is None
+    assert contacts.classify_email("contact@quentin-cheron.artizo.fr", ARTIZO) == "GENERIC_BUSINESS"
+    assert contacts.classify_email("quentin.cheron@gmail.com", ARTIZO) == "UNCERTAIN"
+    assert "artizo.fr" in audit.FREE_SUBDOMAINS                                                      # argument de refonte : page de plateforme
+
+
+# ── Site DÉCLARÉ sur la fiche Google : barème adapté ────────────────────────────────────────────────────────────
+def _owner(company, url, web):
+    res = sf.resolve(company, FakeSearch(), web, strategy_budget=0, candidate_urls=[url])
+    return res, sf.suggested_verdict(res, url)
+
+
+def test_site_artizo_declare_sur_google_reconnu_pour_quentin_cheron():
+    res, verdict = _owner(CHERON, f"https://{ARTIZO}/", cheron_site(FakeWeb()))
+    assert res.status == "PROBABLE" and res.url == f"https://{ARTIZO}/" and verdict == "probable"
+    assert any(e["code"] == "owner_site" for e in res.evidence)
+
+
+def test_site_artizo_d_un_autre_nom_rejete():
+    res, verdict = _owner({**CHERON, "company_name": "MARTIN DUPONT", "siret": "91111111100011", "siren": "911111111"},
+                          f"https://{ARTIZO}/", cheron_site(FakeWeb()))
+    assert not res.accepted and verdict == "rejected:no_match"
+
+
+def test_site_declare_annuaire_parque_ou_autre_entreprise_rejete():
+    web = FakeWeb()
+    web.add_site("www.pagesjaunes.fr", html(title="Boulangerie Martin Troyes", h1="Boulangerie Martin"))
+    assert _owner(MARTIN, "https://www.pagesjaunes.fr/", web)[1] == "rejected:directory"
+    web.add_site("www.facebook.com", html(title="Boulangerie Martin", h1="Boulangerie Martin"))
+    assert _owner(MARTIN, "https://www.facebook.com/", web)[1] == "rejected:social"
+    web.add_site("boulangerie-martin.fr", html(title="boulangerie-martin.fr", h1="Ce domaine est à vendre", canonical=False))
+    assert _owner(MARTIN, "https://boulangerie-martin.fr/", web)[1] == "rejected:parked"
+    web.add_site("garage-leroy.fr", html(title="Boulangerie Martin - Reims", h1="Boulangerie Martin", canonical=False,
+                                         body="<p>SARL LEROY - SIRET 999 999 999 00011 - 51100 Reims</p>"))
+    res, verdict = _owner(MARTIN, "https://garage-leroy.fr/", web)
+    assert not res.accepted and verdict == "rejected:other_company"
+    assert _owner(MARTIN, "https://injoignable.fr/", web)[1] == "unreachable"

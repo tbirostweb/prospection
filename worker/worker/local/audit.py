@@ -38,7 +38,8 @@ SEVERITY_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3}
 FREE_SUBDOMAINS = ("wixsite.com", "jimdosite.com", "jimdofree.com", "jimdo.com", "e-monsite.com", "webself.net", "wordpress.com", "over-blog.com",
                    "blogspot.com", "sitew.fr", "sitew.com", "business.site", "godaddysites.com", "site123.me", "weebly.com", "strikingly.com",
                    "mystrikingly.com", "simplesite.com", "webnode.fr", "webnode.com", "wifeo.com", "free.fr", "pagesperso-orange.fr", "canva.site",
-                   "carrd.co", "square.site", "editorx.io")
+                   "carrd.co", "square.site", "editorx.io",
+                   "artizo.fr")         # plateforme de sites d'artisans (« quentin-cheron.artizo.fr ») : page générique de plateforme, argument de refonte
 DIRECTORY_SITE = re.compile(r"\bsolocal\.com|site-solocal\.com|r[ée]alis[ée] par (?:solocal|pagesjaunes)", re.I)
 
 

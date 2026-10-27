@@ -192,6 +192,14 @@ def _places_urls(conn, row: dict) -> list[str]:
     return [url] if url else []
 
 
+def record_places_check(conn, pid: int, res, suggested: list[str]) -> None:
+    """Verdict sur le site de la fiche Google (« probable », « rejected:no_match »…) dans la provenance `places` : il n'est plus redemandé."""
+    if suggested:
+        verdict = sitefinder.suggested_verdict(res, suggested[0])
+        places.record_site_check(conn, pid, verdict)
+        log.info("[local] site de la fiche Google de #%s : %s", pid, verdict)
+
+
 def _local_presence(a, res, row: dict) -> dict:
     lp = dict(a.local_presence or {})
     city = (row.get("city") or "").lower()
@@ -251,9 +259,11 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch, res=
     status = row.get("website_status")
     if status is None:
         store.set_stage(conn, pid, "WEBSITE_SEARCH")
+        suggested = _places_urls(conn, row)
         res = sitefinder.resolve(_company(conn, row), search, fetch, ctx.site_thresholds, known_urls=_known_urls(conn, row), dns=ctx.dns,
-                                candidate_urls=_places_urls(conn, row))
+                                candidate_urls=suggested)
         store.set_stage(conn, pid, "WEBSITE_VALIDATION")
+        record_places_check(conn, pid, res, suggested)
         found = socials_mod.from_hits({**_company(conn, row), "manager_name": row.get("manager_name")}, res.hits)   # jamais un profil non attribué
         store.save_resolution(conn, pid, res, socials=[x["url"] for x in found])
         store.save_socials(conn, pid, found)

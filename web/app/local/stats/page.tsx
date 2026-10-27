@@ -13,6 +13,15 @@ const messageLabel = (k: string) => k.split("_").length > 1 && MESSAGE_LABELS[k.
   ? `${MESSAGE_LABELS[k.split("_")[0]]} + ${MESSAGE_LABELS[k.split("_").slice(1).join("_")] ?? k}` : MESSAGE_LABELS[k] ?? k;
 
 /** Statistiques de la prospection locale. */
+// verdicts du worker sur le site d'une fiche Google (provenance `places.site_checked`, worker/local/sitefinder.py owner_verdict)
+const SITE_REASONS: Record<string, string> = {
+  "rejected:no_match": "rien de l'entreprise sur le site", "rejected:directory": "annuaire", "rejected:social": "réseau social",
+  "rejected:parked": "domaine parqué", "rejected:other_company": "autre entreprise", "rejected:ambiguous": "autre site plausible",
+  "rejected:other_site": "autre site retenu", "rejected:google": "page Google", "rejected:bad_domain": "signalé « mauvais site »",
+  "rejected:invalid": "adresse invalide", unreachable: "injoignable", no_url: "plus de site sur la fiche", gone: "fiche Google disparue",
+};
+const siteReasonLabel = (r: string) => SITE_REASONS[r] ?? (r.startsWith("error:") ? "erreur de vérification" : r);
+
 export default async function LocalStats() {
   const [tot] = await safeRows<any>(`SELECT COUNT(*) AS discovered, COALESCE(SUM(website_status IN ('CONFIRMED','PROBABLE')),0) AS with_site,
       COALESCE(SUM(website_status='NOT_FOUND'),0) AS no_site, COALESCE(SUM(website_status='UNCERTAIN'),0) AS uncertain,
@@ -136,7 +145,10 @@ export default async function LocalStats() {
           <>
             <p className="text-sm">{places.requests} / {places.budget} requêtes ce mois-ci</p>
             <p className="mt-1 text-sm">{places.asked} prospect(s) interrogé(s), dont {places.hadSite} avec un site sur leur fiche Google, dont {places.verified} avec un site vérifié en base.</p>
-            <p className="mt-1 text-xs text-muted">Une seule requête par prospect, puis pas avant 90 jours. Seul l'identifiant de la fiche est conservé, jamais son contenu.</p>
+            <p className="mt-1 text-sm">Sites des fiches Google : {places.verified} vérifié(s), {places.siteRejected} rejeté(s){places.siteReasons.length > 0 &&
+              ` (${places.siteReasons.slice(0, 3).map((r) => `${siteReasonLabel(r.reason)} : ${r.n}`).join(", ")})`}, {places.siteToCheck} restant à vérifier
+              {places.siteOutOfQueue > 0 && ` (+ ${places.siteOutOfQueue} hors file : contactée, écartée ou en cours)`}.</p>
+            <p className="mt-1 text-xs text-muted">Une seule requête par prospect, puis pas avant 90 jours ; un site de fiche jamais vérifié est redemandé une fois (Place Details). Seul l'identifiant de la fiche est conservé, jamais son contenu.</p>
             {places.queries > 0 && (
               <p className="mt-2 text-sm">Découverte des campagnes : {places.queries} recherche(s) (activité × commune), {places.found} fiche(s) rattachée(s) à une entreprise SIRENE, dont {places.onlyPlaces} trouvée(s) seulement par Google ; {places.unmatched} résultat(s) ignoré(s) faute de correspondance SIRENE sûre.</p>
             )}

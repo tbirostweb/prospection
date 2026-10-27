@@ -34,6 +34,9 @@ def classify_email(email: str, site_domain: str) -> str | None:
     if not domain or local in IGNORED_LOCALS or domain in IGNORED_DOMAINS or any(domain.endswith("." + d) for d in IGNORED_DOMAINS):
         return None
     base = local.split("+")[0]
+    from .sitefinder import platform_host
+    if domain != site_domain and platform_host(site_domain) and (domain == platform_host(site_domain) or platform_host(domain)):
+        return None                                  # site « quentin-cheron.artizo.fr » : l'adresse de la plateforme (ou d'un autre artisan) n'est pas la sienne
     if domain == site_domain or domain.endswith("." + site_domain) or site_domain.endswith("." + domain):
         if base in GENERIC_PREFIXES or any(base.startswith(p) and base[len(p):].isdigit() for p in GENERIC_PREFIXES):
             return "GENERIC_BUSINESS"

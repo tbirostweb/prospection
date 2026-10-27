@@ -8,6 +8,10 @@ comme n'importe quel candidat ; e-mail et téléphone sont lus SUR LE SITE. Cond
     (identifiant autorisé), dans la provenance `places` {checked_at, place_id, had_website} — jamais l'URL ;
   * le téléphone Google n'est jamais utilisé (le champ n'est même pas demandé) ;
   * un site confirmé est enregistré comme un site trouvé par l'app, avec la preuve lue sur le site lui-même (aucun bonus « source structurée »).
+URL perdue : une fiche interrogée dont la fiche Google avait un site (`had_website`) mais qui n'a pas été vérifiée dans le même passage (l'URL n'est
+qu'en mémoire) est reprise par Place Details (`recover_url` : GET places/{place_id}, champ `websiteUri` seul), dans le même budget. Le verdict de
+la vérification est posé dans la provenance (`site_checked_at`, `site_checked` : « confirmed », « probable », « unreachable », « rejected:<raison> »,
+« no_url », « gone ») : la fiche n'est plus jamais redemandée à Google pour cela.
 Une seule requête par prospect (puis pas avant 90 jours). Plafond MENSUEL persistant en base : table `local_places_usage` (une ligne par mois, migration 030),
 réservé AVANT l'appel. Sans clé ou budget 0 : module inactif, aucun appel.
 """
@@ -18,7 +22,7 @@ import json
 import math
 import os
 import time
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -27,6 +31,8 @@ from ..config import USER_AGENT, log
 from . import sitefinder, store, textmatch
 
 PLACES_URL = "https://places.googleapis.com/v1/places:searchText"
+DETAILS_URL = "https://places.googleapis.com/v1/places/{}"
+DETAILS_FIELD_MASK = "websiteUri"
 FIELD_MASK = "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.businessStatus,places.location"
 API_KEY = os.getenv("LOCAL_GOOGLE_PLACES_API_KEY", "").strip()
 
@@ -121,6 +127,30 @@ def post_search(body: dict, field_mask: str = FIELD_MASK, key: str | None = None
         return None, "Google Places : réponse illisible", 200
 
 
+def get_details(place_id: str, key: str | None = None) -> tuple[dict | None, str | None, int | None]:
+    """UN appel Place Details (champ `websiteUri` seul) : (réponse JSON, erreur, code HTTP), comme `post_search`. Ne réserve rien."""
+    t0 = time.monotonic()
+    try:
+        with httpx.Client(timeout=15, transport=_transport) as c:
+            r = c.get(DETAILS_URL.format(quote(place_id, safe="")), params={"languageCode": "fr"},
+                      headers={"X-Goog-Api-Key": key or API_KEY, "X-Goog-FieldMask": DETAILS_FIELD_MASK, "User-Agent": USER_AGENT})
+    except httpx.TimeoutException:
+        return None, "Google Places : délai dépassé", None
+    except httpx.HTTPError as exc:
+        return None, f"Google Places injoignable : {exc.__class__.__name__}", None
+    finally:
+        log.debug("[local] Google Places (Place Details) : %d ms", int((time.monotonic() - t0) * 1000))
+    if r.status_code in (401, 403, 429):
+        return None, f"Google Places : clé refusée ou quota atteint (HTTP {r.status_code}) — vérifie LOCAL_GOOGLE_PLACES_API_KEY", r.status_code
+    if r.status_code != 200:
+        return None, f"Google Places HTTP {r.status_code}", r.status_code
+    try:
+        data = r.json()
+        return (data if isinstance(data, dict) else {}), None, 200
+    except ValueError:
+        return None, "Google Places : réponse illisible", 200
+
+
 def search_text(company: dict, key: str | None = None) -> tuple[list[dict] | None, str | None]:
     """(résultats, erreur). `None` = l'appel a échoué (réseau, clé refusée, quota) : ce n'est PAS « aucune fiche »."""
     data, err, _status = post_search(build_body(company), key=key)
@@ -148,6 +178,22 @@ def usable_website(uri: str | None, company: dict) -> str | None:
     if sitefinder._in_set(domain, sitefinder.NOT_OFFICIAL | sitefinder.SOCIAL | GOOGLE_HOSTS) or sitefinder.looks_like_directory(domain, company):
         return None
     return sitefinder._origin(uri.strip())
+
+
+def website_rejection(uri: str | None, company: dict) -> str:
+    """Raison courte pour laquelle le site de la fiche Google n'est pas un candidat (`usable_website` = None). Un réseau social n'est pas enregistré
+    comme profil de la fiche : ce serait conserver un contenu Google Places (seul le place_id peut l'être)."""
+    if not uri or not isinstance(uri, str):
+        return "no_url"
+    p = urlparse(uri.strip())
+    if p.scheme not in ("http", "https") or not p.hostname:
+        return "rejected:invalid"
+    domain = sitefinder.canonical_domain(uri)
+    if sitefinder._in_set(domain, sitefinder.SOCIAL):
+        return "rejected:social"
+    if sitefinder._in_set(domain, GOOGLE_HOSTS):
+        return "rejected:google"
+    return "rejected:directory"
 
 
 def matches(company: dict, place: dict) -> bool:
@@ -207,13 +253,81 @@ def _checked_recently(row: dict) -> bool:
     return (_dt.datetime.now(_dt.timezone.utc) - when).days < RECHECK_DAYS
 
 
+def _places_prov(row: dict) -> dict:
+    prov = row.get("provenance")
+    prov = json.loads(prov) if isinstance(prov, (str, bytes)) else (prov or {})
+    return prov["places"] if isinstance(prov.get("places"), dict) else {}
+
+
+def _now_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def site_check(verdict: str) -> dict:
+    """Champs de provenance du verdict sur le site de la fiche Google (aucun contenu Google : notre date et notre conclusion)."""
+    return {"site_checked_at": _now_iso(), "site_checked": verdict[:60]}
+
+
+def record_site_check(conn, pid: int, verdict: str) -> None:
+    """Verdict de la vérification du site de la fiche Google, posé dans la provenance `places` (si elle existe) : plus de Place Details pour elle."""
+    v = site_check(verdict)
+    db.execute(conn, """UPDATE local_prospects SET provenance = JSON_SET(provenance, '$.places.site_checked_at', %s, '$.places.site_checked', %s)
+                        WHERE id=%s AND JSON_TYPE(JSON_EXTRACT(provenance, '$.places')) = 'OBJECT'""", (v["site_checked_at"], v["site_checked"], pid))
+
+
+def needs_recovery(row: dict) -> bool:
+    """Fiche Google avec un site, place_id connu, site pas encore vérifié : l'URL (perdue) est à redemander par Place Details."""
+    pl = _places_prov(row)
+    return pl.get("had_website") is True and isinstance(pl.get("place_id"), str) and bool(pl["place_id"]) and not pl.get("site_checked_at")
+
+
+def recover_url(conn, row: dict, company: dict) -> tuple[str | None, bool]:
+    """URL du site de la fiche Google retrouvée par Place Details (`websiteUri` seul, UNE requête réservée dans le budget du mois), à VÉRIFIER.
+    Renvoie (URL candidate ou None, conclu ?). Non conclu (False) : appel impossible (inactif, budget, réseau, clé refusée / quota : arrêt du module
+    pour le processus) — rien n'est écrit, la fiche sera reprise. Conclu sans URL utilisable : le verdict (« no_url », « rejected:social »…, « gone »
+    pour une fiche Google disparue) est posé aussitôt. L'URL n'est jamais stockée (mémoire du processus seulement)."""
+    global _blocked
+    pid = row["id"]
+    if pid in _session:
+        return _session[pid], True
+    if not needs_recovery(row):
+        return None, True
+    if not enabled():
+        return None, False
+    if not reserve(conn):
+        log.info("[local] Google Places : budget mensuel atteint (%d requêtes) — aucun appel", MONTHLY_BUDGET)
+        return None, False
+    data, err, status = get_details(_places_prov(row)["place_id"])
+    if data is None:
+        _refund(conn)
+        if status in (401, 403, 429):
+            _blocked = True
+        if status in (400, 404):                             # place_id périmé : la fiche Google n'existe plus sous cet identifiant
+            record_site_check(conn, pid, "gone")
+            conn.commit()
+            return None, True
+        log.warning("[local] %s", err)
+        return None, False
+    uri = data.get("websiteUri")
+    url = usable_website(uri, company)
+    if not url:
+        record_site_check(conn, pid, website_rejection(uri, company))
+    conn.commit()
+    _session[pid] = url
+    log.info("[local] Google Places #%s : site de la fiche redemandé (Place Details), %s (requêtes du mois : %d/%d)", pid,
+             "proposé à la vérification" if url else "inutilisable", month_used(conn), MONTHLY_BUDGET)
+    return url, True
+
+
 def candidate_url(conn, row: dict, company: dict) -> str | None:
     """URL du site indiquée par Google Maps pour ce prospect, à VÉRIFIER (jamais à croire). None si inactif, déjà interrogé il y a moins de 90 jours,
     budget du mois atteint, appel en échec ou aucune fiche qui corresponde. Une seule requête par prospect ; seule la provenance `places` est écrite."""
     global _blocked
     pid = row["id"]
     if _checked_recently(row):
-        return _session.get(pid)                             # déjà interrogé : l'URL n'est PAS en base, seulement en mémoire pour ce processus
+        if pid in _session:
+            return _session[pid]                             # déjà interrogé : l'URL n'est PAS en base, seulement en mémoire pour ce processus
+        return recover_url(conn, row, company)[0]            # URL perdue (autre passage) et site jamais vérifié : Place Details
     if not enabled():
         return None
     if not reserve(conn):
@@ -226,8 +340,13 @@ def candidate_url(conn, row: dict, company: dict) -> str | None:
             _blocked = True                                  # inutile de brûler le reste du passage sur une clé refusée
         log.warning("[local] %s", err)
         return None
-    place_id, url, had = pick({**company, "latitude": row.get("latitude"), "longitude": row.get("longitude")}, places)
-    store.set_provenance(conn, pid, "places", {"checked_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "place_id": place_id, "had_website": had})
+    located = {**company, "latitude": row.get("latitude"), "longitude": row.get("longitude")}
+    place_id, url, had = pick(located, places)
+    flag = {"checked_at": _now_iso(), "place_id": place_id, "had_website": had}
+    if had and not url:                                      # réseau social, annuaire… : rien à vérifier, jamais redemandé
+        uri = next((pl.get("websiteUri") for pl in places if matches(located, pl)), None)
+        flag.update(site_check(website_rejection(uri, company)))
+    store.set_provenance(conn, pid, "places", flag)
     conn.commit()
     _session[pid] = url
     log.info("[local] Google Places #%s : %d résultat(s), fiche %s, site %s (requêtes du mois : %d/%d)", pid, len(places),
