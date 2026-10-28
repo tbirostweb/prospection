@@ -101,7 +101,7 @@ export async function getQualityStats() {
   const auto = await getAutoSend();
   const [q] = await safeRows<any>(qualitySql(auto.personal_emails));
   const n = (k: string) => Number(q?.[k] ?? 0);
-  return { total: n("total"), email: n("complete_email"), phone: n("complete_phone"),
+  return { total: n("total"), email: n("complete_email"), phone: n("complete_phone"), closed: n("closed"),
     missing: { processing: n("processing"), noMetier: n("no_metier"), siteTodo: n("site_todo"), noContact: n("no_contact"), emailInvalid: n("email_invalid") },
     // raisons (lib/complete.ts siteReason / contactReason), dans l'ordre d'affichage, seulement celles qui comptent
     siteReasons: (Object.keys(SITE_REASONS) as SiteReason[]).map((c) => ({ code: c, label: SITE_REASONS[c], n: n(`site_${c}`) })).filter((r) => r.n > 0),

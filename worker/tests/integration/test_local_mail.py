@@ -9,10 +9,11 @@ import smtplib
 from email import message_from_bytes
 from email.policy import default as default_policy
 
+import httpx
 import pytest
 
 from worker import db
-from worker.local import outbox, sitefinder
+from worker.local import http, outbox, sitefinder
 
 SENDER = {"name": "Théo Exemple", "company": "Exemple Web", "role": "Développeur web", "phone": "06 12 34 56 78",
           "email": "contact@exemple-web.fr", "website": "exemple-web.fr", "logo_url": "https://exemple-web.fr/logo.png"}
@@ -88,6 +89,21 @@ class FakeImap:
         pass
 
 
+def official_api(units: dict | None = None, bodacc: dict | None = None, calls: list | None = None):
+    """Faux SIRENE / BODACC (companystate) : `units` {siren: unité}, `bodacc` {siren: [annonces]} ; rien par défaut (entreprise active)."""
+    def handler(req):
+        if calls is not None:
+            calls.append(req.url.host)
+        if req.url.host == "recherche-entreprises.api.gouv.fr":
+            u = (units or {}).get(req.url.params.get("q", "")[:9])
+            return httpx.Response(200, json={"results": [u] if u else []})
+        if req.url.host == "bodacc-datadila.opendatasoft.com":
+            where = req.url.params["where"]
+            return httpx.Response(200, json={"results": [r for s, recs in (bodacc or {}).items() if f'registre="{s}"' in where for r in recs]})
+        raise AssertionError(f"appel inattendu : {req.url}")
+    return handler
+
+
 @pytest.fixture
 def mail(env, conn, monkeypatch, telegram):
     for k, v in {"LOCAL_SMTP_HOST": "smtp.exemple.net", "LOCAL_SMTP_USER": "contact@exemple-web.fr", "LOCAL_SMTP_PASSWORD": "mot-de-passe-de-test"}.items():
@@ -102,6 +118,7 @@ def mail(env, conn, monkeypatch, telegram):
     smtp, imap = FakeSMTP(), FakeImap()
     NO_MAIL.clear()
     monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])     # aucune résolution réelle des domaines devinés
+    monkeypatch.setattr(http, "_transport", httpx.MockTransport(official_api()))    # état officiel revérifié avant l'envoi : rien de fermé
 
     class M:
         def enable(self, **cfg):
@@ -320,3 +337,53 @@ def test_boite_lue_toutes_les_10_min_et_toujours_avant_une_relance(mail, conn):
     assert r["status"] == "sent" and "inbox" not in r                                # lue il y a 1 min : pas relue pour un premier message
     db.execute(conn, "UPDATE local_mail_state SET imap_at=%s WHERE id=1", (t + dt.timedelta(days=3) - dt.timedelta(minutes=1),))
     assert "inbox" in mail.run(T0 + dt.timedelta(days=3))                            # relance due : boîte relue d'abord
+
+
+# ── Entreprise fermée ou en procédure : jamais de premier message, plus aucune relance (companystate.send_check) ─────────────────────
+LIQUIDATION = {"familleavis_lib": "Procédures collectives", "typeavis_lib": "Avis initial", "registre": ["100 000 000", "100000000"],
+               "dateparution": "2026-03-25", "jugement": json.dumps({"famille": "Jugement d'ouverture",
+                                                                   "nature": "Jugement d'ouverture de liquidation judiciaire", "date": "2026-03-17"})}
+
+
+def test_entreprise_en_liquidation_premier_message_refuse(mail, conn, monkeypatch):
+    pid = add(conn, "10000000000011")
+    monkeypatch.setattr(http, "_transport", httpx.MockTransport(official_api(bodacc={"100000000": [LIQUIDATION]})))
+    mail.enable()
+    assert mail.run(T0)["status"] == "idle" and mail.smtp.sent == []
+    p = row(conn, pid)
+    assert p["excluded_reason"] == "liquidation judiciaire (17/03/2026)" and p["auto_state"] is None and p["auto_queued_at"] is None
+    assert p["draft_message"] == BODY                                             # brouillon conservé, plus proposé (fiche écartée)
+    assert json.loads(p["provenance"])["company_state"]["closed"] is True
+
+
+def test_relance_refusee_si_l_entreprise_est_en_liquidation_depuis(mail, conn, monkeypatch):
+    pid = add(conn, "10000000000011")
+    mail.enable()
+    assert mail.run(T0)["status"] == "sent"
+    db.execute(conn, "UPDATE local_prospects SET provenance=JSON_SET(provenance, '$.company_state.checked_at', '2026-10-01T00:00:00Z') WHERE id=%s", (pid,))
+    db.execute(conn, "DELETE FROM local_http_cache")                             # réponses officielles gardées 24 h : la liquidation est publiée depuis
+    monkeypatch.setattr(http, "_transport", httpx.MockTransport(official_api(bodacc={"100000000": [LIQUIDATION]})))
+    assert mail.run(T0 + dt.timedelta(days=3))["status"] == "idle" and len(mail.smtp.sent) == 1   # état revérifié (plus de 7 jours) : aucune relance
+    p = row(conn, pid)
+    assert p["auto_state"] == "stopped" and p["excluded_reason"] == "liquidation judiciaire (17/03/2026)"
+    assert mail.run(T0 + dt.timedelta(days=7))["status"] == "idle" and len(mail.smtp.sent) == 1
+
+
+def test_relance_refusee_fiche_ecartee_par_le_passage(mail, conn):
+    pid = add(conn, "10000000000011")
+    mail.enable()
+    assert mail.run(T0)["status"] == "sent"
+    db.execute(conn, "UPDATE local_prospects SET excluded_reason='établissement fermé (01/11/2026)' WHERE id=%s", (pid,))   # séquence encore 'active'
+    assert mail.run(T0 + dt.timedelta(days=3))["status"] == "idle" and len(mail.smtp.sent) == 1
+    assert row(conn, pid)["auto_state"] == "stopped"
+
+
+def test_etat_officiel_injoignable_rien_ne_part_puis_reprise(mail, conn, monkeypatch):
+    pid = add(conn, "10000000000011")
+    monkeypatch.setattr(http, "_transport", httpx.MockTransport(lambda req: httpx.Response(503)))
+    mail.enable()
+    assert mail.run(T0)["status"] == "deferred" and mail.smtp.sent == []
+    assert row(conn, pid)["auto_state"] == "queued" and row(conn, pid)["excluded_reason"] is None   # rien de conclu
+    assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "idle"           # moins d'une heure : la fiche attend, sans requête
+    monkeypatch.setattr(http, "_transport", httpx.MockTransport(official_api()))
+    assert mail.run(T0 + dt.timedelta(hours=2))["status"] == "sent"              # source revenue, entreprise active : le message part

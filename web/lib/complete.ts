@@ -21,7 +21,7 @@ export const MISSING_LABELS: Record<MissingCode, string> = {
   email_invalide: "e-mail invalide",
   contact: "aucun contact fiable",
 };
-export type SiteReason = "review" | "search" | "recheck" | "places" | "presend" | "uncertain" | "uncertain_user" | "unreachable";
+export type SiteReason = "review" | "search" | "recheck" | "places" | "presend" | "presend_user" | "uncertain" | "uncertain_user" | "unreachable";
 /** Pourquoi le site est encore à trancher (mêmes codes et libellés que SITE_REASONS de complete.py), dans l'ordre d'affichage. */
 export const SITE_REASONS: Record<SiteReason, string> = {
   review: "site importé à vérifier par toi",
@@ -29,6 +29,7 @@ export const SITE_REASONS: Record<SiteReason, string> = {
   recheck: "revérification pas encore faite",
   places: "site de la fiche Google pas vérifié",
   presend: "doute à la vérification d'avant l'envoi",
+  presend_user: "doute à la vérification d'avant l'envoi, toujours là après les devinettes : à trancher par toi",
   uncertain: "site incertain, revérification à faire",
   uncertain_user: "site incertain après revérification : à trancher par toi",
   unreachable: "site injoignable, nouvel essai prévu",
@@ -70,12 +71,16 @@ export function unreachableSettled(p: FicheFields): boolean {
 /** Pourquoi le site est encore à trancher, ou null s'il est tranché (miroir de site_reason, complete.py). */
 export function siteReason(p: FicheFields): SiteReason | null {
   if (p.website_status === "CONFIRMED" || p.website_status === "PROBABLE") return p.site_review === "PENDING" ? "review" : null;
-  const prov = obj(p.provenance), recheck = obj(prov.site_recheck), pre = obj(prov.presend_site), places = obj(prov.places);
+  const prov = obj(p.provenance), recheck = obj(prov.site_recheck), pre = obj(prov.presend_site), places = obj(prov.places), guess = obj(prov.site_guess);
   if (p.website_status === "UNCERTAIN") return recheck.status == null ? "uncertain" : "uncertain_user";
   if (p.website_status === "UNREACHABLE") return unreachableSettled(p) ? null : "unreachable";
   if (p.website_status !== "NOT_FOUND" || Number(p.website_absence_confidence ?? 0) < ABSENCE_MIN) return "search";
   if (recheck.status == null) return "recheck";
-  if (pre.doubt) return "presend";
+  if (pre.doubt) {
+    // devinettes refaites APRÈS le doute sans le lever : plus aucun passage automatique, c'est au propriétaire de trancher
+    const done = String(guess.checked_at ?? "");
+    return done && done >= String(pre.at ?? "") ? "presend_user" : "presend";
+  }
   if (places.had_website === true && places.site_checked_at == null) return "places";
   return null;
 }
@@ -149,7 +154,8 @@ export function completeSql(personal: boolean) {
     WHEN p.website_status = 'UNREACHABLE' THEN IF(${settled}, NULL, 'unreachable')
     WHEN COALESCE(p.website_status, '') <> 'NOT_FOUND' OR COALESCE(p.website_absence_confidence, 0) < ${ABSENCE_MIN} THEN 'search'
     WHEN ${isNull("site_recheck.status")} THEN 'recheck'
-    WHEN COALESCE(JSON_UNQUOTE(${prov("presend_site.doubt")}), '') = 'true' THEN 'presend'
+    WHEN COALESCE(JSON_UNQUOTE(${prov("presend_site.doubt")}), '') = 'true' THEN IF(COALESCE(JSON_UNQUOTE(${prov("site_guess.checked_at")}), '') <> ''
+      AND COALESCE(JSON_UNQUOTE(${prov("site_guess.checked_at")}), '') >= COALESCE(JSON_UNQUOTE(${prov("presend_site.at")}), ''), 'presend_user', 'presend')
     WHEN COALESCE(JSON_UNQUOTE(${prov("places.had_website")}), '') = 'true' AND ${isNull("places.site_checked_at")} THEN 'places'
     ELSE NULL END`;
   const site = b(`(${siteReason}) IS NULL`);
@@ -167,6 +173,7 @@ export function completeSql(personal: boolean) {
 }
 
 /** Bloc « Qualité de la liste » : fiches à prospecter (actives, indépendantes, jamais contactées), complètes avec e-mail, complètes téléphone seul,
+ *  fiches écartées parce que fermées ou en procédure (`closed` : état officiel revérifié, worker/local/companystate.py ; hors du total),
  *  et ce qui manque aux autres (une fiche peut cumuler plusieurs manques), avec la raison de chaque « site à trancher » (`site_<code>`) et de chaque
  *  « sans contact fiable » (`contact_<code>`), et où en sont les fiches en traitement (campagne en cours, erreur abandonnée, importée, autre). */
 export function qualitySql(personal: boolean): string {
@@ -187,6 +194,8 @@ export function qualitySql(personal: boolean): string {
       ${reasons.join(",\n      ")},
       ${sum(`NOT ${s.done} AND ${running}`, "processing_campaign")},
       ${sum(`NOT ${s.done} AND NOT ${running} AND p.pipeline_stage = 'ERROR' AND p.next_retry_at IS NULL`, "processing_abandoned")},
-      ${sum(`NOT ${s.done} AND NOT ${running} AND p.pipeline_stage = 'IMPORTED'`, "processing_imported")}
+      ${sum(`NOT ${s.done} AND NOT ${running} AND p.pipeline_stage = 'IMPORTED'`, "processing_imported")},
+      (SELECT COUNT(*) FROM local_prospects q WHERE q.excluded_reason IS NOT NULL
+        AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(q.provenance, '$.company_state.closed')), '') = 'true') AS closed
     FROM local_prospects p WHERE ${s.active} AND p.contacted_at IS NULL AND p.status NOT IN ('CONTACTED','REPLIED','INTERESTED','WON','LOST')`;
 }

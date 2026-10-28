@@ -7,7 +7,9 @@ DÉSACTIVÉ par défaut : rien ne part tant que Réglages > Envoi automatique n'
      UN seul e-mail part (donc au plus un toutes les 2 min) — une relance due (J+3, puis J+7 en réponse au premier message), sinon le prochain premier message en file.
 Adresses de l'entreprise seulement (Gmail, Orange… publiées comme contact : réglage personal_emails, activé par défaut) ; chaque message contient la ligne d'opposition. Formulaires et Facebook : jamais.
 Premier message : seulement pour une FICHE COMPLÈTE avec e-mail (`complete`) ; une fiche en file encore incomplète (métier inconnu, site à
-trancher…) attend sans partir. Juste avant, sans rien demander au propriétaire :
+trancher…) attend sans partir. Premier message ET chaque relance : entreprise fermée, cessée, radiée ou en procédure collective refusée
+(`companystate.send_check` : état SIRENE / BODACC revérifié s'il date de plus de 7 jours ; source injoignable : rien ne part, nouvel essai
+une heure plus tard). Juste avant, sans rien demander au propriétaire :
   * le domaine de l'adresse doit recevoir du courrier (MX, ou A / AAAA ; DoH, résultat positif gardé MX_TTL) : sinon l'adresse est marquée
     invalide (auto_state 'bounced', comme un e-mail revenu) et la fiche passe au téléphone / à la visite ;
   * message « sans site » : dernière vérification du site, sans moteur de recherche (domaine de l'adresse, domaines devinés d'après le nom, site
@@ -32,7 +34,7 @@ import threading
 
 from .. import alerts, db
 from ..config import env, log
-from . import complete, inbox, maildns, mailer, store
+from . import companystate, complete, inbox, maildns, mailer, store
 from .contacts import FREEMAIL
 from .store import is_do_not_contact
 
@@ -121,13 +123,13 @@ def next_task(conn, now: dt.datetime, personal: bool = True) -> tuple[str, dict]
     fiche est complète (`waiting`)."""
     t = now.astimezone(dt.timezone.utc).replace(tzinfo=None)
     d1, d2 = mailer.FOLLOWUP_DAYS
-    row = db.fetch_one(conn, """SELECT * FROM local_prospects WHERE auto_state='active' AND do_not_contact=0 AND status='CONTACTED'
+    for row in db.fetch_all(conn, """SELECT * FROM local_prospects WHERE auto_state='active' AND do_not_contact=0 AND status='CONTACTED'
                                 AND ((followups=0 AND contacted_at <= %s)
                                   OR (followups=1 AND contacted_at <= %s AND (last_followup_at IS NULL OR last_followup_at <= %s)))
-                                ORDER BY contacted_at LIMIT 1""",
-                       (t - dt.timedelta(days=d1), t - dt.timedelta(days=d2), t - dt.timedelta(days=d2 - d1)))
-    if row:
-        return ("followup1" if int(row["followups"] or 0) == 0 else "followup2"), row
+                                ORDER BY contacted_at LIMIT 20""",
+                            (t - dt.timedelta(days=d1), t - dt.timedelta(days=d2), t - dt.timedelta(days=d2 - d1))):
+        if not companystate.send_retry_pending(row, now):        # état officiel pas vérifiable il y a moins d'une heure : les autres d'abord
+            return ("followup1" if int(row["followups"] or 0) == 0 else "followup2"), row
     for row in db.fetch_all(conn, "SELECT * FROM local_prospects WHERE auto_state='queued' ORDER BY auto_queued_at, id LIMIT 300"):
         if waiting(row, personal, now) is None:
             return "first", row
@@ -149,6 +151,8 @@ def waiting(p: dict, personal: bool, now: dt.datetime) -> str | None:
     pre = complete._json(p.get("provenance")).get("presend_site")
     if isinstance(pre, dict) and (pre.get("retry_at") or "") > _iso(now):
         return "vérification du site à reprendre"
+    if companystate.send_retry_pending(p, now):
+        return "état officiel de l'entreprise à revérifier"
     # adresse refusée par le réglage : `mailer.ineligible` retire la fiche de la file, avec sa raison (pas d'attente sans fin)
     codes = [c for c in complete.missing(p, personal) if c not in ("contact", "email_invalide")]
     if codes == ["site"] and complete.site_state(p) == "places" and _sans_site(p):
@@ -280,7 +284,8 @@ def presend_site(conn, p: dict, now: dt.datetime, fetch=None, timeout: float = P
         conn.rollback()
         return "retry", "fiche modifiée pendant la vérification"
     dom = mailer.email_domain(p.get("email"))
-    if res.status == "UNCERTAIN" or any(c.get("domain") == dom and c.get("reachable") for c in res.candidates if dom and dom not in FREEMAIL):
+    if res.status == "UNCERTAIN" or any(c.get("domain") == dom and c.get("reachable") and not c.get("parked") for c in res.candidates
+                                        if dom and dom not in FREEMAIL):
         conn.commit()                                                 # verdict Google éventuel gardé
         return "retry", f"site possible ({res.candidates[0]['domain'] if res.candidates else '?'}), pas assez sûr"
     store.set_provenance(conn, pid, "presend_site", {"at": _iso(now), "result": "none", "tries": int(pre.get("tries") or 0)})
@@ -369,6 +374,17 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
         if reason:
             _stop(conn, p, reason)
             return "skipped"
+        # Entreprise fermée, cessée, radiée ou en procédure collective (état officiel revérifié s'il date de plus de SEND_DAYS jours) :
+        # jamais de premier message ; la fiche sort de la file, son brouillon reste (plus proposé : elle est écartée).
+        state, why = companystate.send_check(conn, p, now)
+        if state == "closed":
+            db.execute(conn, "UPDATE local_prospects SET auto_queued_at=NULL, auto_state=NULL WHERE id=%s AND auto_state='queued'", (p["id"],))
+            conn.commit()
+            log.info("[mail] prospect %s retiré de l'envoi automatique : %s", p["id"], why)
+            return "skipped"
+        if state == "retry":
+            log.info("[mail] prospect %s : envoi repoussé (%s)", p["id"], why)
+            return "deferred"
         # Message « je n'ai pas trouvé de site » alors que le site est connu depuis (saisi à la main…) : brouillon effacé, sortie de la file.
         if _sans_site(p) and p.get("website_status") in ("CONFIRMED", "PROBABLE"):
             from .siterecheck import _drop_no_site_draft
@@ -409,6 +425,13 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
         if not first or is_do_not_contact(conn, p.get("siret"), p.get("siren"), p.get("canonical_domain"), first["to_email"]):
             _stop(conn, p, "premier e-mail introuvable ou opposition")
             return "skipped"
+        state, why = companystate.send_check(conn, p, now)        # fermée / en procédure depuis le premier message : plus aucune relance
+        if state == "closed":
+            _stop(conn, p, f"entreprise fermée ou en procédure : {why}")
+            return "skipped"
+        if state == "retry":
+            log.info("[mail] relance au prospect %s repoussée (%s)", p["id"], why)
+            return "deferred"
         subject, to, reply_to = mailer.reply_subject(first["subject"]), first["to_email"], first["message_id"]
         text = mailer.followup_body(kind, p, first, now, from_name)
     msg = mailer.build_message(from_addr=cfg["from"], from_name=from_name, to=to, subject=subject, text=text, sender=sender, in_reply_to=reply_to)

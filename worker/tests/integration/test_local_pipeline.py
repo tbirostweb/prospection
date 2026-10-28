@@ -48,6 +48,10 @@ def bodacc_creations():
 
 def install_api(monkeypatch):
     def handler(req):
+        if req.url.host == "recherche-entreprises.api.gouv.fr" and "q" in req.url.params:
+            return httpx.Response(200, json={"results": [], "total_pages": 0})   # état officiel (companystate) : unité introuvable, rien de conclu
+        if req.url.host == "bodacc-datadila.opendatasoft.com" and "Procédures collectives" in req.url.params["where"]:
+            return httpx.Response(200, json={"results": []})                    # état officiel (companystate) : aucune procédure
         if req.url.host == "recherche-entreprises.api.gouv.fr":
             page = int(req.url.params["page"])
             return httpx.Response(200, json={"results": sirene_units() if page == 1 else [], "total_pages": 1})

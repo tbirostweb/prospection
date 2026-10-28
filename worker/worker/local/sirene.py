@@ -127,6 +127,20 @@ def lookup_siren(siren: str, conn=None) -> dict | None:
     return None
 
 
+def lookup_establishment(siret: str | None, siren: str | None, conn=None) -> dict | None:
+    """Unité légale de cet établissement (API officielle, cache 24 h), QUEL QUE SOIT son état (aucun filtre `etat_administratif` : une
+    entreprise cessée doit être vue), ou None. Recherche par SIRET (l'établissement est alors dans `matching_etablissements`), sinon par SIREN
+    (seul le siège est connu). Sert à revérifier l'état des fiches à prospecter (companystate.py)."""
+    siret, siren = re.sub(r"\D", "", siret or ""), re.sub(r"\D", "", siren or "")
+    siren = siren if len(siren) == 9 else siret[:9] if len(siret) == 14 else ""
+    if not siren:
+        return None
+    data = http.get_json(SEARCH_API, {"q": siret if len(siret) == 14 else siren, "per_page": 5}, conn=conn, cache_hours=24)
+    if not isinstance(data, dict) or "results" not in data:
+        raise http.ApiError("recherche-entreprises : réponse inattendue")
+    return next((u for u in data.get("results") or [] if isinstance(u, dict) and str(u.get("siren")) == siren), None)
+
+
 def search_name(name: str, postal_code: str, conn=None) -> list[dict]:
     """Unités légales ACTIVES dont le nom ou l'enseigne ressemble à `name`, avec un établissement dans ce code postal (cache 24 h).
     Sert à rattacher un résultat Google Places à SON entreprise SIRENE : la fiche est ensuite construite avec les données SIRENE seulement."""

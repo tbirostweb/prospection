@@ -250,3 +250,62 @@ def test_budget_du_mois_refuse_sans_consommer_le_jour(env, conn, monkeypatch):
     monkeypatch.setattr(places, "MONTHLY_BUDGET", 1)
     assert places.reserve(conn) and not places.reserve(conn)
     assert "budget mensuel" in places.stop_reason and places.day_used(conn) == 1
+
+
+# ── Trancher sans attendre : chaque « site à trancher » a un passage prévu ─────────────────────────────────────────────────────────────
+def test_revérification_en_erreur_reprise_puis_absence_sure(env, conn, monkeypatch):
+    web, search = _campaign_done(conn, monkeypatch)
+    prov = {"site_recheck": {"checked_at": "2026-10-01T10:00:00Z", "error": "ReadTimeout"}}
+    db.execute(conn, "UPDATE local_prospects SET website_absence_confidence=0.7, provenance=JSON_MERGE_PATCH(COALESCE(provenance, '{}'), %s) WHERE siret=%s",
+               (json.dumps(prov), DUPONT))
+    assert complete.site_reason(prospect(conn, DUPONT)) == "recheck"                    # autrefois : plus jamais reprise (aucun passage prévu)
+    enrich.run(conn, "full", fetch=web, pool_factory=lambda c: search, lock_fn=lambda w: Lock())
+    p = prospect(conn, DUPONT)
+    assert _prov(conn, DUPONT)["site_recheck"]["status"] == "NOT_FOUND" and _prov(conn, DUPONT)["site_guess"]["version"] == sitefinder.GUESS_VERSION
+    assert complete.site_reason(p) is None                                              # tous les passages ont tourné : absence de site sûre
+
+
+def test_tous_les_passages_tournes_absence_sure_en_un_passage(env, conn, monkeypatch):
+    web, search = _campaign_done(conn, monkeypatch)
+    ev = json.loads(prospect(conn, DUPONT)["website_evidence"])
+    _set(conn, DUPONT, website_absence_confidence=0.3, website_evidence=json.dumps({**ev, "strategies": ev["strategies"][:1], "degraded": True}))
+    db.execute(conn, "UPDATE local_prospects SET provenance=JSON_REMOVE(COALESCE(provenance, JSON_OBJECT()), '$.site_recheck') WHERE siret=%s", (DUPONT,))
+    assert complete.site_reason(prospect(conn, DUPONT)) == "search"
+    enrich.run(conn, "full", fetch=web, pool_factory=lambda c: search, lock_fn=lambda w: Lock())
+    p = prospect(conn, DUPONT)
+    assert float(p["website_absence_confidence"]) >= 0.6 and complete.site_reason(p) is None   # recherche refaite ET revérification posée
+    assert p["website_status"] == "NOT_FOUND"
+
+
+def test_recherche_jamais_faite_sur_fiche_terminee_reprise(env, conn, monkeypatch):
+    web, search = _campaign_done(conn, monkeypatch)
+    _set(conn, DUPONT, website_status=None, website_absence_confidence=None)
+    assert complete.site_reason(prospect(conn, DUPONT)) == "search"
+    assert enrich.search_more(conn, search, web)["done"] == 1
+    p = prospect(conn, DUPONT)
+    assert p["website_status"] == "NOT_FOUND" and float(p["website_absence_confidence"]) >= 0.6 and complete.site_reason(p) is None
+
+
+def test_recherche_degradee_retentee_le_lendemain_puis_toutes_les_deux_semaines(env, conn, monkeypatch):
+    web, search = _campaign_done(conn, monkeypatch)
+    _set(conn, DUPONT, website_absence_confidence=0.3)
+    for tries, days, due in ((1, 2, True), (3, 2, False), (3, 15, True)):
+        flag = {"checked_at": dt_iso(days), "tries": tries}
+        db.execute(conn, "UPDATE local_prospects SET provenance=JSON_SET(COALESCE(provenance, JSON_OBJECT()), '$.site_search_more', CAST(%s AS JSON)) WHERE siret=%s",
+                   (json.dumps(flag), DUPONT))
+        got = enrich.search_more(conn, _NoHit(), web)
+        assert (got["done"] >= 1) is due, (tries, days)
+        _set(conn, DUPONT, website_absence_confidence=0.3)
+
+
+class _NoHit:
+    """Moteur dégradé : aucun résultat (la confiance d'absence ne monte pas assez)."""
+    last = type("L", (), {"degraded": True})()
+
+    def __call__(self, query):
+        return []
+
+
+def dt_iso(days_ago: int) -> str:
+    import datetime as _dt
+    return (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")

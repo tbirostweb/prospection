@@ -362,3 +362,53 @@ def test_site_declare_annuaire_parque_ou_autre_entreprise_rejete():
     res, verdict = _owner(MARTIN, "https://garage-leroy.fr/", web)
     assert not res.accepted and verdict == "rejected:other_company"
     assert _owner(MARTIN, "https://injoignable.fr/", web)[1] == "unreachable"
+
+
+# ── Forme juridique retirée avant de deviner ; domaine réservé vide jamais retenu (constaté : SARL SOTRAMO → sotramo.com) ─────────────
+SOTRAMO = dict(company_name="SARL SOTRAMO", siren="512345678", siret="51234567800018", address="14 RUE DU MOULIN 10800 SAINT-THIBAULT",
+               city="SAINT-THIBAULT", postal_code="10800", department="10", activity_label="Travaux de terrassement")
+
+
+def test_forme_juridique_retiree_en_tete_ou_en_fin_sans_libelle_trop_court():
+    for name in ("SARL SOTRAMO", "S.A.R.L. SOTRAMO", "SOTRAMO SARL", "STE SOTRAMO", "Sté SOTRAMO", "SOTRAMO S.A.S.", "ETS SOTRAMO", "SOTRAMO EURL"):
+        c = {**SOTRAMO, "company_name": name}
+        assert sf.core_tokens(name) == ["sotramo"], name
+        assert "sotramo.com" in sf.guess_domains(c) and "sotramo.fr" in sf.guess_domains(c), name
+        assert sf.domain_matches_name(c, "sotramo.com") and sf.domain_matches_name(c, "www.sotramo.fr"), name
+    assert sf.core_tokens("STE ABC") == ["ste", "abc"]                                    # « abc » seul : moins de 4 lettres, jamais
+    assert sf.core_tokens("ENTREPRISE GAU") == ["entreprise", "gau"]
+    assert all(len(d.split(".")[0].replace("-", "")) >= 4 for d in sf.guess_domains({**SOTRAMO, "company_name": "SAS ABC"}))
+    assert sf.core_tokens("BOULANGERIE DE STE SAVINE") == ["boulangerie", "ste", "savine"]  # « Ste » au milieu : Sainte, gardé
+    assert not sf.domain_matches_name({**SOTRAMO, "company_name": "STE ABC"}, "abc.fr")
+    g = sf.guess_domains({**SOTRAMO, "company_name": "STE SOTRAMO", "trade_name": "SOTRAMO TERRASSEMENT"})
+    assert len(g) <= sf.GUESS_MAX + sf.PLATFORM_GUESS_MAX and "sotramo.com" in g
+
+
+def test_sotramo_devine_en_com_et_reconnu_sans_aucune_recherche():
+    legal = html(title="Mentions légales", h1="Mentions légales", body="<p>SARL SOTRAMO, 14 rue du Moulin 10800 Saint-Thibault, RCS Troyes 512 345 678</p>")
+    web = FakeWeb().add_site("sotramo.com", html(title="Sotramo - Terrassement", h1="Sotramo", body='<a href="/mentions-legales">Mentions légales</a>'
+                                                  "<p>14 rue du Moulin, 10800 Saint-Thibault</p>"), legal=legal)
+    search = FakeSearch()
+    res = sf.resolve(SOTRAMO, search, web, dns=lambda ds: [d for d in ds if d == "sotramo.com"])   # n'existe qu'en .com
+    assert res.accepted and res.canonical_domain == "sotramo.com" and search.queries == []
+    assert any(e["code"] == "guessed_domain" for e in res.evidence)
+
+
+@pytest.mark.parametrize("home", [
+    html(title="Coming soon", h1="Coming soon", body="<p>Sotramo</p>"),
+    html(title="Sotramo", h1="Sotramo", body="<p>Notre site est en construction. 10800 Saint-Thibault</p>"),
+    html(title="sotramo.fr", h1="sotramo.fr", body="<p>Ce nom de domaine a été réservé par un client. Hébergement, e-mails : découvrez nos offres.</p>"),
+    html(title="Domaine à vendre", h1="sotramo.fr", body="<p>Ce domaine est à vendre. Buy this domain.</p>"),
+    html(title="Welcome to nginx!", h1="Welcome to nginx!", body="<p>If you see this page, the nginx web server is successfully installed.</p>"),
+])
+def test_domaine_reserve_vide_parque_ou_coming_soon_jamais_un_site(home):
+    web = FakeWeb().add_site("sotramo.fr", home)
+    res = sf.resolve(SOTRAMO, FakeSearch(), web, dns=lambda ds: [d for d in ds if d == "sotramo.fr"])
+    assert not res.accepted and res.status == "NOT_FOUND" and res.url is None
+    assert res.candidates and res.candidates[0]["parked"] is True and res.candidates[0]["confidence"] == 0.0
+
+
+def test_entreprise_du_btp_en_construction_n_est_pas_un_site_en_construction():
+    page = sf.htmlinfo.parse(html(title="Sotramo - spécialiste en construction", h1="Sotramo",
+                                  body="<p>Entreprise de terrassement en construction de routes. 10800 Saint-Thibault</p>"), "https://sotramo.fr/")
+    assert not sf.looks_parked(page)

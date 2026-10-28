@@ -3,14 +3,15 @@ worker/tests/fixtures/fiche_complete_cases.json). Qualité plutôt que quantité
 (vérifié juste avant l'envoi, `outbox`) ; une fiche complète « téléphone » se contacte à la main ; les autres attendent que l'app les complète.
 
 Une fiche est complète quand, à la fois :
-  1. entreprise active et indépendante : ni « ne plus contacter », ni écartée (excluded_reason), ni chaîne, ni « Ignorer », pas de radiation /
+  1. entreprise active et indépendante : ni « ne plus contacter », ni écartée (excluded_reason : posée aussi par companystate.py quand SIRENE /
+     BODACC disent l'établissement fermé, l'entreprise cessée, radiée ou en procédure collective), ni chaîne, ni « Ignorer », pas de radiation /
      procédure collective / fermeture connue (BODACC) ;
   2. traitement terminé (pipeline_stage = DONE) ;
   3. métier connu : activité issue du code NAF (activity_label), jamais devinée d'après le nom ;
   4. site tranché : CONFIRMED / PROBABLE (hors site importé « à vérifier par toi »), ou NOT_FOUND après la recherche complète — recherche
      moteur faite (confiance d'absence >= ABSENCE_MIN), revérification `site_recheck` faite (devinettes de domaine et domaine de l'e-mail
      compris), site de la fiche Google vérifié s'il y en avait un (`places.had_website` → `places.site_checked_at`), aucun doute laissé par
-     la vérification d'avant l'envoi (`presend_site.doubt`) ; ou UNREACHABLE constaté encore injoignable après UNREACHABLE_MAX_TRIES nouvelles
+     la vérification d'avant l'envoi (`presend_site.doubt` ; resté après les devinettes refaites : « presend_user », à trancher par toi) ; ou UNREACHABLE constaté encore injoignable après UNREACHABLE_MAX_TRIES nouvelles
      tentatives espacées de plusieurs jours (`unreachable_retry`, siterecheck.unreachable_retry) : site en panne, c'est tranché ;
      ce qui reste à trancher a une raison (`site_reason`, SITE_REASONS) et chaque raison un passage automatique (`emailsearch`) ;
   5. contact fiable : e-mail GENERIC_BUSINESS / PERSONAL_BUSINESS (UNCERTAIN et messageries gratuites seulement si le réglage personal_emails
@@ -47,6 +48,7 @@ SITE_REASONS = {
     "recheck": "revérification pas encore faite",
     "places": "site de la fiche Google pas vérifié",
     "presend": "doute à la vérification d'avant l'envoi",
+    "presend_user": "doute à la vérification d'avant l'envoi, toujours là après les devinettes : à trancher par toi",
     "uncertain": "site incertain, revérification à faire",
     "uncertain_user": "site incertain après revérification : à trancher par toi",
     "unreachable": "site injoignable, nouvel essai prévu",
@@ -100,8 +102,12 @@ def site_reason(p: dict) -> str | None:
         return "search"                                    # pas encore cherché, ou recherche trop courte / dégradée
     if recheck.get("status") is None:
         return "recheck"                                   # revérification jamais faite (ou en erreur)
-    if isinstance(prov.get("presend_site"), dict) and prov["presend_site"].get("doubt"):
-        return "presend"
+    pre = prov.get("presend_site") if isinstance(prov.get("presend_site"), dict) else {}
+    if pre.get("doubt"):
+        guess = prov.get("site_guess") if isinstance(prov.get("site_guess"), dict) else {}
+        # les devinettes refaites APRÈS le doute ne l'ont pas levé (site possible, pas assez sûr) : plus aucun passage automatique, c'est à toi
+        done = str(guess.get("checked_at") or "")
+        return "presend_user" if done and done >= str(pre.get("at") or "") else "presend"
     places = prov.get("places") if isinstance(prov.get("places"), dict) else {}
     if places.get("had_website") is True and places.get("site_checked_at") is None:
         return "places"

@@ -4,6 +4,8 @@ Chaque « raison » pour laquelle une fiche n'est pas complète (complete.site_r
 (nombre par passage, budget de temps), idempotent (provenance posée : jamais deux fois la même chose, aucune boucle) :
 
   sans moteur (verrou de l'enrichissement seulement : tourne PENDANT une campagne, sur des fiches qui ne sont pas dans une campagne en cours)
+    company_state   état officiel (SIRENE, BODACC) : fermées, cessées, radiées ou en procédure collective écartées (companystate.run ; jamais
+                    vérifiées d'abord, puis tous les 30 jours, 7 jours pour les fiches en file d'envoi ou en relances)
     naf             métier d'après le code NAF (naflabels.backfill)
     manual          e-mails ajoutés à la main : score recalculé
     stuck           fiches bloquées « traitement en cours » hors campagne en cours (site connu) : traitement fini (runner.process_prospect)
@@ -15,7 +17,8 @@ Chaque « raison » pour laquelle une fiche n'est pas complète (complete.site_r
     site_email      site vérifié sans e-mail : pages contact / mentions légales relues
   avec moteurs (verrou des campagnes : le rythme par moteur est tenu en mémoire du processus, deux chercheurs en même temps le doubleraient)
     recheck         revérification des fiches sans site / incertaines (siterecheck.run)
-    search_more     recherche trop maigre (confiance d'absence < ABSENCE_MIN) : stratégies pas encore essayées (2 fois au plus, 7 jours d'écart)
+    search_more     recherche trop maigre (confiance d'absence < ABSENCE_MIN) ou jamais faite : stratégies pas encore essayées (3 essais à 1 jour
+                    d'écart, puis tous les 14 jours : jamais oubliée)
     stuck_search    fiches bloquées dont le site n'a jamais été cherché
     email           recherche d'e-mail (emailsearch.run)
 
@@ -57,10 +60,12 @@ UNREACHABLE_PER_RUN = _env_int("LOCAL_UNREACHABLE_RETRY_PER_RUN", 5)
 SITE_EMAIL_PER_RUN = _env_int("LOCAL_SITE_EMAIL_PER_RUN", 10)
 STUCK_PER_RUN = _env_int("LOCAL_STUCK_PER_RUN", 10)
 UNREACHABLE_RETRY_DAYS = 3
-SEARCH_MORE_TRIES, SEARCH_MORE_DAYS = 2, 7
+# Recherche complétée : les SEARCH_MORE_TRIES premiers essais à SEARCH_MORE_DAYS jour(s) d'écart (moteurs dégradés : souvent passager), ensuite
+# tous les SEARCH_MORE_LATER_DAYS jours, sans limite : une fiche « recherche trop maigre » a toujours un passage prévu (jamais oubliée).
+SEARCH_MORE_TRIES, SEARCH_MORE_DAYS, SEARCH_MORE_LATER_DAYS = 3, 1, 14
 KEEP_RUNS = 500
 
-FREE_STEPS = ("naf", "manual", "stuck", "places_site", "places_backfill", "site_guess", "unreachable", "site_email")
+FREE_STEPS = ("company_state", "naf", "manual", "stuck", "places_site", "places_backfill", "site_guess", "unreachable", "site_email")
 ENGINE_STEPS = ("recheck", "search_more", "stuck_search", "email")
 STOP_TEXT = {"time": "budget de temps", "quota": "quota", "engines": "moteurs indisponibles", "error": "erreur", "lock": "verrou pris"}
 
@@ -141,19 +146,22 @@ def site_guess(conn, fetch, limit: int = SITE_GUESS_PER_RUN, deadline: float | N
     if limit <= 0:
         return _out(stop="off")
     doubt = f"COALESCE(JSON_UNQUOTE({_prov('presend_site.doubt')}), '') = 'true'"
+    old_version = f"COALESCE(CAST(JSON_UNQUOTE({_prov('site_guess.version')}) AS UNSIGNED), 1) < {sitefinder.GUESS_VERSION}"
     rows = _rows(conn, f"""p.website_status IN ('NOT_FOUND','UNCERTAIN') AND p.pipeline_stage = 'DONE' AND {BASE}
-        AND ({_prov('site_guess')} IS NULL
+        AND ({_prov('site_guess')} IS NULL OR {old_version}
              OR ({doubt} AND COALESCE(JSON_UNQUOTE({_prov('site_guess.checked_at')}), '') < COALESCE(JSON_UNQUOTE({_prov('presend_site.at')}), '')))""",
-                 limit, f"{doubt} DESC, {ORDER}")
+                 limit, f"{doubt} DESC, ({_prov('site_guess')} IS NULL) DESC, {ORDER}")
 
     def one(row):
         from . import mailer
         res, saved = _guess(conn, row, fetch)
-        store.set_provenance(conn, row["id"], "site_guess", {"checked_at": runner._now_iso(), "status": res.status, "found": saved})
+        best = next((c for c in res.candidates if c.get("reachable") and not c.get("parked") and c.get("confidence", 0) >= sitefinder.UNCERTAIN_MIN), None)
+        store.set_provenance(conn, row["id"], "site_guess", {"checked_at": runner._now_iso(), "status": res.status, "found": saved,
+                                                             "version": sitefinder.GUESS_VERSION, "candidate": (best or {}).get("domain")})
         pre = siterecheck._jv(row.get("provenance")).get("presend_site")
         if not saved and isinstance(pre, dict) and pre.get("doubt"):
             dom = mailer.email_domain(row.get("email"))
-            if res.status != "UNCERTAIN" and not any(c.get("domain") == dom and c.get("reachable") for c in res.candidates if dom):
+            if res.status != "UNCERTAIN" and not any(c.get("domain") == dom and c.get("reachable") and not c.get("parked") for c in res.candidates if dom):
                 store.set_provenance(conn, row["id"], "presend_site", {"at": runner._now_iso(), "result": "none", "tries": 0, "cleared_by": "site_guess"})
         return saved
     return _loop(conn, rows, limit, deadline, one, _mark(conn, "site_guess"))
@@ -255,21 +263,26 @@ def search_more(conn, search, fetch, limit: int = SITE_SEARCH_PER_RUN, deadline:
     d'absence est recalculée sur toutes les stratégies (siterecheck.raise_absence) : la fiche peut devenir « absence de site sûre »."""
     if limit <= 0:
         return _out(stop="off")
-    rows = _rows(conn, f"""p.website_status = 'NOT_FOUND' AND COALESCE(p.website_absence_confidence, 0) < {ABSENCE_MIN} AND p.pipeline_stage = 'DONE'
-        AND {BASE} AND COALESCE(CAST(JSON_UNQUOTE({_prov('site_search_more.tries')}) AS UNSIGNED), 0) < {SEARCH_MORE_TRIES}
-        AND ({_prov('site_search_more.checked_at')} IS NULL OR {_date('site_search_more.checked_at')} < UTC_TIMESTAMP() - INTERVAL {SEARCH_MORE_DAYS} DAY)""",
-                 limit)
+    tries = f"COALESCE(CAST(JSON_UNQUOTE({_prov('site_search_more.tries')}) AS UNSIGNED), 0)"
+    rows = _rows(conn, f"""(p.website_status IS NULL OR (p.website_status = 'NOT_FOUND' AND COALESCE(p.website_absence_confidence, 0) < {ABSENCE_MIN}))
+        AND p.pipeline_stage = 'DONE' AND {BASE}
+        AND ({_prov('site_search_more.checked_at')} IS NULL OR {_date('site_search_more.checked_at')}
+             < UTC_TIMESTAMP() - INTERVAL IF({tries} < {SEARCH_MORE_TRIES}, {SEARCH_MORE_DAYS}, {SEARCH_MORE_LATER_DAYS}) DAY)""",
+                 limit, f"{tries}, {ORDER}")
 
     def one(row):
         pid = row["id"]
         ctx, company = siterecheck.ctx_for(conn, pid), runner._company(conn, row)
         ev = siterecheck._jv(row.get("website_evidence"))
-        skip = set() if ev.get("degraded") else {s for s in ev.get("strategies") or [] if isinstance(s, str)}
+        skip = set() if ev.get("degraded") or row.get("website_status") is None else {s for s in ev.get("strategies") or [] if isinstance(s, str)}
         suggested = runner._places_urls(conn, row)
         res = sitefinder.resolve(company, search, fetch, ctx.site_thresholds, known_urls=runner._known_urls(conn, row), dns=ctx.dns,
                                  candidate_urls=suggested, skip_strategies=skip)
         runner.record_places_check(conn, pid, res, suggested)
         _status, saved = siterecheck._conclude(conn, row, ctx, company, res, fetch)
+        if not saved and row.get("website_status") is None:          # jamais cherchée (fiche terminée sans recherche) : le résultat est enregistré
+            if db.fetch_one(conn, f"SELECT 1 AS x FROM local_prospects p WHERE p.id=%s AND p.website_status IS NULL AND {siterecheck.UNTOUCHABLE}", (pid,)):
+                store.save_resolution(conn, pid, res)
         prev = siterecheck._jv(row.get("provenance")).get("site_search_more")
         store.set_provenance(conn, pid, "site_search_more", {"checked_at": runner._now_iso(), "tries": int((prev or {}).get("tries") or 0) + 1,
                                                              "status": res.status, "strategies": len(res.strategies_tried)})
@@ -326,7 +339,8 @@ def record_skipped(conn, reason: str) -> None:
 
 
 def free_steps(conn, report: Report, fetch, deadline: float) -> None:
-    from . import emailsearch, naflabels
+    from . import companystate, emailsearch, naflabels
+    report.step(conn, "company_state", lambda d: companystate.run(conn, deadline=d), deadline)   # d'abord : une fiche fermée ne coûte plus rien
     report.step(conn, "naf", lambda d: (lambda r: _out(r["examined"], r.get("labelled", 0), "nothing"))(naflabels.backfill(conn)), deadline)
     report.step(conn, "manual", lambda d: _out(emailsearch.rescore_manual(conn)), deadline)
     report.step(conn, "stuck", lambda d: finish_stuck(conn, fetch, None, deadline=d), deadline)

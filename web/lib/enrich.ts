@@ -6,6 +6,7 @@ export type EnrichRun = { started_at: string | Date; duration_ms: number; mode: 
 
 /** Libellé de ce qu'un sous-passage a traité : [singulier, pluriel] (le nombre est mis devant). */
 export const STEP_LABELS: Record<string, [string, string]> = {
+  company_state: ["état officiel revérifié (SIRENE, BODACC)", "états officiels revérifiés (SIRENE, BODACC)"],
   naf: ["métier lu dans le code NAF", "métiers lus dans le code NAF"],
   manual: ["e-mail ajouté à la main rescoré", "e-mails ajoutés à la main rescorés"],
   stuck: ["fiche bloquée reprise", "fiches bloquées reprises"],

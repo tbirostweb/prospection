@@ -24,7 +24,8 @@ from urllib.parse import urlparse
 
 from . import htmlinfo, identity
 from .errors import SearchUnavailable
-from .textmatch import (contains_number, digits, distinctive_tokens, domain_tokens, fold, name_tokens, normalize_address, token_fraction)
+from .textmatch import (GENERIC_ACTIVITY, contains_number, digits, distinctive_tokens, domain_tokens, fold, name_tokens, normalize_address,
+                        token_fraction)
 
 CONFIRMED_MIN = 0.90
 PROBABLE_MIN = 0.80
@@ -39,6 +40,13 @@ GUESS_MAX = 12                        # domaines devinés d'après le nom (véri
                                       # bornée à 4 s, seules les LECTURES coûtent, et elles restent plafonnées par GUESS_FETCH
 GUESS_FETCH = 5                       # domaines devinés EXISTANTS (DNS) lus au plus : des lectures directes, aucune requête aux moteurs
 GUESS_TLDS = ("fr", "com")
+GUESS_VERSION = 2                     # version des devinettes (provenance `site_guess.version`) : une fiche déjà passée est redevinée UNE fois par
+                                      # nouvelle version (v2 : forme juridique retirée en tête / en fin, domaine réservé vide jamais retenu)
+# Formes juridiques et mots d'en-tête retirés seulement AUX BORDS du nom (en tête ou en fin) avant de deviner ou de comparer un domaine :
+# textmatch.LEGAL_FORMS (SARL, SAS, EURL, SCI…) est déjà retiré partout ; « STE » peut être « Sainte » au milieu d'un nom (« BOULANGERIE DE STE
+# SAVINE »), « ENTREPRISE » un vrai mot du nom de domaine. Les deux formes (avec et sans) sont essayées ; jamais un libellé de moins de 4 lettres.
+EDGE_FORMS = {"ste", "entreprise", "entreprises", "ets", "etablissements", "etablissement", "societe", "selas", "selafa", "selca", "scea",
+              "gaec", "earl", "scp", "sca", "sel", "sem", "gie", "sarlu", "sasu", "sarl", "sas", "eurl", "sa", "snc", "sci", "selarl", "ei", "eirl"}
 
 # Sites qui parlent D'une entreprise sans être SON site (annuaires, registres, agrégateurs d'avis, places de marché, cartes).
 NOT_OFFICIAL = {
@@ -119,6 +127,7 @@ class Assessment:
     chain: list[str] = field(default_factory=list)
     contradictions: list[str] = field(default_factory=list)
     identity: identity.SiteIdentity | None = None
+    parked: bool = False                      # domaine parqué / réservé vide / page d'hébergeur : jamais un site
 
 
 @dataclass
@@ -320,6 +329,10 @@ def score_candidate(company: dict, url: str, hit: Hit | None, pages: list[htmlin
         conf = min(0.45, _prelim(company, hit)) if hit else (0.5 if structured else 0.0)
         return Assessment(_origin(url), domain, round(conf, 2), [ev("search_snippet", f"page inaccessible : identification d'après la source seule ({conf:.2f})", 0.0)],
                           False, [], original_url or url, chain)
+    if looks_parked(pages[0]):                        # réservé mais vide, parqué, page d'hébergeur : aucun site, quel que soit le nom de domaine
+        return Assessment(_origin(chain[-1] if chain else url), domain, 0.0,
+                          [ev("parked", "domaine réservé sans site (parking, « coming soon », page d'hébergeur) : pas un site", 0.0)],
+                          True, pages, original_url or url, chain, parked=True)
     text = " ".join(f"{p.title} {' '.join(p.h1)} {p.text}" for p in pages)
     head = " ".join(f"{p.title} {' '.join(p.h1)}" for p in pages[:1]) + " " + (hit.title if hit else "") + " " + domain_tokens(domain)
     tf = fold(text)
@@ -454,7 +467,7 @@ def domain_matches_name(company: dict | None, domain: str) -> bool:
         if suffix and label.endswith(suffix) and len(label) > len(suffix):
             forms.add(label[:-len(suffix)])
     for name in (company.get("trade_name"), company.get("company_name")):
-        for toks in (name_tokens(name), distinctive_tokens(name)):
+        for toks in (*_name_forms(name), distinctive_tokens(name)):
             for stem in {"".join(toks), "".join(reversed(toks)) if len(toks) == 2 else ""}:
                 if len(stem) >= 4 and stem in forms:
                     return True
@@ -518,6 +531,23 @@ def _assess(company: dict, url: str, hit: Hit | None, fetch: Fetcher, structured
     return a
 
 
+def core_tokens(name: str | None) -> list[str]:
+    """Mots du nom sans forme juridique ni mot d'en-tête AUX BORDS (`EDGE_FORMS`) : « STE SOTRAMO » → [sotramo], « SOTRAMO ETS » → [sotramo].
+    Points et casse ignorés (« S.A.R.L. », « Sté »). Jamais en dessous de 4 lettres au total : « STE ABC » reste [ste, abc]."""
+    toks = name_tokens(name)
+    while len(toks) > 1 and toks[0] in EDGE_FORMS and len("".join(toks[1:])) >= 4:
+        toks = toks[1:]
+    while len(toks) > 1 and toks[-1] in EDGE_FORMS and len("".join(toks[:-1])) >= 4:
+        toks = toks[:-1]
+    return toks
+
+
+def _name_forms(name: str | None) -> list[list[str]]:
+    """Mots du nom tel quel, puis sans forme juridique aux bords s'ils diffèrent."""
+    toks, core = name_tokens(name), core_tokens(name)
+    return [toks] if core == toks else [toks, core]
+
+
 def guess_domains(company: dict) -> list[str]:
     """Domaines plausibles d'après le nom (« boulangerie-dupont.fr », « lepetitfournil.com », « metalex-10.com »…). Aucun n'est cru sur parole :
     chacun est lu et vérifié comme un résultat de recherche (nom + ville / adresse / téléphone / SIREN). Rien si le nom n'a pas de mot distinctif.
@@ -527,16 +557,20 @@ def guess_domains(company: dict) -> list[str]:
     dep = department_of(company)
     tiers: list[list[str]] = [[], [], [], [], []]
     for label in (company.get("trade_name"), company.get("company_name")):
-        toks, dt = name_tokens(label), distinctive_tokens(label)
-        if not dt or len(toks) > 5:
+        dt = [t for t in core_tokens(label) if t not in GENERIC_ACTIVITY] if distinctive_tokens(label) else []
+        if not dt:
             continue
-        tiers[0].append("".join(toks))
-        tiers[1].append("-".join(toks))
-        tiers[2].append("".join(dt))
-        if dep:
-            tiers[3] += ["".join(toks) + "-" + dep, "".join(toks) + dep]
-        if city:
-            tiers[4].append("-".join(toks) + "-" + city)
+        for toks in _name_forms(label):                   # « STE SOTRAMO » : « stesotramo » puis « sotramo »
+            if len(toks) > 5:
+                continue
+            tiers[0].append("".join(toks))
+            tiers[1].append("-".join(toks))
+            if dep:
+                tiers[3] += ["".join(toks) + "-" + dep, "".join(toks) + dep]
+            if city:
+                tiers[4].append("-".join(toks) + "-" + city)
+        if len(core_tokens(label)) <= 5:
+            tiers[2].append("".join(dt))
     out = [f"{stem}.{tld}" for tier in tiers for stem in tier if 4 <= len(stem) <= 50 for tld in GUESS_TLDS]
     return list(dict.fromkeys(out))[:GUESS_MAX] + platform_guesses(company)
 
@@ -595,12 +629,27 @@ OWNER_EVIDENCE = {"siret", "siren", "phone", "address_exact", "address_street", 
 PARKED_RX = re.compile(r"domain (?:name )?(?:is )?for sale|buy this domain|this domain (?:is|may be) (?:parked|for sale)|parked (?:free|domain)|"
                        r"domaine (?:est )?(?:[àa] vendre|en vente)|nom de domaine (?:est )?(?:[àa] vendre|disponible|r[ée]serv[ée])|"
                        r"ce domaine (?:a [ée]t[ée]|est) (?:r[ée]serv[ée]|enregistr[ée])|sedoparking|parkingcrew|bodis\.com|afternic|"
-                       r"welcome to nginx|apache2? (?:ubuntu |debian )?default page|^index of /", re.I | re.M)
+                       r"welcome to nginx|apache2? (?:ubuntu |debian )?default page|^index of /|"
+                       r"(?:ce|votre) (?:nom de )?domaine (?:vient d.[êe]tre|a (?:bien )?[ée]t[ée]) (?:cr[ée][ée]|enregistr[ée]|r[ée]serv[ée])|"
+                       r"(?:domain|domaine) (?:has been |is )?registered (?:at|with|by|chez)|parked domain|domain parking|"
+                       r"page (?:g[ée]n[ée]r[ée]e )?(?:par d[ée]faut|automatiquement) (?:de |par )?(?:votre |l.)?h[ée]bergeur|default web ?(?:site )?page|"
+                       r"domain default page|this is the default (?:web )?page|^it works!|future home of", re.I | re.M)
+# Site pas encore construit (« coming soon », « en construction », « bientôt en ligne ») : seulement sur une page MAIGRE (un vrai site peut
+# annoncer « boutique bientôt en ligne » dans une section), ou quand c'est le titre / le titre principal de l'accueil.
+# « en construction » seul n'en est pas un (« spécialiste en construction » : une entreprise du BTP) : il faut « site / page en construction ».
+SOON_RX = re.compile(r"coming soon|under construction|launching soon|(?:site|page)(?: web| internet)? (?:est )?(?:actuellement )?en (?:cours de )?"
+                     r"(?:construction|cr[ée]ation|pr[ée]paration|maquettage)|(?:site|page)(?: web| internet)? bient[ôo]t (?:en ligne|disponible)|"
+                     r"^\s*bient[ôo]t en ligne", re.I | re.M)
+SOON_MAX_TEXT = 800
 
 
 def looks_parked(page: htmlinfo.Page) -> bool:
-    """Domaine parqué / page par défaut d'hébergeur : aucun site d'entreprise derrière."""
-    return bool(PARKED_RX.search(f"{page.title}\n{page.text[:3000]}") or re.search(r"sedoparking|parkingcrew|bodis\.com|afternic", page.raw[:20000], re.I))
+    """Domaine parqué, réservé mais vide (« coming soon », « en construction »), page par défaut d'hébergeur : aucun site d'entreprise derrière.
+    Jamais accepté comme site (confiance nulle, `score_candidate`), ni comme doute avant l'envoi."""
+    if PARKED_RX.search(f"{page.title}\n{page.text[:3000]}") or re.search(r"sedoparking|parkingcrew|bodis\.com|afternic|dan\.com/buy", page.raw[:20000], re.I):
+        return True
+    head = f"{page.title} {' '.join(page.h1)}"
+    return bool(SOON_RX.search(head) or (len(page.text.strip()) < SOON_MAX_TEXT and SOON_RX.search(page.text)))
 
 
 def owner_verdict(company: dict, a: Assessment) -> str:
@@ -787,7 +836,7 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
     ranked = sorted(assessed.values(), key=lambda a: a.confidence, reverse=True)
     for a in ranked:
         res.candidates.append({"url": a.url, "domain": a.domain, "confidence": a.confidence, "reachable": a.reachable, "evidence": a.evidence,
-                               "original_url": a.original_url, "redirect_chain": a.chain})
+                               "original_url": a.original_url, "redirect_chain": a.chain, **({"parked": True} if a.parked else {})})
     best = ranked[0]
     rivals = [a for a in ranked[1:] if a.confidence >= th.probable and a.domain != best.domain]
     res.confidence, res.evidence = best.confidence, best.evidence

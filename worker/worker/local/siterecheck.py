@@ -52,9 +52,19 @@ LOST_SITE = """JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.places.had_website')) 
           AND JSON_EXTRACT(p.provenance, '$.places.site_checked_at') IS NULL"""          # site sur la fiche Google, jamais vérifié (URL perdue)
 
 
-def candidates(conn, limit: int, where: str = "JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.site_recheck') IS NULL") -> list[dict]:
-    """Fiches « sans site » jamais revérifiées et jamais contactées : brouillon déjà rédigé d'abord (il serait faux), puis les plus prometteuses.
-    `where` : condition de provenance en plus des critères communs (par défaut : pas encore revérifiée ; le passage Google Places pose NO_PLACES)."""
+ERROR_RETRY_HOURS = 24
+# Pas encore revérifiée, OU revérification en ERREUR (provenance sans `status`) il y a plus de ERROR_RETRY_HOURS : sans cette reprise, la fiche
+# restait « revérification pas encore faite » (complete.site_reason) sans plus aucun passage prévu pour elle.
+NOT_RECHECKED = f"""(JSON_EXTRACT(COALESCE(p.provenance, JSON_OBJECT()), '$.site_recheck') IS NULL
+          OR (JSON_EXTRACT(p.provenance, '$.site_recheck.status') IS NULL AND JSON_EXTRACT(p.provenance, '$.site_recheck.error') IS NOT NULL
+              AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.site_recheck.checked_at')), '')
+                  < DATE_FORMAT(UTC_TIMESTAMP() - INTERVAL {ERROR_RETRY_HOURS} HOUR, '%%Y-%%m-%%dT%%H:%%i:%%sZ')))"""
+
+
+def candidates(conn, limit: int, where: str = NOT_RECHECKED) -> list[dict]:
+    """Fiches « sans site » jamais revérifiées (ou revérification en erreur depuis un jour) et jamais contactées : brouillon déjà rédigé
+    d'abord (il serait faux), puis les plus prometteuses. `where` : condition de provenance en plus des critères communs (par défaut : pas
+    encore revérifiée ; le passage Google Places pose NO_PLACES)."""
     return db.fetch_all(conn, f"""SELECT p.* FROM local_prospects p
         WHERE {NO_SITE_FILTER} AND {where}
         ORDER BY (p.draft_message IS NOT NULL) DESC, FIELD(p.category, 'A_EXAMINER', 'A_CONTACTER', 'TRES_BON') DESC, p.prospect_score DESC, p.id

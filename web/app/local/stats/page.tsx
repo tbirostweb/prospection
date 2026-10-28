@@ -129,6 +129,8 @@ export default async function LocalStats() {
           <ul className="flex flex-col gap-0.5">{quality.contactReasons.map((r) => <li key={r.code} className="flex justify-between gap-3 border-b border-line py-1">
             <span className="min-w-0">{r.label}</span><span className="font-mono text-xs">{r.n}</span></li>)}</ul>
         </div>}
+        {quality.closed > 0 && <p className="mt-3 text-sm">Fermées ou en procédure (écartées) : <span className="font-mono text-xs">{quality.closed}</span>
+          <span className="text-muted"> — établissement fermé, entreprise cessée, radiée ou en procédure collective (SIRENE, BODACC revérifiés tous les 30 jours) ; hors des fiches à prospecter.</span></p>}
         {quality.missing.processing > 0 && <p className="mt-3 text-xs text-muted">Traitement en cours : {quality.processing.campaign} dans une campagne en cours
           {quality.processing.imported > 0 && `, ${quality.processing.imported} importée(s) en attente`}{quality.processing.abandoned > 0 && `, ${quality.processing.abandoned} en erreur abandonnée`},
           {" "}les autres sont reprises par l'enrichissement.</p>}

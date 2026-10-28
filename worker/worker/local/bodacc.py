@@ -156,3 +156,79 @@ def lookup(sirens: list[str], since: date | None = None, conn=None, batch: int =
                 break
             offset += PAGE
     return out
+
+
+# ─── État de l'entreprise (passage `enrich.company_state`, companystate.py) ──────────────────────────────────────────────────────────
+# Procédures collectives, radiations, dissolutions / cessations d'activité : tout ce qui interdit de prospecter. Champs du jeu
+# « annonces-commerciales » : `jugement` (nature, date du jugement), `radiationaurcs`, `typeavis_lib` (avis rectificatif / d'annulation).
+STATE_FIELDS = "dateparution,familleavis_lib,typeavis_lib,registre,jugement,radiationaurcs,acte,modificationsgenerales"
+STATE_FAMILIES = ("Procédures collectives", "Radiations", "Modifications diverses", "Créations")
+_COMPANY_END = re.compile(r"dissolution|cessation (?:totale )?d.activit|mise en sommeil|liquidation amiable", re.I)
+
+
+def _text(*vals) -> str:
+    out = []
+    for v in vals:
+        if isinstance(v, dict):
+            out.append(" ".join(str(x) for x in v.values() if isinstance(x, (str, int))))
+        elif v:
+            out.append(str(v))
+    return " ".join(out)
+
+
+def _iso(*vals) -> str:
+    """Première date AAAA-MM-JJ parmi `vals` (les dates du jugement ou de cessation ne sont pas toujours au format ISO : la parution sinon)."""
+    for v in vals:
+        if re.match(r"\d{4}-\d{2}-\d{2}", str(v or "")):
+            return str(v)[:10]
+    return ""
+
+
+def state_events(sirens: list[str], since: date, conn=None, batch: int = 20) -> dict[str, list[dict]]:
+    """{siren: [événement, …]} (du plus ancien au plus récent) pour ces SIREN depuis `since` : chaque événement {kind, nature, date, published}
+    avec kind = collective (procédure collective, `nature` = libellé du jugement) | radiation | company_end (dissolution, cessation d'activité,
+    mise en sommeil) | creation (immatriculation : sert à reconnaître une radiation suivie d'un transfert vers un autre greffe). Les avis
+    d'annulation sont ignorés. Requêtes groupées par lots de `batch` SIREN, cache 24 h ; ApiError si BODACC ne répond pas (rien n'est conclu)."""
+    fams = " or ".join(f'familleavis_lib="{f}"' for f in STATE_FAMILIES)
+    out: dict[str, list[dict]] = {}
+    todo = [s for s in dict.fromkeys(sirens) if s and len(s) == 9 and s.isdigit()]
+    for i in range(0, len(todo), batch):
+        chunk = todo[i:i + batch]
+        registres = " or ".join('registre="%s"' % s for s in chunk)
+        where = f"({registres}) and ({fams}) and dateparution>=date'{since.isoformat()}'"
+        offset = 0
+        while True:
+            data = http.get_json(API, {"where": where, "select": STATE_FIELDS, "limit": PAGE, "offset": offset, "order_by": "dateparution asc"},
+                                 conn=conn, cache_hours=24)
+            if not isinstance(data, dict) or "results" not in data:
+                raise http.ApiError("BODACC : réponse inattendue")
+            recs = data.get("results") or []
+            for rec in recs:
+                siren = _siren(rec.get("registre"))
+                if not siren or siren not in chunk or re.search(r"annulation", str(rec.get("typeavis_lib") or ""), re.I):
+                    continue
+                fam, published = rec.get("familleavis_lib") or "", rec.get("dateparution")
+                if fam == "Procédures collectives":
+                    j = _acte(rec, "jugement")
+                    ev = {"kind": "collective", "nature": str(j.get("nature") or j.get("famille") or "procédure collective")[:160],
+                          "date": _iso(j.get("date"), published), "published": published}
+                elif fam == "Radiations":
+                    rad = _acte(rec, "radiationaurcs")
+                    pp = rad.get("radiationPP") if isinstance(rad.get("radiationPP"), dict) else {}
+                    ev = {"kind": "radiation", "nature": _text(rad, pp)[:160] or "radiation du RCS",
+                          "date": _iso(pp.get("dateCessationActivitePP"), published), "published": published}
+                elif fam == "Créations":
+                    ev = {"kind": "creation", "nature": "immatriculation", "date": _iso(published), "published": published}
+                else:
+                    text = _text(_acte(rec).get("descriptif"), _acte(rec, "modificationsgenerales").get("descriptif"))
+                    m = _COMPANY_END.search(text)
+                    if not m or re.search(r"secondaire|compl[ée]mentaire", text, re.I):
+                        continue                                 # un établissement secondaire qui ferme n'arrête pas l'entreprise
+                    ev = {"kind": "company_end", "nature": m.group(0).lower()[:80], "date": _iso(published), "published": published}
+                out.setdefault(siren, []).append(ev)
+            if len(recs) < PAGE:
+                break
+            offset += PAGE
+    for evs in out.values():
+        evs.sort(key=lambda e: (e.get("published") or "", e.get("date") or ""))
+    return out
