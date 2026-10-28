@@ -46,19 +46,18 @@ export async function GET(req: NextRequest) {
       activite: shortActivity(p.activity_label),   // forme courte : jamais un intitulé long dans la phrase
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,
       faits: d.facts, type: d.kind,
-      // la SEULE offre à citer pour ce prospect : refonte = prix « à partir de » (rien d'autre) ; création = prix de lancement / prix normal
-      offre_prospect: isRedesignKind(d.kind)
-        ? { type: "refonte", prix: null, lien_offres: offersLink(offer, sender) || null, regle: "AUCUN prix, aucun montant, aucune réduction : seulement renvoyer vers lien_offres (sans lien, aucune phrase d'offre)" }
-        : { type: "creation", prix_normal: offer.normal_price ?? null, prix_lancement: offer.launch_price ?? null, places_lancement_restantes: offer.launch_slots_left ?? 0 }, photos_en_option: photosOffered(p, offer), canal: p.email && p.auto_state !== "bounced" ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
+      // la SEULE offre à citer pour ce prospect : jamais de prix (création comme refonte), seulement le renvoi vers la page des offres
+      offre_prospect: { type: isRedesignKind(d.kind) ? "refonte" : "creation", prix: null, lien_offres: offersLink(offer, sender) || null,
+        regle: "AUCUN prix, aucun montant, aucune réduction : seulement renvoyer vers lien_offres (sans lien, aucune phrase d'offre)" },
+      photos_en_option: photosOffered(p, offer), canal: p.email && p.auto_state !== "bounced" ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
       // envoi automatique possible (fiche complète avec e-mail, jamais contactée) ; sinon Théo contacte lui-même (jamais sans métier connu)
       envoi_auto: autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null,
       reference: { objet: d.subject, coeur: d.core }, fiche: `/local/${p.id}`,
     });
   }
   return NextResponse.json({
-    // offre générale ; pour rédiger, n'utiliser que `offre_prospect` de chaque prospect (création ≠ refonte)
-    offre: { active: !!offer.enabled, zone: offer.area ?? "", prix_normal: offer.normal_price ?? null, prix_lancement: offer.launch_price ?? null,
-      places_lancement_restantes: offer.launch_slots_left ?? 0, photos_jusqu_a_km: offer.photos_max_km ?? 20 },
+    // offre générale, SANS prix (jamais de prix dans un message) ; pour rédiger, n'utiliser que `offre_prospect` de chaque prospect
+    offre: { active: !!offer.enabled, zone: offer.area ?? "", lien_offres: offersLink(offer, sender) || null, photos_jusqu_a_km: offer.photos_max_km ?? 20 },
     expediteur: { activite: sender.role || "développeur web indépendant", marque: sender.company || null },
     prospects: items,
   });
