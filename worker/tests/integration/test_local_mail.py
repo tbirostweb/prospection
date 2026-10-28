@@ -15,6 +15,8 @@ import pytest
 from worker import db
 from worker.local import http, outbox, sitefinder
 
+from local_fixtures import FakeWeb, html
+
 SENDER = {"name": "Théo Exemple", "company": "Exemple Web", "role": "Développeur web", "phone": "06 12 34 56 78",
           "email": "contact@exemple-web.fr", "website": "exemple-web.fr", "logo_url": "https://exemple-web.fr/logo.png"}
 BODY = ("Bonjour,\n\nJe n'ai pas trouvé de site pour votre garage, sauf erreur de ma part.\n\nEst-ce un sujet pour vous ?\n\n"
@@ -104,6 +106,11 @@ def official_api(units: dict | None = None, bodacc: dict | None = None, calls: l
     return handler
 
 
+# Site des fiches de test (`add`) : relu juste avant un message sur un site existant (outbox.presend_identity) — le nom et la ville y sont.
+GARAGE_WEB = FakeWeb().add_site("www.garage-exemple.fr", html(title="Garage Exemple - Troyes", h1="Garage Exemple",
+                                                               body="<p>Entretien et réparation toutes marques à Troyes.</p>"))
+
+
 @pytest.fixture
 def mail(env, conn, monkeypatch, telegram):
     for k, v in {"LOCAL_SMTP_HOST": "smtp.exemple.net", "LOCAL_SMTP_USER": "contact@exemple-web.fr", "LOCAL_SMTP_PASSWORD": "mot-de-passe-de-test"}.items():
@@ -127,7 +134,7 @@ def mail(env, conn, monkeypatch, telegram):
 
         def run(self, now, dns=DNS_OK, fetch=None):
             return outbox.run(conn, now=now.astimezone(dt.timezone.utc), send=smtp, imap=imap, dns=lambda n: dns.get(n, []), mx_query=fake_mx,
-                              site_fetch=fetch or (lambda url: None))
+                              site_fetch=fetch or GARAGE_WEB)
 
     m = M()
     m.smtp, m.imap, m.tg = smtp, imap, telegram

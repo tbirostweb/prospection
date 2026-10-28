@@ -41,7 +41,7 @@ export const DISLIKE_REASONS: [string, string][] = [
 export const ERROR_LABELS: Record<string, string> = {
   SEARCH_RATE_LIMIT: "Recherche limitée (429)", SEARCH_CAPTCHA: "Moteur bloqué (CAPTCHA)", SEARCH_UNAVAILABLE: "Recherche indisponible", SEARCH_TIMEOUT: "Recherche trop lente",
   SITE_TIMEOUT: "Site trop lent", SITE_DNS_ERROR: "Site : DNS introuvable", SITE_BLOCKED: "Site bloque l'accès", SITE_ROBOTS_DENIED: "Site : robots.txt refuse",
-  SITE_HTTP_ERROR: "Site : erreur HTTP", AUDIT_PARSE_ERROR: "Audit : page illisible", CONTACT_NOT_FOUND: "Aucun contact trouvé", SOURCE_UNAVAILABLE: "Source indisponible",
+  SITE_HTTP_ERROR: "Site : erreur HTTP", SITE_SSL_ERROR: "Site : certificat HTTPS invalide", AUDIT_PARSE_ERROR: "Audit : page illisible", CONTACT_NOT_FOUND: "Aucun contact trouvé", SOURCE_UNAVAILABLE: "Source indisponible",
   GEO_FAILED: "Géolocalisation impossible", DB_ERROR: "Base momentanément indisponible", UNEXPECTED: "Erreur inattendue",
 };
 export const LOCAL_SITE_DEFAULTS = { confirmed: 0.9, probable: 0.8, uncertain: 0.6 } as const;

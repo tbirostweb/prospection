@@ -109,6 +109,22 @@ export async function getQualityStats() {
     processing: { campaign: n("processing_campaign"), abandoned: n("processing_abandoned"), imported: n("processing_imported") } };
 }
 
+/** Statistiques → « Sites retirés par la vérification d'identité » (provenance `site_identity`, worker/local/enrich.py site_identity et
+ *  outbox.presend_identity) : autre entreprise, site de groupe, maintenance / certificat invalide, aucune preuve ; fiches contactées seulement
+ *  notées. `pending` : sites retenus pas encore relus avec cette version de la règle (sitefinder.IDENTITY_VERSION). */
+export const IDENTITY_VERSION = 1;
+export async function getIdentityStats() {
+  const R = `JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.site_identity.result'))`;
+  const rows = await safeRows<any>(`SELECT ${R} AS result, COUNT(*) AS n,
+      COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.site_identity.contacted')) = 'true'),0) AS contacted
+      FROM local_prospects p WHERE ${R} IS NOT NULL AND ${R} NOT IN ('ok','unreachable','error') GROUP BY result ORDER BY n DESC`);
+  const [left] = await safeRows<any>(`SELECT COUNT(*) AS n FROM local_prospects p WHERE p.website_status IN ('CONFIRMED','PROBABLE')
+      AND p.website_url IS NOT NULL AND COALESCE(p.site_review, '') <> 'CONFIRMED'
+      AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.site_identity.version')) AS UNSIGNED), 0) < ${IDENTITY_VERSION}`);
+  const reasons = rows.map((r) => ({ result: String(r.result ?? ""), n: Number(r.n ?? 0), contacted: Number(r.contacted ?? 0) }));
+  return { reasons, total: reasons.reduce((a, r) => a + r.n, 0), contacted: reasons.reduce((a, r) => a + r.contacted, 0), pending: Number(left?.n ?? 0) };
+}
+
 /** Statistiques → « Dernier passage d'enrichissement » (worker/local/enrich.py, table local_enrich_runs : absente avant la migration 033 → null). */
 export async function getEnrichStats() {
   const run = (r: any): EnrichRun | null => r ? { started_at: r.started_at, duration_ms: Number(r.duration_ms ?? 0), mode: String(r.mode ?? ""),

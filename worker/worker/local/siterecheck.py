@@ -142,6 +142,75 @@ def _drop_no_site_draft(conn, pid: int) -> bool:
     return bool(n)
 
 
+# Verdicts de `sitefinder.check_site` → verdict sur le site de la fiche Google (provenance `places.site_checked`, page Statistiques)
+PLACES_VERDICT = {"other_company": "rejected:other_company", "group_site": "rejected:group_site", "maintenance": "rejected:maintenance",
+                  "ssl": "rejected:maintenance", "parked": "rejected:parked", "no_proof": "rejected:no_match"}
+SAME_COMPANY = ("maintenance", "ssl", "parked")        # site lié à l'entreprise mais inexploitable : ses coordonnées restent les siennes
+
+
+def _host(url: str | None) -> str:
+    from urllib.parse import urlparse
+    return (urlparse(url or "").hostname or "").lower().removeprefix("www.")
+
+
+def demote_site(conn, row: dict, verdict: str, label: str, a, ctx) -> dict | None:
+    """Site retenu (CONFIRMED / PROBABLE) qui ne passe plus la règle d'identité (`sitefinder.check_site`) : la fiche redevient « site à trancher »
+    — NOT_FOUND (à chercher de nouveau : `enrich.search_more`) si c'est le site d'une AUTRE entreprise (domaine ajouté aux mauvais sites de ce
+    SIRET), sinon UNCERTAIN avec le site en candidat (groupe, maintenance, certificat invalide, preuve absente : à toi de trancher). Brouillon
+    effacé, fiche sortie de la file d'envoi (auto_state queued → NULL), sans alerte ; e-mail / téléphone / page de contact lus sur CE site
+    retirés (ceux d'une autre entreprise ou d'un groupe). Jamais une fiche contactée, en séquence, ou dont tu as confirmé le site.
+    Renvoie ce qui a changé, ou None si la fiche a bougé entre-temps."""
+    pid = row["id"]
+    status = "NOT_FOUND" if verdict == "other_company" else "UNCERTAIN"
+    domain = getattr(a, "domain", None) or row.get("canonical_domain") or _host(row.get("website_url"))
+    conf = round(ctx.site_thresholds.uncertain if status == "UNCERTAIN" else min(float(getattr(a, "confidence", 0) or 0), 0.30), 2)
+    old = _jv(row.get("website_evidence"))
+    note = {"code": "identity_rejected", "label": f"⚠ site {row.get('website_url')} retiré par la vérification d'identité : {label}", "weight": 0.0}
+    cand = {"url": getattr(a, "url", None) or row.get("website_url"), "domain": domain, "confidence": conf, "reachable": bool(getattr(a, "reachable", False)),
+            "evidence": list(getattr(a, "evidence", None) or []), "verdict": verdict}
+    keep = status == "UNCERTAIN"                     # NOT_FOUND : recherche à refaire avec la nouvelle règle (stratégies remises à zéro)
+    ev = {"evidence": [note] + list(getattr(a, "evidence", None) or []), "candidates": [cand], "queries": (old.get("queries") or []) if keep else [],
+          "strategies": (old.get("strategies") or []) if keep else [], "socials": old.get("socials") or [], "degraded": bool(old.get("degraded")),
+          "identity": {"verdict": verdict, "label": label, "previous_status": row.get("website_status"), "previous_url": row.get("website_url")}}
+    with conn.cursor() as cur:
+        n = cur.execute(f"""UPDATE local_prospects p SET p.website_status=%s, p.website_url=NULL, p.website_confidence=%s, p.website_evidence=%s,
+                                p.website_final_url=NULL, p.canonical_domain=NULL, p.redirect_chain=NULL, p.website_absence_confidence=NULL,
+                                p.website_search_tried=%s, p.website_checked_at=UTC_TIMESTAMP()
+                            WHERE p.id=%s AND {UNTOUCHABLE} AND p.website_status IN ('CONFIRMED','PROBABLE') AND COALESCE(p.site_review, '') <> 'CONFIRMED'""",
+                        (status, conf, json.dumps(ev, ensure_ascii=False, default=str), len(ev["strategies"]), pid))
+    if not n:
+        return None
+    if verdict == "other_company" and domain:
+        db.execute(conn, "INSERT IGNORE INTO local_bad_sites (siret, fingerprint, domain, reason) VALUES (%s,%s,%s,%s)",
+                   (row.get("siret"), row.get("fingerprint"), domain[:255], f"autre entreprise (vérification d'identité) : {label}"[:255]))
+    cleared: list[str] = []
+    if verdict not in SAME_COMPANY and domain:
+        prov = _jv(row.get("provenance"))
+        sets = []
+        for kind, cols in (("email", "email=NULL, email_kind=NULL"), ("phone", "phone=NULL, phone_confidence=NULL")):
+            src = prov.get(kind) if isinstance(prov.get(kind), dict) else {}
+            if row.get(kind) and _host(src.get("url")) == domain:
+                sets.append(cols)
+                cleared.append(kind)
+        if _host(row.get("contact_page")) == domain:
+            sets.append("contact_page=NULL, contact_form=0")
+            cleared.append("contact_page")
+        if _host(row.get("contact_source_url")) == domain:
+            sets.append("contact_source_url=NULL")
+        if sets:
+            db.execute(conn, f"UPDATE local_prospects SET {', '.join(sets)} WHERE id=%s", (pid,))
+    places_flag = (_jv(row.get("provenance")).get("places") or {})
+    if isinstance(places_flag, dict) and places_flag.get("site_checked") in ("confirmed", "probable"):
+        db.execute(conn, "UPDATE local_prospects SET provenance=JSON_SET(provenance, '$.places.site_checked', %s) WHERE id=%s",
+                   (PLACES_VERDICT.get(verdict, "rejected:no_match"), pid))
+    dropped = _drop_no_site_draft(conn, pid)
+    fresh = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (pid,))
+    if fresh is not None:
+        runner._rescore(conn, fresh, ctx)                  # score recalculé sans ce site
+    log.info("[local] fiche #%s : site %s retiré (%s), fiche %s", pid, row.get("website_url"), verdict, status)
+    return {"status": status, "draft_dropped": dropped, "contacts_cleared": cleared}
+
+
 def recheck(conn, row: dict, search, fetch) -> tuple[str, bool]:
     """UNE nouvelle résolution pour ce prospect. Renvoie (niveau trouvé, site enregistré ?). SearchUnavailable remonte (rien n'est écrit)."""
     ctx = ctx_for(conn, row["id"])

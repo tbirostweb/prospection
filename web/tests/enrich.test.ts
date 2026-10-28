@@ -9,6 +9,7 @@ test("résumé : seulement ce qui a été traité, au singulier ou au pluriel", 
   assert.equal(enrichSummary([{ key: "places_site", done: 10, found: 2, stop: "limit" }, { key: "recheck", done: 1, found: 0, stop: "nothing" },
     { key: "email", done: 0, found: 0, stop: "lock" }]), "10 sites Google vérifiés (2 trouvés), 1 revérification de site");
   assert.equal(enrichSummary([]), "aucune fiche traitée");
+  assert.equal(enrichSummary([{ key: "site_identity", done: 25, found: 3, stop: "limit" }]), "25 sites retenus relus (identité) (3 retirés)");
   assert.deepEqual(parseSteps("pas du json"), []);
 });
 

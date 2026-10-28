@@ -92,6 +92,8 @@ def verify_site(company: dict, url: str, fetch, *, email: str | None = None, soc
     elif a.contradictions:
         status = "UNCERTAIN"                     # le site se déclare autre chose (autre SIREN, autre ville) : à toi de trancher
         evidence.append(ev("contradiction", "⚠ contradiction : " + ", ".join(a.contradictions), 0.0))
+    elif a.verdict in ("other_company", "group_site", "maintenance", "parked"):
+        status = "UNCERTAIN"                     # autre entreprise, site de groupe, page de maintenance (règle d'identité) : à toi de trancher
     elif conf >= th.confirmed:
         status = "CONFIRMED"
     elif conf >= (learned if learned is not None else th.probable):

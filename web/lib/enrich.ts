@@ -10,6 +10,7 @@ export const STEP_LABELS: Record<string, [string, string]> = {
   naf: ["métier lu dans le code NAF", "métiers lus dans le code NAF"],
   manual: ["e-mail ajouté à la main rescoré", "e-mails ajoutés à la main rescorés"],
   stuck: ["fiche bloquée reprise", "fiches bloquées reprises"],
+  site_identity: ["site retenu relu (identité)", "sites retenus relus (identité)"],
   places_site: ["site Google vérifié", "sites Google vérifiés"],
   places_backfill: ["fiche interrogée sur Google Places", "fiches interrogées sur Google Places"],
   site_guess: ["devinette de domaine", "devinettes de domaine"],
@@ -24,6 +25,8 @@ export const STOP_LABELS: Record<string, string> = {
   nothing: "rien à faire", limit: "plafond du passage", time: "budget de temps", quota: "quota", engines: "moteurs indisponibles",
   lock: "verrou pris (campagne en cours)", error: "erreur", off: "désactivé",
 };
+// ce que compte `found` quand ce n'est pas « trouvé » : sites retirés par la vérification d'identité (worker/local/enrich.py site_identity)
+const FOUND_LABELS: Record<string, [string, string]> = { site_identity: ["retiré", "retirés"] };
 export const MODE_LABELS: Record<string, string> = { full: "complet", no_engines: "sans moteur", skipped: "pas lancé" };
 
 /** « 10 sites Google vérifiés (2 trouvés), 4 revérifications de site, … » — seulement les sous-passages qui ont traité quelque chose. */
@@ -31,7 +34,8 @@ export function enrichSummary(steps: EnrichStep[]): string {
   const parts = steps.filter((s) => Number(s.done) > 0).map((s) => {
     const [one, many] = STEP_LABELS[s.key] ?? [s.key, s.key];
     const n = Number(s.done), f = Number(s.found ?? 0);
-    return `${n} ${n > 1 ? many : one}${f > 0 ? ` (${f} trouvé${f > 1 ? "s" : ""})` : ""}`;
+    const [fOne, fMany] = FOUND_LABELS[s.key] ?? ["trouvé", "trouvés"];
+    return `${n} ${n > 1 ? many : one}${f > 0 ? ` (${f} ${f > 1 ? fMany : fOne})` : ""}`;
   });
   return parts.length ? parts.join(", ") : "aucune fiche traitée";
 }

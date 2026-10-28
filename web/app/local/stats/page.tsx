@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
 import PlacesBackfillButton from "@/components/PlacesBackfillButton";
-import { getEnrichStats, getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
+import { getEnrichStats, getIdentityStats, getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
 import { MODE_LABELS, STEP_LABELS, STOP_LABELS, enrichSummary, type EnrichRun } from "@/lib/enrich";
 import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engineTier } from "@/lib/local";
 
@@ -16,11 +16,15 @@ const messageLabel = (k: string) => k.split("_").length > 1 && MESSAGE_LABELS[k.
 /** Statistiques de la prospection locale. */
 // verdicts du worker sur le site d'une fiche Google (provenance `places.site_checked`, worker/local/sitefinder.py owner_verdict)
 const SITE_REASONS: Record<string, string> = {
-  "rejected:no_match": "rien de l'entreprise sur le site", "rejected:directory": "annuaire", "rejected:social": "réseau social",
-  "rejected:parked": "domaine parqué", "rejected:other_company": "autre entreprise", "rejected:ambiguous": "autre site plausible",
+  "rejected:no_match": "aucune preuve que c'est son site", "rejected:directory": "annuaire", "rejected:social": "réseau social",
+  "rejected:parked": "domaine parqué", "rejected:other_company": "autre entreprise", "rejected:group_site": "site de groupe",
+  "rejected:maintenance": "maintenance / certificat invalide", "rejected:ambiguous": "autre site plausible",
   "rejected:other_site": "autre site retenu", "rejected:google": "page Google", "rejected:bad_domain": "signalé « mauvais site »",
   "rejected:invalid": "adresse invalide", unreachable: "injoignable", no_url: "plus de site sur la fiche", gone: "fiche Google disparue",
 };
+// verdicts de la vérification d'identité des sites déjà retenus (provenance `site_identity`, worker/local/sitefinder.py check_site)
+const IDENTITY_LABELS: Record<string, string> = { other_company: "autre entreprise", group_site: "site de groupe", maintenance: "page de maintenance",
+  ssl: "certificat HTTPS invalide", parked: "domaine parqué", no_proof: "aucune preuve que c'est son site" };
 const siteReasonLabel = (r: string) => SITE_REASONS[r] ?? (r.startsWith("error:") ? "erreur de vérification" : r);
 
 export default async function LocalStats() {
@@ -78,6 +82,7 @@ export default async function LocalStats() {
       FROM local_prospect_sources s GROUP BY s.source`);
   const places = await getPlacesStats();
   const quality = await getQualityStats();
+  const identity = await getIdentityStats();
   const enrich = await getEnrichStats();
   const hhmm = (d: any) => new Date(d).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const runLine = (r: EnrichRun) => `${hhmm(r.started_at)} (${MODE_LABELS[r.mode] ?? r.mode}, ${Math.max(1, Math.round(r.duration_ms / 60000))} min) : ${enrichSummary(r.steps)}`;
@@ -123,6 +128,13 @@ export default async function LocalStats() {
           <div className="mono mb-1">Site à trancher : pourquoi</div>
           <ul className="flex flex-col gap-0.5">{quality.siteReasons.map((r) => <li key={r.code} className="flex justify-between gap-3 border-b border-line py-1">
             <span className="min-w-0">{r.label}</span><span className="font-mono text-xs">{r.n}</span></li>)}</ul>
+        </div>}
+        {(identity.total > 0 || identity.pending > 0) && <div className="mt-4 text-sm">
+          <div className="mono mb-1">Sites retirés par la vérification d'identité (l'entreprise doit figurer sur le site)</div>
+          {identity.reasons.length > 0 && <ul className="flex flex-col gap-0.5">{identity.reasons.map((r) => <li key={r.result} className="flex justify-between gap-3 border-b border-line py-1">
+            <span className="min-w-0">{IDENTITY_LABELS[r.result] ?? r.result}{r.contacted > 0 ? ` (dont ${r.contacted} déjà contactée${r.contacted > 1 ? "s" : ""} : seulement noté)` : ""}</span>
+            <span className="font-mono text-xs">{r.n}</span></li>)}</ul>}
+          <p className="mt-1 text-xs text-muted">{identity.total} site(s) retiré(s) : la fiche redevient « site à trancher », son brouillon est effacé et elle sort de la file d'envoi{identity.pending > 0 ? ` · ${identity.pending} site(s) retenu(s) encore à relire` : ""}.</p>
         </div>}
         {quality.contactReasons.length > 0 && <div className="mt-4 text-sm">
           <div className="mono mb-1">Sans contact fiable : pourquoi (un téléphone suffit : ces fiches n'en ont pas)</div>

@@ -9,6 +9,9 @@ Chaque « raison » pour laquelle une fiche n'est pas complète (complete.site_r
     naf             métier d'après le code NAF (naflabels.backfill)
     manual          e-mails ajoutés à la main : score recalculé
     stuck           fiches bloquées « traitement en cours » hors campagne en cours (site connu) : traitement fini (runner.process_prospect)
+    site_identity   sites déjà retenus (CONFIRMED / PROBABLE) relus avec la règle d'identité (sitefinder.check_site : l'entreprise doit figurer
+                    sur le site ; autre entreprise, site de groupe, maintenance, certificat invalide écartés) — fiches en file d'envoi d'abord,
+                    une fois par version de la règle ; site qui ne passe plus : « à trancher », brouillon effacé, sortie de la file
     places_site     site de la fiche Google jamais vérifié : Place Details, vérifié sur le site (siterecheck.places_site_check)
     places_backfill fiches jamais interrogées sur Google Places (bouton de la page Statistiques)
     site_guess      devinettes de domaine + domaine de l'e-mail, sans moteur, pour toute fiche sans site sûr (une fois ; à nouveau après un doute
@@ -59,13 +62,15 @@ SITE_SEARCH_PER_RUN = _env_int("LOCAL_SITE_SEARCH_PER_RUN", 3)      # ≈ 6 requ
 UNREACHABLE_PER_RUN = _env_int("LOCAL_UNREACHABLE_RETRY_PER_RUN", 5)
 SITE_EMAIL_PER_RUN = _env_int("LOCAL_SITE_EMAIL_PER_RUN", 10)
 STUCK_PER_RUN = _env_int("LOCAL_STUCK_PER_RUN", 10)
+SITE_IDENTITY_PER_RUN = _env_int("LOCAL_SITE_IDENTITY_PER_RUN", 25)  # ≈ 3 lectures chacune, aucune requête aux moteurs
+IDENTITY_RETRY_DAYS, IDENTITY_MAX_TRIES = 1, 3                       # site injoignable à la relecture : repris le lendemain, 3 fois au plus
 UNREACHABLE_RETRY_DAYS = 3
 # Recherche complétée : les SEARCH_MORE_TRIES premiers essais à SEARCH_MORE_DAYS jour(s) d'écart (moteurs dégradés : souvent passager), ensuite
 # tous les SEARCH_MORE_LATER_DAYS jours, sans limite : une fiche « recherche trop maigre » a toujours un passage prévu (jamais oubliée).
 SEARCH_MORE_TRIES, SEARCH_MORE_DAYS, SEARCH_MORE_LATER_DAYS = 3, 1, 14
 KEEP_RUNS = 500
 
-FREE_STEPS = ("company_state", "naf", "manual", "stuck", "places_site", "places_backfill", "site_guess", "unreachable", "site_email")
+FREE_STEPS = ("company_state", "naf", "manual", "stuck", "site_identity", "places_site", "places_backfill", "site_guess", "unreachable", "site_email")
 ENGINE_STEPS = ("recheck", "search_more", "stuck_search", "email")
 STOP_TEXT = {"time": "budget de temps", "quota": "quota", "engines": "moteurs indisponibles", "error": "erreur", "lock": "verrou pris"}
 
@@ -165,6 +170,47 @@ def site_guess(conn, fetch, limit: int = SITE_GUESS_PER_RUN, deadline: float | N
                 store.set_provenance(conn, row["id"], "presend_site", {"at": runner._now_iso(), "result": "none", "tries": 0, "cleared_by": "site_guess"})
         return saved
     return _loop(conn, rows, limit, deadline, one, _mark(conn, "site_guess"))
+
+
+def site_identity(conn, fetch, limit: int = SITE_IDENTITY_PER_RUN, deadline: float | None = None) -> dict:
+    """Rattrapage : chaque site retenu (CONFIRMED / PROBABLE, hors site que tu as confirmé) est relu SANS moteur (accueil, mentions légales,
+    contact) avec la règle d'identité de cette version (`sitefinder.IDENTITY_VERSION`) : fiches en file d'envoi d'abord, puis celles qui ont un
+    brouillon, puis les autres ; les fiches déjà contactées en dernier, et pour elles la provenance seule (rien d'autre n'est touché). Site qui
+    ne passe plus : `siterecheck.demote_site` (« à trancher », brouillon effacé, sortie de la file, sans alerte). Injoignable : repris le
+    lendemain, IDENTITY_MAX_TRIES fois au plus (l'envoi, lui, revérifie juste avant : `outbox.presend_identity`). Provenance `site_identity`."""
+    if limit <= 0:
+        return _out(stop="off")
+    ver = sitefinder.IDENTITY_VERSION
+    tries = f"COALESCE(CAST(JSON_UNQUOTE({_prov('site_identity.tries')}) AS UNSIGNED), 0)"
+    rows = _rows(conn, f"""p.website_status IN ('CONFIRMED','PROBABLE') AND p.website_url IS NOT NULL AND COALESCE(p.site_review, '') <> 'CONFIRMED'
+        AND NOT {RUNNING}
+        AND (COALESCE(CAST(JSON_UNQUOTE({_prov('site_identity.version')}) AS UNSIGNED), 0) < {ver}
+             OR (JSON_UNQUOTE({_prov('site_identity.result')}) = 'unreachable' AND {tries} < {IDENTITY_MAX_TRIES}
+                 AND {_date('site_identity.checked_at')} < UTC_TIMESTAMP() - INTERVAL {IDENTITY_RETRY_DAYS} DAY))""",
+                 limit, f"({siterecheck.UNTOUCHABLE}) DESC, (p.auto_state <=> 'queued') DESC, {ORDER}")
+
+    def one(row):
+        pid = row["id"]
+        ctx, company = siterecheck.ctx_for(conn, pid), runner._company(conn, row)
+        verdict, label, a = sitefinder.check_site(company, row["website_url"], fetch, ctx.site_thresholds)
+        prev = siterecheck._jv(row.get("provenance")).get("site_identity")
+        flag = {"checked_at": runner._now_iso(), "version": ver, "result": verdict, "url": (row.get("website_url") or "")[:200]}
+        if verdict != "ok":
+            flag["label"] = label[:200]
+        if verdict == "unreachable":
+            flag["tries"] = (int((prev or {}).get("tries") or 0) if isinstance(prev, dict) else 0) + 1
+        demoted = None
+        if verdict not in ("ok", "unreachable"):
+            if row.get("contacted_at") or row.get("auto_state") not in (None, "queued"):
+                flag["contacted"] = True                       # déjà contactée : rien n'est changé, seulement noté
+                log.warning("[local] fiche contactée #%s : son site %s ne passe plus la vérification d'identité (%s)", pid, row.get("website_url"), verdict)
+            else:
+                demoted = siterecheck.demote_site(conn, row, verdict, label, a, ctx)
+                if demoted:
+                    flag.update(demoted)
+        store.set_provenance(conn, pid, "site_identity", flag)
+        return bool(demoted)
+    return _loop(conn, rows, limit, deadline, one, _mark(conn, "site_identity", version=sitefinder.IDENTITY_VERSION, result="error"))
 
 
 def unreachable_retry(conn, fetch, limit: int = UNREACHABLE_PER_RUN, deadline: float | None = None) -> dict:
@@ -344,6 +390,7 @@ def free_steps(conn, report: Report, fetch, deadline: float) -> None:
     report.step(conn, "naf", lambda d: (lambda r: _out(r["examined"], r.get("labelled", 0), "nothing"))(naflabels.backfill(conn)), deadline)
     report.step(conn, "manual", lambda d: _out(emailsearch.rescore_manual(conn)), deadline)
     report.step(conn, "stuck", lambda d: finish_stuck(conn, fetch, None, deadline=d), deadline)
+    report.step(conn, "site_identity", lambda d: site_identity(conn, fetch, deadline=d), deadline)   # avant tout envoi : sites d'une autre entreprise écartés
 
     def site(d):
         places.stop_reason = None

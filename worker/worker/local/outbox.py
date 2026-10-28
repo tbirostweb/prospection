@@ -21,6 +21,10 @@ une heure plus tard). Juste avant, sans rien demander au propriétaire :
     répond normalement : rien n'est envoyé, le site est revérifié sans moteur (enregistré s'il est le sien, sinon la fiche redevient « sans site »,
     à chercher), brouillon effacé, fiche sortie de la file, aucune alerte. Toujours injoignable (DNS, connexion refusée, erreur HTTP) : le message
     part. Doute (délai dépassé de notre côté, site qui bloque les robots) : reporté comme ci-dessus (PRESEND_RETRY, PRESEND_MAX_TRIES).
+  * message sur un site EXISTANT (refonte, points à améliorer) : le site est relu juste avant (`presend_identity`, PRESEND_IDENTITY_TIMEOUT
+    secondes au plus, sans moteur) avec la règle d'identité (`sitefinder.check_site`). Il ne passe plus (autre entreprise, site de groupe,
+    maintenance, certificat invalide, aucune preuve) : rien n'est envoyé, la fiche redevient « site à trancher » (`siterecheck.demote_site` :
+    brouillon effacé, sortie de la file), aucune alerte. Injoignable ou trop lent : reporté (PRESEND_RETRY, PRESEND_MAX_TRIES).
 """
 from __future__ import annotations
 
@@ -47,6 +51,8 @@ PRESEND_RETRY = dt.timedelta(hours=1)    # doute ou réseau en échec : nouvel e
 PRESEND_MAX_TRIES = 3
 PRESEND_FRESH = dt.timedelta(days=3)     # vérification réussie (rien trouvé) : pas refaite avant 3 jours (envoi repoussé par une erreur SMTP…)
 PRESEND_PROBE_TIMEOUT = 8.0              # secondes : réouverture de l'URL avant un message « site inaccessible »
+PRESEND_IDENTITY_TIMEOUT = 25.0          # secondes : relecture du site (accueil, mentions légales, contact) avant un message sur un site existant
+PRESEND_IDENTITY_FRESH = dt.timedelta(hours=6)   # relecture réussie : pas refaite avant 6 h (envoi repoussé par une erreur SMTP…)
 
 
 def mail_config() -> dict:
@@ -359,6 +365,63 @@ def presend_unreachable(conn, p: dict, now: dt.datetime, fetch=None, timeout: fl
     return "up", url
 
 
+def presend_identity(conn, p: dict, now: dt.datetime, fetch=None, timeout: float | None = None) -> tuple[str, str]:
+    """Dernière vérification avant un premier message sur un site EXISTANT : le site répond-il, et passe-t-il toujours la règle d'identité ?
+    Renvoie (verdict, détail) : 'ok' (le message peut partir), 'demoted' (ne passe plus : fiche « à trancher », brouillon effacé, sortie de la
+    file, rien d'envoyé), 'retry' (injoignable, trop lent, erreur : reporté)."""
+    from . import runner, siterecheck, sitefinder
+    timeout = PRESEND_IDENTITY_TIMEOUT if timeout is None else timeout
+    url = (p.get("website_url") or "").strip()
+    if not url:
+        return "retry", "aucune adresse de site connue"
+    if p.get("site_review") == "CONFIRMED":
+        return "ok", "site confirmé par toi"
+    prev = complete._json(p.get("provenance")).get("presend_identity")
+    try:
+        if isinstance(prev, dict) and prev.get("result") == "ok" and prev.get("url") == url[:200] \
+                and now - dt.datetime.fromisoformat(str(prev["at"]).replace("Z", "+00:00")) < PRESEND_IDENTITY_FRESH:
+            return "ok", "déjà vérifié"
+    except (KeyError, TypeError, ValueError):
+        pass
+    if fetch is None:
+        from . import fetch as fetch_mod
+        fetch = fetch_mod.Fetcher(timeout=6.0)
+    pid = p["id"]
+    ctx, company = siterecheck.ctx_for(conn, pid), runner._company(conn, p)
+    out: list = []
+
+    def work():
+        try:
+            out.append(sitefinder.check_site(company, url, fetch, ctx.site_thresholds))
+        except Exception as exc:  # noqa: BLE001 — une erreur de lecture = rien de conclu
+            log.warning("[mail] relecture du site de %s en échec : %s", pid, exc)
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(timeout)
+    if not out:
+        return "retry", "relecture du site trop longue ou en échec"
+    verdict, label, a = out[0]
+    if verdict == "unreachable":
+        return "retry", "le site ne répond pas"
+    flag = {"at": _iso(now), "result": verdict, "url": url[:200], "version": sitefinder.IDENTITY_VERSION}
+    if verdict == "ok":
+        store.set_provenance(conn, pid, "presend_identity", flag)
+        conn.commit()
+        return "ok", ""
+    try:
+        done = siterecheck.demote_site(conn, p, verdict, label, a, ctx)
+        store.set_provenance(conn, pid, "presend_identity", {**flag, "label": label[:200], **(done or {})})
+        store.set_provenance(conn, pid, "site_identity", {"checked_at": _iso(now), "version": sitefinder.IDENTITY_VERSION, "result": verdict,
+                                                          "label": label[:200], "url": url[:200], "via": "presend", **(done or {})})
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001 — enregistrement en échec : rien d'envoyé, nouvel essai plus tard
+        conn.rollback()
+        return "retry", f"enregistrement en échec ({type(exc).__name__})"
+    if done is None:
+        return "retry", "fiche modifiée pendant la vérification"
+    return "demoted", f"{verdict} : {label}"
+
+
 def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None, personal: bool = False,
              mx_query=maildns.doh, site_fetch=None) -> str:
     """Envoie UN e-mail. Renvoie 'sent', 'error' (problème du serveur : on réessaiera) ou, sans envoi : 'skipped' (prospect retiré),
@@ -413,6 +476,14 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
             if verdict == "up":
                 log.info("[mail] prospect %s : le site répond de nouveau (%s), message « site inaccessible » effacé, rien d'envoyé", p["id"], detail)
                 return "found_site"
+            if verdict == "retry":
+                _defer(conn, p, now, detail)
+                return "deferred"
+        elif p.get("website_status") in ("CONFIRMED", "PROBABLE") and p.get("website_url"):
+            verdict, detail = presend_identity(conn, p, now, fetch=site_fetch)
+            if verdict == "demoted":
+                log.info("[mail] prospect %s : le site ne passe plus la vérification d'identité (%s), brouillon effacé, rien d'envoyé", p["id"], detail)
+                return "found_site"                    # comme un site retrouvé : la vérification a pris du temps, la suite au passage suivant
             if verdict == "retry":
                 _defer(conn, p, now, detail)
                 return "deferred"

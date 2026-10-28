@@ -45,6 +45,8 @@ class Page:
     doctype: str = ""
     microdata: dict = field(default_factory=dict)      # itemprop → [valeurs] (telephone, email, streetAddress…)
     forms: list[dict] = field(default_factory=list)    # {"has_email": bool, "has_textarea": bool, "action": str}
+    header: str = ""                                  # texte de l'en-tête (<header>, role=banner, #header / .header)
+    footer: str = ""                                  # texte du pied de page (<footer>, role=contentinfo, #footer / .footer)
 
     @property
     def domain(self) -> str:
@@ -145,6 +147,21 @@ def _jsonld(tree) -> list[dict]:
     return out
 
 
+def _zone_text(tree, selectors: tuple[str, ...], limit: int = 3000) -> str:
+    """Texte des zones `selectors` (en-tête, pied de page), sans doublon, borné à `limit` caractères."""
+    out: list[str] = []
+    for sel in selectors:
+        try:
+            nodes = tree.css(sel)
+        except Exception:  # noqa: BLE001 — sélecteur non pris en charge : zone ignorée
+            continue
+        for n in nodes:
+            t = re.sub(r"\s+", " ", n.text(separator=" ") or "").strip()
+            if t and t not in out:
+                out.append(t)
+    return " ".join(out)[:limit]
+
+
 def parse(html: str, url: str) -> Page:
     tree = HTMLParser(html or "")
     page = Page(url=url, raw=(html or "").lower()[:400_000])
@@ -178,6 +195,8 @@ def parse(html: str, url: str) -> Page:
         if href and not href.startswith(("#", "javascript:")):
             page.links.append((href if href.startswith(("tel:", "mailto:")) else urljoin(url, href), re.sub(r"\s+", " ", a.text() or "").strip()))
     tree.strip_tags(["script", "style", "noscript", "svg"])
+    page.header = _zone_text(tree, ("header", '[role="banner"]', "#header", ".header", "#masthead", ".site-header"))
+    page.footer = _zone_text(tree, ("footer", '[role="contentinfo"]', "#footer", ".footer", "#colophon", ".site-footer"))
     body = tree.body.text(separator=" ") if tree.body else tree.text(separator=" ")
     page.text = re.sub(r"\s+", " ", body).strip()[:30_000]
     return page

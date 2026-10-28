@@ -1,7 +1,9 @@
 """Téléchargement de pages de sites d'entreprises avec la CAUSE de l'échec (taxonomie d'erreurs), sans jamais lever."""
 from __future__ import annotations
 
+import re
 import socket
+import ssl
 import threading
 
 import httpx
@@ -11,6 +13,21 @@ from ..config import log
 from . import errors
 
 
+_SSL_RX = re.compile(r"certificate|CERTIFICATE_VERIFY_FAILED|\bSSL\b|TLSV1_ALERT|hostname mismatch|self.signed", re.I)
+
+
+def is_ssl_error(exc: BaseException) -> bool:
+    """Échec de la négociation TLS / certificat invalide (expiré, autre domaine, auto-signé) — pas un simple refus de connexion."""
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, ssl.SSLError) or _SSL_RX.search(str(cur)):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
 def classify_fetch_error(exc: BaseException) -> str:
     if isinstance(exc, net.UnsafeURL):
         return errors.SITE_DNS_ERROR if "DNS" in str(exc) else errors.SITE_BLOCKED
@@ -18,6 +35,8 @@ def classify_fetch_error(exc: BaseException) -> str:
         return errors.SITE_TIMEOUT
     if isinstance(exc, (socket.gaierror,)) or "Name or service not known" in str(exc) or "nodename nor servname" in str(exc):
         return errors.SITE_DNS_ERROR
+    if is_ssl_error(exc):
+        return errors.SITE_SSL_ERROR
     return errors.SITE_HTTP_ERROR
 
 

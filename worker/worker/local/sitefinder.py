@@ -15,6 +15,7 @@ Règle d'or : un mauvais site associé est PIRE qu'un site non trouvé (il fauss
 """
 from __future__ import annotations
 
+import math
 import re
 import socket
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -22,10 +23,11 @@ from dataclasses import dataclass, field
 from typing import Callable
 from urllib.parse import urlparse
 
-from . import htmlinfo, identity
+from ..config import env
+from . import errors, htmlinfo, identity
 from .errors import SearchUnavailable
-from .textmatch import (GENERIC_ACTIVITY, contains_number, digits, distinctive_tokens, domain_tokens, fold, name_tokens, normalize_address,
-                        token_fraction)
+from .textmatch import (GENERIC_ACTIVITY, STOPWORDS, contains_number, digits, distinctive_tokens, domain_tokens, fold, name_tokens,
+                        normalize_address, token_fraction)
 
 CONFIRMED_MIN = 0.90
 PROBABLE_MIN = 0.80
@@ -128,6 +130,11 @@ class Assessment:
     contradictions: list[str] = field(default_factory=list)
     identity: identity.SiteIdentity | None = None
     parked: bool = False                      # domaine parqué / réservé vide / page d'hébergeur : jamais un site
+    maintenance: bool = False                 # page de maintenance / « bientôt de retour » / certificat invalide : pas un site exploitable
+    verdict: str = "ok"                       # règle d'identité (`identity_verdict`) : ok | no_proof | other_company | group_site | maintenance | parked | unreachable
+    verdict_label: str = ""
+    related: bool = False                     # le nom (ou le domaine) de l'entreprise y figure : un doute à trancher plutôt qu'un rejet sec
+    enforced: bool = False                    # `enforce_identity` déjà appliquée (jamais deux fois)
 
 
 @dataclass
@@ -328,11 +335,18 @@ def score_candidate(company: dict, url: str, hit: Hit | None, pages: list[htmlin
         # sauf source structurée (OSM). Constaté en réel : des annuaires bloqués par anti-bot devenaient des « sites incertains » à 0,60.
         conf = min(0.45, _prelim(company, hit)) if hit else (0.5 if structured else 0.0)
         return Assessment(_origin(url), domain, round(conf, 2), [ev("search_snippet", f"page inaccessible : identification d'après la source seule ({conf:.2f})", 0.0)],
-                          False, [], original_url or url, chain)
+                          False, [], original_url or url, chain, verdict="unreachable")
     if looks_parked(pages[0]):                        # réservé mais vide, parqué, page d'hébergeur : aucun site, quel que soit le nom de domaine
         return Assessment(_origin(chain[-1] if chain else url), domain, 0.0,
                           [ev("parked", "domaine réservé sans site (parking, « coming soon », page d'hébergeur) : pas un site", 0.0)],
-                          True, pages, original_url or url, chain, parked=True)
+                          True, pages, original_url or url, chain, parked=True, verdict="parked", verdict_label="domaine parqué ou réservé vide")
+    if looks_maintenance(pages[0]):                   # « site en maintenance », « bientôt de retour », compte suspendu : rien à juger ni à refaire
+        rel = _related_head(company, pages, domain)
+        return Assessment(_origin(chain[-1] if chain else url), domain, UNCERTAIN_MIN if rel else 0.0,
+                          [ev("maintenance", "page de maintenance (« site en maintenance », « bientôt de retour », compte suspendu…), sans contenu : "
+                                             "pas un site exploitable", 0.0)],
+                          True, pages, original_url or url, chain, maintenance=True, verdict="maintenance",
+                          verdict_label="page de maintenance / en construction : pas un site exploitable", related=rel)
     text = " ".join(f"{p.title} {' '.join(p.h1)} {p.text}" for p in pages)
     head = " ".join(f"{p.title} {' '.join(p.h1)}" for p in pages[:1]) + " " + (hit.title if hit else "") + " " + domain_tokens(domain)
     tf = fold(text)
@@ -427,7 +441,9 @@ def score_candidate(company: dict, url: str, hit: Hit | None, pages: list[htmlin
     if cap is not None:
         conf = min(conf, cap)
     final = chain[-1] if chain else url
-    return Assessment(_origin(final), domain, round(max(0.0, min(1.0, conf)), 2), evidence, True, pages, original_url or url, chain, contradictions, ident)
+    verdict, label, related = identity_verdict(company, pages, domain, {e["code"] for e in evidence}, ident, contradictions)
+    return Assessment(_origin(final), domain, round(max(0.0, min(1.0, conf)), 2), evidence, True, pages, original_url or url, chain, contradictions, ident,
+                      verdict=verdict, verdict_label=label, related=related)
 
 
 def department_of(company: dict) -> str:
@@ -521,13 +537,52 @@ def _load_pages(url: str, fetch: Fetcher, company: dict | None = None) -> tuple[
     return pages, home
 
 
-def _assess(company: dict, url: str, hit: Hit | None, fetch: Fetcher, structured: bool = False) -> Assessment:
-    pages, home = _load_pages(url, fetch, company)
+def _failures(fetch) -> list:
+    f = getattr(fetch, "failures", None)
+    return f if isinstance(f, list) else []
+
+
+def _ssl_failed(fetch, since: int, url: str) -> bool:
+    """Le lecteur a-t-il noté un certificat HTTPS invalide pour l'hôte de `url` depuis la `since`-ième erreur ?"""
+    host = (urlparse(url).hostname or "").lower()
+    return any(c == errors.SITE_SSL_ERROR and (urlparse(u).hostname or "").lower() == host for c, u in list(_failures(fetch))[since:])
+
+
+def _assess(company: dict, url: str, hit: Hit | None, fetch: Fetcher, structured: bool = False, th: "Thresholds | None" = None,
+            declared: bool = False) -> Assessment:
+    """`declared` : site DÉCLARÉ (fiche Google, site déjà retenu) — mentions légales et contact toujours lus, même sans le nom sur l'accueil :
+    c'est là que sont le SIRET et l'éditeur (la règle d'identité en a besoin)."""
+    since = len(_failures(fetch))
+    pages, home = _load_pages(url, fetch, None if declared else company)
     chain = list(getattr(home, "chain", ()) or [])
     final = getattr(home, "url", None) or url
     a = score_candidate(company, final, hit, pages, structured=structured, chain=chain or [final], original_url=url)
     if not pages and home is not None and getattr(home, "status", 200) >= 400 and not a.reachable:
         a.evidence.append(ev("http_error", f"le site répond HTTP {home.status}", 0.0))
+    if not pages and home is None and _ssl_failed(fetch, since, _origin(url)):
+        a.maintenance, a.verdict = True, "maintenance"
+        a.verdict_label = "certificat HTTPS invalide (expiré, d'un autre domaine ou de l'hébergeur) : pas un site exploitable"
+        a.evidence.append(ev("ssl_invalid", "⚠ " + a.verdict_label, 0.0))
+    return enforce_identity(a, th or Thresholds())
+
+
+def enforce_identity(a: Assessment, th: "Thresholds") -> Assessment:
+    """Règle « l'entreprise doit figurer sur le site » appliquée à la confiance (voir `identity_verdict`) : jamais CONFIRMED / PROBABLE sans
+    preuve propre à l'entreprise ; autre entreprise = écarté ; site de groupe, page de maintenance liée au nom ou preuve absente = « à trancher »."""
+    v = a.verdict
+    if v in ("ok", "unreachable", "parked") or a.enforced:
+        return a
+    a.enforced = True
+    if v == "maintenance":
+        a.confidence = th.uncertain if a.related and a.pages else 0.0
+    elif v == "other_company":
+        a.confidence = min(a.confidence, NO_NAME_CAP)
+    elif v == "group_site":
+        a.confidence = th.uncertain if a.related else min(a.confidence, NO_NAME_CAP)
+    elif v == "no_proof" and a.confidence >= th.probable:
+        a.confidence = th.uncertain
+    if v != "maintenance" or not any(e["code"] in ("maintenance", "ssl_invalid") for e in a.evidence):
+        a.evidence.append(ev(v, f"⚠ {a.verdict_label}", 0.0))
     return a
 
 
@@ -652,33 +707,301 @@ def looks_parked(page: htmlinfo.Page) -> bool:
     return bool(SOON_RX.search(head) or (len(page.text.strip()) < SOON_MAX_TEXT and SOON_RX.search(page.text)))
 
 
+# ── Page de maintenance ─────────────────────────────────────────────────────────────────────────────
+# « Site en maintenance », « bientôt de retour », compte d'hébergement suspendu, page « votre site est en ligne » de l'hébergeur : il n'y a rien à
+# juger ni à refaire (constaté : Electri'Zon, « Site en Maintenance »). Jamais sur un simple mot : « maintenance de chaudières », « spécialiste en
+# maintenance industrielle » sont des MÉTIERS. Il faut une tournure propre à la page (« site / page … en maintenance », « mode maintenance »,
+# titre réduit à « Maintenance »…) ET une page VIDE (peu de texte, presque aucun lien interne).
+MAINT_RX = re.compile(r"\b(?:site|page)(?: web| internet)? (?:est )?(?:actuellement |momentan[ée]ment |temporairement |en ce moment )?"
+                      r"(?:en (?:cours de )?maintenance|en travaux|en (?:cours de )?(?:refonte|reconstruction)|(?:momentan[ée]ment |temporairement )?indisponible)\b|"
+                      r"\bmaintenance en cours\b|\bmode maintenance\b|\bunder maintenance\b|\bmaintenance mode\b|\bscheduled maintenance\b|"
+                      r"\bwe.?ll be (?:right )?back\b|\bbe right back\b|\bbient[ôo]t de retour\b|\bde retour (?:tr[eè]s )?(?:bient[ôo]t|prochainement)\b|"
+                      r"\bnous (?:serons|revenons) (?:de retour )?(?:tr[eè]s )?(?:bient[ôo]t|vite|prochainement)\b|"
+                      r"^\s*(?:site )?(?:en )?maintenance\s*[.!]*\s*$|\bnouveau site (?:bient[ôo]t|arrive|en (?:cours de )?(?:construction|pr[ée]paration))\b|"
+                      r"\b(?:account|compte|site|h[ée]bergement)(?: has been| a [ée]t[ée])? (?:suspendu|suspended|d[ée]sactiv[ée])\b|"
+                      r"\bf[ée]licitations[ ,!]*votre (?:site|h[ée]bergement|espace)\b|\bvotre site (?:web )?est (?:bien )?(?:en ligne|pr[êe]t|install[ée])\b",
+                      re.I | re.M)
+MAINT_MAX_TEXT = 1500                 # au-delà, une vraie page (un chauffagiste qui parle de « maintenance » a du contenu)
+MAINT_MAX_LINKS = 6                   # liens internes distincts : une page de maintenance n'a pas de navigation
+
+
+def _internal_links(page: htmlinfo.Page) -> int:
+    return len({h.split("#")[0].rstrip("/") for h, _t in page.links if not h.startswith(("tel:", "mailto:"))
+                and (urlparse(h).hostname or "").lower().removeprefix("www.") == page.domain})
+
+
+def looks_maintenance(page: htmlinfo.Page) -> bool:
+    """Page de maintenance / « bientôt de retour » / compte suspendu : tournure propre à ces pages ET page vide (peu de texte, pas de navigation)."""
+    text, links = page.text.strip(), _internal_links(page)
+    if MAINT_RX.search("\n".join([page.title, *page.h1])):
+        return len(text) < 2 * MAINT_MAX_TEXT and links < 2 * MAINT_MAX_LINKS
+    return len(text) < MAINT_MAX_TEXT and links < MAINT_MAX_LINKS and bool(MAINT_RX.search(text[:MAINT_MAX_TEXT]))
+
+
+# ── Règle d'identité : « l'entreprise doit figurer sur le site » ────────────────────────────────────
+# CONFIRMED / PROBABLE exigent une preuve propre à CETTE entreprise (constaté en production : un garage associé au site d'un paysagiste, une usine
+# troyenne au site de son groupe espagnol, deux filiales au site de leur groupe, une page « Site en maintenance ») :
+#   * SIRET / SIREN de la fiche sur le site ;
+#   * OU nom DISTINCTIF (enseigne ou raison sociale, hors mots génériques, chiffres et ville) dans le titre, l'en-tête, le pied de page, les
+#     mentions légales ou schema.org, ET ville / code postal / téléphone / adresse de la fiche sur le site ;
+#   * OU domaine = nom (`domain_matches_name`), page non parquée, avec un nom distinctif ou la localité.
+# Rejets explicites : autre SIREN, autre éditeur dans les mentions légales (une SOCIÉTÉ : forme juridique, capital, RCS), autre titulaire du
+# « © » du pied de page (sans preuve) → « other_company » ; site de groupe (nom de groupe, société étrangère, autre langue, liste de filiales /
+# d'usines) sans le téléphone ni l'adresse de l'établissement → « group_site ».
+IDENTITY_VERSION = 1                  # version de la règle (provenance `site_identity.version`) : les fiches déjà retenues sont revérifiées une fois
+SSL_STRICT = (env("LOCAL_SITE_SSL_STRICT", "0") or "0").strip().lower() not in ("0", "false", "non", "no", "off")
+NOT_DISTINCTIVE = GENERIC_ACTIVITY | EDGE_FORMS | {
+    "france", "aube", "champagne", "ardenne", "ardennes", "marne", "yonne", "grand", "est", "nord", "sud", "ouest", "centre", "region", "regional",
+    "national", "international", "europe", "groupe", "group", "holding", "pro", "pros", "plus", "services", "service", "solutions", "solution",
+    "concept", "conseil", "conseils", "design", "studio", "atelier", "ateliers", "maison", "home", "multi", "tech", "technique", "techniques",
+    "multitechnique", "multiservices", "industrie", "industries", "industriel", "distribution", "transport", "transports", "travaux", "construction",
+    "constructions", "btp", "energie", "energies", "environnement", "nettoyage", "proprete", "chauffage", "climatisation", "sanitaire",
+    "maconnerie", "carrelage", "carrosserie", "mecanique", "depannage", "location", "assurance", "assurances", "immo", "autos", "moto", "motos",
+    "pneus", "taxi", "taxis", "ambulance", "ambulances", "pressing", "toilettage", "jardin", "jardins", "espaces", "verts", "espace", "vert",
+    "informatique", "web", "digital", "communication", "formation", "sante", "bien", "etre", "esthetique", "ongles", "fitness", "garages",
+    "electrique", "plombier", "plomberie", "chauffagiste", "couverture", "zinguerie", "isolation", "facade", "facades", "terrassement",
+    "elagage", "ferronnerie", "serrurerie", "vitrerie", "miroiterie", "agencement", "cuisine", "cuisines", "bains", "habitat", "logement",
+    "batiments", "freres", "fils", "associes", "partenaires", "compagnie", "cie", "co", "and", "team", "expert", "experts", "net", "online"}
+OWNER_NOISE = {"nom", "votre", "vos", "site", "web", "internet", "tous", "droits", "reserves", "reserve", "copyright", "all", "rights", "reserved",
+               "mentions", "legales", "legal", "notice", "politique", "confidentialite", "made", "with", "love", "par", "by", "conception",
+               "realisation", "creation", "propulse", "powered", "wordpress", "wix", "jimdo", "theme", "accueil", "contact", "plan", "cookies",
+               "inc", "ltd", "gmbh", "sarl", "sas", "sasu", "eurl", "snc", "sci", "scop", "selarl", "eirl", "sl", "slu", "sau", "spa", "srl", "bv", "nv"}
+LEGAL_URL_RX = re.compile(r"mention|l[eé]gal|cgv|cgu|imprint|impressum|aviso", re.I)
+LEGAL_FORM_RX = re.compile(r"\b(?:SARL|SAS|SASU|EURL|SA|SNC|SCI|SCOP|SELARL|EIRL|GmbH|S\.?L\.?U?|Ltd|Limited|S\.A\.S?\.?|S\.A\.R\.L\.?|S\.A\.U\.?)\b|"
+                           r"au capital|\bRCS\b|\bSIRE[NT]\b|\bR\.C\.S\b", re.I)
+EDITOR_RX = re.compile(r"(?:raison sociale|d[ée]nomination(?: sociale)?|soci[ée]t[ée] [ée]ditrice|[ée]diteur(?: du site)?|[ée]dit[ée] par|"
+                       r"propri[ée]taire(?: du site)?|ce site (?:est (?:[ée]dit[ée]|la propri[ée]t[ée]) (?:par|de)|appartient [àa]))\s*(?:[:\-–]\s*)?"
+                       r"(?:(?:est |par )?(?:la soci[ée]t[ée]|l.entreprise)\s+)?(.{3,80}?)"
+                       r"(?=\s*(?:,|;|\(|\||\bau capital\b|\bdont\b|\bsi[èe]ge\b|\bimmatricul|\bRCS\b|\bSIRE[NT]\b|\bsitu[ée]e?\b|\bdomicili|"
+                       r"\bt[ée]l\b|\bt[ée]l[ée]phone|\badresse\b|\bdirect|\bresponsable|\bh[ée]berg|\b\d{1,4}[, ]+(?:rue|avenue|bd|boulevard|route|place|chemin)\b|$))",
+                       re.I | re.M)
+COPY_RX = re.compile(r"(?:©|\(c\)|copyright)\s*(?:©\s*)?(?:\d{4}(?:\s*[-–/]\s*\d{2,4})?)?\s*[-–|:,]?\s*([^|•©\n]{3,60}?)"
+                     r"(?=\s*(?:[-–|•]|\btous droits\b|\ball rights\b|\br[ée]alis|\bcon[çc]u|\bcr[ée]|\bpropuls|\bpowered|\bdesign|\bmentions|\. |$))", re.I)
+GROUP_RX = re.compile(r"\bnos (?:\d+ )?(?:usines|sites de production|sites industriels|implantations|filiales|soci[ée]t[ée]s|marques|entit[ée]s)\b|"
+                      r"\bnos (?:\d+ )?(?:sites|agences|[ée]tablissements) (?:en france|dans le monde|en europe|r[ée]partis)\b|\bfiliales?\b|"
+                      r"\b(?:our|the) (?:plants|factories|subsidiaries|group companies|production sites|locations)\b|\bworldwide\b|\bsubsidiar(?:y|ies)\b|"
+                      r"\bpr[ée]sents? (?:dans|sur) \d+ pays\b|\bgroupe (?:industriel|international|familial|europ[ée]en)\b", re.I)
+FOREIGN_FORM_RX = re.compile(r"\bS\.\s?L\.(?:\s?U\.?)?(?=[\s,]|$)|\bS\.L\.U\b|\bS\.A\.U\b|\bGmbH\b|\bLtd\b|\bLLC\b|\bInc\.|\bB\.V\.|\bS\.p\.A\b|\bS\.r\.l\b|"
+                             r"\bN\.V\.|\bC\.?I\.?F\.?\s*:|\bN\.?I\.?F\.?\s*:|\bVAT (?:No|Number|ID)\b")
+FR_POSTAL_RX = re.compile(r"^(?:0[1-9]|[1-8]\d|9[0-5])\d{3}$")
+FR_WORDS = {"le", "la", "les", "des", "et", "nous", "vous", "pour", "avec", "votre", "notre", "est", "sont", "dans", "une", "qui", "sur"}
+FOREIGN_WORDS = {"the", "and", "our", "with", "for", "your", "we", "are", "is", "of", "to", "el", "los", "las", "y", "nuestro", "nuestros", "con",
+                 "para", "del", "somos", "und", "die", "der", "wir"}
+
+
+def strict_name_tokens(name: str | None, company: dict) -> list[str]:
+    """Mots du nom qui identifient VRAIMENT l'entreprise : sans forme juridique, mot d'activité générique, chiffre, ville ni département
+    (« SARL AUTO 10 » → [] ; « GARNICA FRANCE » → [garnica] ; « ELECTRI'ZON » → [electri, zon])."""
+    city = set(fold(company.get("city")).split()) - STOPWORDS
+    dep = department_of(company)
+    return [t for t in distinctive_tokens(name) if len(t) >= 3 and not t.isdigit() and t not in NOT_DISTINCTIVE and t not in city and t != dep]
+
+
+def _name_hit(toks: list[str], text: str) -> bool:
+    """Les mots `toks` figurent-ils dans `text` (mots entiers, ou collés : « Electri'Zon » ↔ « electrizon ») ? Tous jusqu'à deux mots, 2/3 au-delà."""
+    if not toks or not text:
+        return False
+    words = fold(text).split()
+    bag = set(words) | {a + b for a, b in zip(words, words[1:])} | {a + b + c for a, b, c in zip(words, words[1:], words[2:])}
+    joined = "".join(toks)
+    if len(joined) >= 4 and joined in bag:
+        return True
+    need = len(toks) if len(toks) <= 2 else math.ceil(len(toks) * 2 / 3)
+    return sum(t in bag for t in toks) >= need
+
+
+def _strict_names(company: dict) -> list[list[str]]:
+    return [t for t in (strict_name_tokens(company.get("trade_name"), company), strict_name_tokens(company.get("company_name"), company)) if t]
+
+
+def _is_legal(p: htmlinfo.Page) -> bool:
+    return bool(LEGAL_URL_RX.search(urlparse(p.url).path or ""))
+
+
+def _footer(p: htmlinfo.Page) -> str:
+    return p.footer or p.text[-400:]
+
+
+def _org_names(p: htmlinfo.Page) -> list[str]:
+    return [str(it.get("name") or "") for it in p.jsonld if any(t.lower() in identity.ORG_TYPES for t in identity._walk_types(it))]
+
+
+def _title_zone(pages: list[htmlinfo.Page]) -> str:
+    p = pages[0]
+    return " \n ".join([p.title, *p.h1, p.meta.get("og:site_name") or "", *_org_names(p)])
+
+
+def identity_zones(pages: list[htmlinfo.Page]) -> str:
+    """Là où un site dit QUI il est : titre, titres principaux, nom du site, en-tête, pied de page, schema.org, mentions légales."""
+    parts: list[str] = []
+    for p in pages:
+        parts += [p.title, *p.h1, p.meta.get("og:site_name") or "", p.header, _footer(p), *_org_names(p)]
+        if _is_legal(p):
+            parts.append(p.text)
+    return " \n ".join(x for x in parts if x)
+
+
+def _related_head(company: dict, pages: list[htmlinfo.Page], domain: str) -> bool:
+    """Page (de maintenance) liée à l'entreprise : domaine = nom, ou nom (distinctif, sinon tel quel) dans le titre / l'en-tête / le pied de page."""
+    if domain_matches_name(company, domain):
+        return True
+    zones = identity_zones(pages)
+    names = _strict_names(company) or [t for t in (name_tokens(company.get("trade_name")), name_tokens(company.get("company_name"))) if t]
+    return any(_name_hit(t, zones) for t in names)
+
+
+def _our_tokens(company: dict) -> tuple[set[str], set[str]]:
+    toks: set[str] = set()
+    joined: set[str] = set()
+    for n in (company.get("trade_name"), company.get("company_name"), company.get("manager_name")):
+        nt = name_tokens(n)
+        toks |= set(nt)
+        if len("".join(nt)) >= 4:
+            joined.add("".join(nt))
+    return toks, joined
+
+
+def other_name(company: dict, owner: str) -> bool:
+    """`owner` (éditeur, titulaire du « © ») est-il CLAIREMENT une autre entreprise : au moins un mot distinctif, aucun mot en commun avec
+    l'enseigne, la raison sociale ou le dirigeant (« Fuhrmann Espaces Verts » pour « SARL AUTO 10 » : oui ; « Holding Martin » pour
+    « Boulangerie Martin » : non) ?"""
+    toks = [t for t in name_tokens(owner) if not t.isdigit() and len(t) >= 3 and t not in OWNER_NOISE]
+    if not any(len(t) >= 4 and t not in NOT_DISTINCTIVE for t in toks):
+        return False
+    ours, joined = _our_tokens(company)
+    mine = "".join(name_tokens(owner))
+    if set(toks) & ours or any(j in mine or (len(mine) >= 4 and mine in j) for j in joined):
+        return False
+    return True
+
+
+def declared_owners(pages: list[htmlinfo.Page]) -> list[tuple[str, str]]:
+    """Ce que le site déclare de son propriétaire : [("editor", nom)] lus dans les mentions légales (une SOCIÉTÉ : forme juridique, capital ou
+    RCS dans le nom ou juste après), [("copyright", nom)] lus dans le pied de page."""
+    out: list[tuple[str, str]] = []
+    for p in pages:
+        if _is_legal(p):
+            for m in EDITOR_RX.finditer(p.text):
+                name = m.group(1).strip(" :-–.\"'«»")
+                if name and LEGAL_FORM_RX.search(p.text[m.start(1):m.end(1) + 100]):
+                    out.append(("editor", name))
+        for m in COPY_RX.finditer(_footer(p)):
+            name = m.group(1).strip(" :-–.\"'«»")
+            if name:
+                out.append(("copyright", name))
+    return out
+
+
+def group_signals(company: dict, pages: list[htmlinfo.Page], domain: str, name_in_title: bool) -> str | None:
+    """Raison de penser que c'est le site d'un GROUPE (plusieurs sites / usines, autre pays) plutôt que celui de l'établissement, sinon None."""
+    own = fold(f"{company.get('trade_name') or ''} {company.get('company_name') or ''}").split()
+    title_words = set(fold(f"{pages[0].title} {pages[0].meta.get('og:site_name') or ''}").split()) | set(domain_tokens(domain).split())
+    if {"groupe", "group"} & title_words and not {"groupe", "group"} & set(own):
+        return "nom de groupe"
+    legal = " ".join(_footer(p) + (" " + p.text if _is_legal(p) else "") for p in pages)
+    if FOREIGN_FORM_RX.search(legal):
+        return "société étrangère"
+    text = " ".join(p.text for p in pages)
+    words = fold(text).split()
+    lang = (pages[0].lang or "").lower()
+    fr, foreign = sum(w in FR_WORDS for w in words), sum(w in FOREIGN_WORDS for w in words)
+    if lang and not lang.startswith("fr") and foreign >= 10 and foreign > 1.5 * fr:
+        return "site en langue étrangère"
+    if GROUP_RX.search(text):
+        cp = digits(company.get("postal_code"))
+        cps = {c for c in digits_groups(text) if c != cp and FR_POSTAL_RX.match(c)}
+        if len(cps) >= 3 and len({c[:2] for c in cps}) >= 2:
+            return "plusieurs sites dans plusieurs départements"
+        if not name_in_title:
+            return "filiales / usines / implantations, nom de l'entreprise absent du titre"
+    return None
+
+
+def identity_verdict(company: dict, pages: list[htmlinfo.Page], domain: str, codes: set[str], ident, contradictions: list[str]) -> tuple[str, str, bool]:
+    """Règle d'identité (voir plus haut). Renvoie (verdict, explication, lié au nom ?) ; verdict : ok | no_proof | other_company | group_site."""
+    names = _strict_names(company)
+    zones = identity_zones(pages)
+    name_zone = any(_name_hit(t, zones) for t in names)
+    dom = domain_matches_name(company, domain)
+    text = " ".join(f"{p.title} {p.text}" for p in pages)
+    related = name_zone or dom or any(_name_hit(t, text) for t in names)
+    if codes & {"siret", "siren"}:
+        return "ok", "SIRET / SIREN de l'entreprise sur le site", True
+    if "autre SIREN" in contradictions:
+        return "other_company", "le site déclare un autre SIREN : site d'une autre entreprise", related
+    owners = declared_owners(pages)
+    editor = next((n for k, n in owners if k == "editor" and other_name(company, n)), None)
+    if editor:
+        return "other_company", f"mentions légales : site édité par « {editor[:60]} », une autre société", related
+    locality = bool(codes & {"city", "postal", "phone", "address_exact", "address_street"})
+    establishment = bool(codes & {"phone", "address_exact"})        # un groupe cite toutes ses villes : seuls le téléphone ou l'adresse exacte comptent
+    group = group_signals(company, pages, domain, any(_name_hit(t, _title_zone(pages)) for t in names))
+    if group and related and not establishment:
+        return "group_site", f"site de groupe ({group}) sans le téléphone ni l'adresse de l'établissement", True
+    if name_zone and locality:
+        return "ok", "nom de l'entreprise dans le titre / l'en-tête / le pied de page / les mentions légales, avec sa ville, son code postal ou son téléphone", True
+    if dom and (names or locality):
+        return "ok", "nom de domaine = nom de l'entreprise", True
+    holder = next((n for k, n in owners if k == "copyright" and other_name(company, n)), None)
+    if holder:
+        return "other_company", f"pied de page : « © {holder[:60]} », une autre entreprise", related
+    return ("no_proof", "aucune preuve propre à l'entreprise sur le site (SIRET, ou nom dans le titre / l'en-tête / le pied de page avec la ville, "
+                        "le code postal ou le téléphone, ou domaine = nom)", related)
+
+
+def https_broken(url: str, fetch: Fetcher) -> bool:
+    """Site lu en http:// : son https:// présente-t-il un certificat INVALIDE (expiré, d'un autre domaine — souvent celui de l'hébergeur) ? Une
+    lecture. Pas de https du tout (connexion refusée), ou lecteur sans journal d'erreurs : False (rien de conclu)."""
+    host = urlparse(url).netloc
+    if not host or not url.lower().startswith("http://"):
+        return False
+    since = len(_failures(fetch))
+    got = fetch(f"https://{host}/")
+    return got is None and _ssl_failed(fetch, since, f"https://{host}/")
+
+
+def check_site(company: dict, url: str, fetch: Fetcher, th: "Thresholds | None" = None) -> tuple[str, str, Assessment]:
+    """Relecture SANS moteur d'un site déjà retenu (accueil + mentions légales + contact), même règle que la recherche. Renvoie (verdict,
+    explication, lecture) ; verdict : ok | unreachable | parked | maintenance | ssl | other_company | group_site | no_proof."""
+    a = _assess(company, url, None, fetch, th=th, declared=True)
+    if a.verdict == "maintenance" and not a.pages:
+        return "ssl", a.verdict_label, a
+    if not a.pages or not a.reachable:
+        return "unreachable", "le site ne répond pas", a
+    if a.parked:
+        return "parked", "domaine parqué ou réservé vide", a
+    if a.verdict != "ok":
+        return a.verdict, a.verdict_label, a
+    if a.contradictions:
+        return "other_company", "contradiction : " + ", ".join(a.contradictions), a
+    if SSL_STRICT and https_broken(a.url, fetch):
+        a.evidence.append(ev("ssl_invalid", "⚠ certificat HTTPS invalide (celui de l'hébergeur ou d'un autre domaine) : pas un site exploitable", 0.0))
+        return "ssl", "certificat HTTPS invalide (celui de l'hébergeur ou d'un autre domaine) : pas un site exploitable", a
+    return "ok", a.verdict_label, a
+
+
 def owner_verdict(company: dict, a: Assessment) -> str:
-    """Verdict sur le site de la fiche Google, LU : « ok » (joignable et lié à l'entreprise : nom dans le titre / le contenu, OU SIRET / téléphone /
-    adresse sur le site, OU domaine = nom, OU ville / code postal avec un mot du nom), sinon « unreachable » ou « rejected:<raison> »
-    (social, directory, parked, other_company, no_match)."""
+    """Verdict sur le site de la fiche Google, LU : le propriétaire de la fiche peut y avoir mis le site d'un partenaire, d'un groupe, d'un ancien
+    propriétaire. Même exigence que pour un résultat de recherche (`identity_verdict`) : « ok » seulement avec une preuve propre à CETTE
+    entreprise, sinon « unreachable » ou « rejected:<raison> » (social, directory, parked, maintenance, other_company, group_site, no_match)."""
     d = a.domain
     if _in_set(d, SOCIAL):
         return "rejected:social"
     if _in_set(d, NOT_OFFICIAL) or looks_like_directory(d, company):
         return "rejected:directory"
+    if a.verdict == "maintenance":
+        return "rejected:maintenance"                   # page de maintenance, certificat HTTPS invalide
     if not a.pages or not a.reachable:
         return "unreachable"
-    if looks_parked(a.pages[0]):
+    if a.parked or looks_parked(a.pages[0]):
         return "rejected:parked"
+    if a.verdict == "other_company" or "autre SIREN" in a.contradictions:
+        return "rejected:other_company"
+    if a.verdict == "group_site":
+        return "rejected:group_site"
     if a.contradictions:
-        return "rejected:other_company"                 # autre SIREN, ou autre localisation sans notre ville ni notre code postal
-    codes = {e["code"] for e in a.evidence}
-    head = f"{a.pages[0].title} {' '.join(a.pages[0].h1)} {domain_tokens(d)}"
-    text = " ".join(f"{p.title} {' '.join(p.h1)} {p.text}" for p in a.pages)
-    full = partial = False
-    for name in (company.get("trade_name"), company.get("company_name")):
-        toks = distinctive_tokens(name) or name_tokens(name)
-        if toks:
-            full = full or token_fraction(toks, head) >= OWNER_NAME_FRACTION or token_fraction(toks, text) >= 0.999
-            partial = partial or token_fraction(toks, f"{head} {text}") > 0
-    if full or domain_matches_name(company, d) or codes & OWNER_EVIDENCE or (partial and codes & {"city", "postal"}):
-        return "ok"
-    return "rejected:no_match"
+        return "rejected:other_company"                 # autre localisation sans notre ville ni notre code postal
+    return "ok" if a.verdict == "ok" else "rejected:no_match"
 
 
 def suggested_verdict(res: "Resolution", url: str) -> str:
@@ -714,10 +1037,10 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
         n'y compte pas : les devinettes ne doivent jamais prendre la place des candidats trouvés par la recherche."""
         return sum(1 for d, a in assessed.items() if not (d in guessed and a.confidence < th.uncertain))
 
-    def consider(url: str, hit: Hit | None, structured: bool = False) -> None:
+    def consider(url: str, hit: Hit | None, structured: bool = False, declared: bool = False) -> None:
         if counted() >= MAX_ASSESSED or canonical_domain(url) in bad:
             return
-        a = _assess(company, url, hit, fetch, structured)
+        a = _assess(company, url, hit, fetch, structured, th, declared)
         if a.domain in bad:
             return
         prev = assessed.get(a.domain)
@@ -734,7 +1057,7 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
         key0 = canonical_domain(u)
         before = set(assessed)
         if key0 not in assessed:
-            consider(u, None)
+            consider(u, None, declared=True)
         new = set(assessed) - before
         for key in new:
             guessed.add(key)                                 # sans rapport : ne prend pas la place des résultats de recherche
@@ -821,7 +1144,7 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
         room = MAX_ASSESSED - counted()
         if len(chosen) > 1 and room > 1:                 # E/S pures : les candidats d'une même recherche sont lus en parallèle
             with ThreadPoolExecutor(max_workers=len(chosen)) as pool:
-                results = list(pool.map(lambda h: _assess(company, h.url, h, fetch), chosen[:room]))
+                results = list(pool.map(lambda h: _assess(company, h.url, h, fetch, th=th), chosen[:room]))
             for a in results:
                 if a.domain not in bad and (a.domain not in assessed or a.confidence > assessed[a.domain].confidence):
                     assessed[a.domain] = a
@@ -836,7 +1159,8 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
     ranked = sorted(assessed.values(), key=lambda a: a.confidence, reverse=True)
     for a in ranked:
         res.candidates.append({"url": a.url, "domain": a.domain, "confidence": a.confidence, "reachable": a.reachable, "evidence": a.evidence,
-                               "original_url": a.original_url, "redirect_chain": a.chain, **({"parked": True} if a.parked else {})})
+                               "original_url": a.original_url, "redirect_chain": a.chain, **({"parked": True} if a.parked else {}),
+                               **({"verdict": a.verdict} if a.verdict not in ("ok", "unreachable") else {})})
     best = ranked[0]
     rivals = [a for a in ranked[1:] if a.confidence >= th.probable and a.domain != best.domain]
     res.confidence, res.evidence = best.confidence, best.evidence
@@ -847,6 +1171,14 @@ def resolve(company: dict, search: Searcher, fetch: Fetcher, thresholds: Thresho
     if rivals and tier in ("CONFIRMED", "PROBABLE"):
         tier = "UNCERTAIN"
         res.evidence = best.evidence + [ev("rival", f"⚠ deux sites plausibles ({best.domain}, {rivals[0].domain}) : ambigu", 0.0)]
+    if tier in ("CONFIRMED", "PROBABLE") and SSL_STRICT and https_broken(best.url, fetch):
+        # lu en http:// mais certificat https invalide (celui de l'hébergeur, d'un autre domaine) : pas un site exploitable, à trancher
+        tier = "UNCERTAIN"
+        best.maintenance, best.verdict = True, "maintenance"
+        res.evidence = best.evidence + [ev("ssl_invalid", "⚠ certificat HTTPS invalide (celui de l'hébergeur ou d'un autre domaine) : pas un site exploitable", 0.0)]
+        for key, (dom, verdict) in list(res.suggested.items()):
+            if dom == best.domain and verdict == "ok":
+                res.suggested[key] = (dom, "rejected:maintenance")
     res.status = tier
     if tier in ("CONFIRMED", "PROBABLE", "UNREACHABLE"):
         res.url, res.pages, res.identity = best.url, best.pages, best.identity
