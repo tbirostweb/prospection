@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import { LOCAL_ACTIVITIES } from "@/lib/local";
 import { readJson } from "@/lib/api";
+import { sanitizeOffer } from "@/lib/draft";
 import { sanitizeAutoSend } from "@/lib/autosend";
 
 export async function GET() {
@@ -76,15 +77,7 @@ function sanitize(key: string, value: any): any | null {
       if (logo && !/^https:\/\/[^\s"<>]+\.[^\s"<>]+$/i.test(logo)) return null;
       return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400), privacy_url: privacy, logo_url: logo };
     }
-    case "local_offer": {
-      // Ton offre « clé en main » citée dans les brouillons : le texte est fixe (lib/draft.ts), seuls ces chiffres et ta zone sont réglables.
-      if (!value || typeof value !== "object") return null;
-      const price = (k: string) => (value[k] === null || value[k] === "" || value[k] === undefined ? null : num(value[k], 0, 100000));
-      const slots = num(value.launch_slots_left ?? 0, 0, 20);
-      return { enabled: !!value.enabled, area: String(value.area ?? "").trim().slice(0, 80), launch_price: price("launch_price"),
-        normal_price: price("normal_price"), launch_slots_left: slots === null ? 0 : Math.floor(slots),
-        photos_max_km: num(value.photos_max_km ?? 20, 0, 100) ?? 20 };
-    }
+    case "local_offer": return sanitizeOffer(value);   // « Mon offre » : le texte est fixe (lib/draft.ts), seuls les chiffres et ta zone sont réglables
     case "local_banned_brands": {
       // Tes enseignes à bannir en plus de la liste intégrée (franchises, chaînes locales…) : 300 au plus, 3 caractères minimum.
       const list = Array.isArray(value) ? value : String(value ?? "").split(/\n|,/);

@@ -26,7 +26,25 @@ export interface Draft { subject: string; body: string; core: string; facts: str
  *  Prix absents = aucune phrase de prix ; places de lancement à 0 = pas de tarif de lancement. Le paiement, le domaine et l'hébergement se
  *  règlent au devis : jamais dans le premier message. */
 export interface Offer { enabled?: boolean; area?: string; launch_price?: number | null; normal_price?: number | null; launch_slots_left?: number | null;
-  photos_max_km?: number | null }
+  photos_max_km?: number | null;
+  /** Refonte (site existant) : AUCUN prix dans le message (il dépend de l'état du site) ; renvoi vers cette page d'offres (http/https). Vide = site de la signature. */
+  offers_url?: string | null }
+/** Messages concernant un site existant (refonte) : l'offre de création (prix de lancement, prix barré) n'y a pas sa place. */
+export const isRedesignKind = (kind: string) => /site_ameliorable|site_refonte|site_inaccessible/.test(kind);
+const clampNum = (v: unknown, lo: number, hi: number): number | null => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null; };
+/** Valide le réglage « Mon offre » (null = refus). */
+export function sanitizeOffer(value: any): Offer | null {
+  if (!value || typeof value !== "object") return null;
+  const price = (k: string) => (value[k] === null || value[k] === "" || value[k] === undefined ? null : clampNum(value[k], 0, 100000));
+  const slots = clampNum(value.launch_slots_left ?? 0, 0, 20);
+  const url = String(value.offers_url ?? "").trim().slice(0, 300);
+  if (url && !/^https?:\/\/[^\s"<>]+\.[^\s"<>]+$/i.test(url)) return null;
+  return { enabled: !!value.enabled, area: String(value.area ?? "").trim().slice(0, 80), launch_price: price("launch_price"),
+    normal_price: price("normal_price"), offers_url: url || null, launch_slots_left: slots === null ? 0 : Math.floor(slots),
+    photos_max_km: clampNum(value.photos_max_km ?? 20, 0, 100) ?? 20 };
+}
+/** Lien « mes offres » d'un message de refonte : le réglage, sinon le site de la signature, sinon rien. */
+export const offersLink = (offer: Offer, sender: { website?: string }) => offer.offers_url?.trim() || sender.website?.trim().replace(/\/$/, "") || "";
 const euros = (n: number) => `${new Intl.NumberFormat("fr-FR").format(n).replace(/\u202f|\u00a0/g, " ")} €`;
 
 /** Métiers où des photos faites sur place servent vraiment le site (salon, atelier, chantier, vitrine…). Jamais les photographes. */
@@ -41,12 +59,16 @@ export function photosOffered(p: { activity_key?: string | null; distance_km?: a
   return PHOTO_ACTIVITIES.has(p.activity_key ?? "") && Number.isFinite(km) && km <= max;
 }
 
-export function offerParagraphs(offer: Offer, opts: { photos?: boolean } = {}): string[] {
+export function offerParagraphs(offer: Offer, opts: { photos?: boolean; redesign?: boolean; link?: string } = {}): string[] {
   const out = [
     "Concrètement, j'écris les textes à partir de ce que vous me racontez de votre métier, vous n'avez qu'à relire. "
       + "Le site est en ligne en deux à quatre semaines. "   // pas de bilan à trois mois tant que Théo ne l'a pas confirmé
       + (opts.photos ? "En option, je peux aussi créer ou compléter votre fiche Google et passer faire les photos." : "En option, je peux aussi créer ou compléter votre fiche Google."),
   ];
+  if (opts.redesign) {   // refonte : aucun prix (il dépend de l'état du site), seulement un renvoi vers les offres
+    if (opts.link) out.push(`Mes offres et tarifs sont détaillés sur ${opts.link}.`);
+    return out;
+  }
   const slots = Math.max(0, Math.floor(Number(offer.launch_slots_left) || 0));
   const launch = Number(offer.launch_price) || 0, normal = Number(offer.normal_price) || 0;
   if (slots > 0 && launch > 0 && normal > launch) {
@@ -167,7 +189,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const area = offer.enabled && offer.area?.trim() ? `, ${offer.area.trim()}` : "";
   const question = kind === "site_refonte" ? "Est-ce un sujet pour vous en ce moment, ou votre site actuel vous convient-il tel qu'il est ?\n\n" : "";
   const ask = question + (offer.enabled
-    ? `${offerParagraphs(offer, { photos: photosOffered(p, offer) }).join("\n\n")}\n\n${callToAction(sender.website)}`
+    ? `${offerParagraphs(offer, { photos: photosOffered(p, offer), redesign: isRedesignKind(kind), link: offersLink(offer, sender) }).join("\n\n")}\n\n${callToAction(isRedesignKind(kind) ? "" : sender.website)}`
     : "Seriez-vous d'accord pour un échange de 10 minutes, sans engagement ? Je peux aussi vous envoyer quelques exemples de réalisations.");
   const core = `${first}${list}\n\nJe suis ${who || "développeur web indépendant"}${area}. ${pitch}\n\n${ask}`;
   const body = wrapDraft(p, sender, core);
@@ -190,6 +212,8 @@ export function checkWrittenCore(core: string, subject: string, ref: Draft): str
   const allowedNumbers = new Set(known.match(/\d+(?:[ ,.]\d+)*/g) ?? []);
   const numbers = [...new Set(text.match(/\d+(?:[ ,.]\d+)*/g) ?? [])].filter((n) => !allowedNumbers.has(n));
   if (numbers.length) problems.push(`chiffres absents des faits et de l'offre : ${numbers.join(", ")}`);
+  if (isRedesignKind(ref.kind) && (/€|\beuros?\b/i.test(text) || /au lieu de|offre de lancement|prochaines? entreprises?|réduction|remise|promo|prix barré|à partir de \d/i.test(text)))
+    problems.push("message de site existant : aucun prix ni réduction (renvoyer vers la page d'offres du brouillon de référence)");
   const links = [...new Set(text.match(/https?:\/\/\S+|www\.\S+/gi) ?? [])].filter((u) => !known.includes(u.replace(/[).,;:!?]+$/, "")));
   if (links.length) problems.push(`liens absents des faits : ${links.join(", ")}`);
   if (/\[[^\]]*\]/.test(text)) problems.push("mention entre crochets à remplacer");

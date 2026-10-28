@@ -114,7 +114,10 @@ export default function SettingsPage() {
             <input type="number" min={0} max={100} value={offer.photos_max_km ?? 20} onChange={(e) => setOffer("photos_max_km", Number(e.target.value) || 0)} className="field" /></label>
           <label className="flex flex-col gap-1"><span className="mono">Places de lancement restantes</span>
             <input type="number" min={0} max={20} value={offer.launch_slots_left ?? 0} onChange={(e) => setOffer("launch_slots_left", Number(e.target.value) || 0)} className="field" /></label>
+          <label className="flex flex-col gap-1 sm:col-span-2"><span className="mono">Lien vers mes offres</span>
+            <input type="url" value={offer.offers_url ?? ""} placeholder="https://…" onChange={(e) => setOffer("offers_url", e.target.value)} className="field" /></label>
         </div>
+        <p className="mt-2 text-xs text-muted">Entreprises qui ont déjà un site (refonte) : aucun prix dans le message, car il dépend de l'état du site. Le message renvoie vers ce lien (http ou https) : « Mes offres et tarifs sont détaillés sur … ». Vide = le site de ta signature ; sans site, pas de phrase d'offre.</p>
         <p className="mt-2 text-xs text-muted">Places restantes au-dessus de 0 : le brouillon peut présenter ton offre de lancement (prix de lancement au lieu du prix normal). Jamais de réduction contre un avis Google : c'est interdit par Google.
           Passe-les à 0 dès que tes premiers clients ont signé. Sans prix, aucune phrase de prix n'est écrite.</p>
       </section>

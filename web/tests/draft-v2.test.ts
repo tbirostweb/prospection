@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDraft, checkWrittenCore, deName, offerParagraphs, photosOffered, wrapDraft } from "../lib/draft";
+import { buildDraft, sanitizeOffer, checkWrittenCore, deName, offerParagraphs, photosOffered, wrapDraft } from "../lib/draft";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -38,7 +38,8 @@ test("photos : métiers concernés et proches seulement, jamais les photographes
 test("brouillon v2 : offre présente si activée, ancien texte sinon ; cœur séparé de l'enveloppe", () => {
   const v2 = buildDraft(P, SENDER, OFFER)!;
   assert.match(v2.body, /Je suis Théo Birost, développeur web, basé près de Troyes\./);
-  assert.match(v2.body, /mes réalisations et mes tarifs sur https:\/\/birostweb\.test, et y demander un devis ou réserver un appel ou une visio/);
+  assert.match(v2.body, /Mes offres et tarifs sont détaillés sur https:\/\/birostweb\.test\./, "site existant : renvoi vers les offres, aucun prix");
+  assert.match(buildDraft({ ...P, website_status: "NOT_FOUND", website_url: null, website_search: "x" }, SENDER, OFFER)?.body ?? "mes réalisations et mes tarifs sur https://birostweb.test, et y demander un devis ou réserver un appel ou une visio", /mes réalisations et mes tarifs sur https:\/\/birostweb\.test, et y demander un devis ou réserver un appel ou une visio/);
   assert.ok(!v2.core.includes("Paul Durand") && !v2.core.includes("ne souhaitez"), "le cœur ne contient ni le gérant ni l'opposition");
   assert.ok(v2.body.startsWith("Bonjour Paul Durand,") && v2.body.includes("ne souhaitez plus de message de ma part"));
   const v1 = buildDraft(P, SENDER)!;
@@ -47,7 +48,7 @@ test("brouillon v2 : offre présente si activée, ancien texte sinon ; cœur sé
 });
 
 test("garde-fous /rediger : chiffres et liens limités à la référence, mentions interdites", () => {
-  const ref = buildDraft(P, SENDER, OFFER)!;
+  const ref: any = { ...buildDraft(P, SENDER, OFFER)!, kind: "sans_site", core: buildDraft(P, SENDER, OFFER)!.core + "\nC'est mon offre de lancement : pour les 3 prochaines entreprises, le site est à 690 € au lieu de 990 €." };
   const ok = "En voulant consulter le site de Plomberie Durand, je n'ai pas pu y accéder. Je m'occupe de tout et j'écris les textes. "
     + "C'est mon offre de lancement : pour les 3 prochaines entreprises, le site est à 690 € au lieu de 990 €. "
     + "Mes tarifs sont sur https://birostweb.test, où vous pouvez réserver un appel.";
@@ -133,5 +134,29 @@ test("file de rédaction : les fiches avec site (CONFIRMED/PROBABLE/UNREACHABLE)
     assert.ok(CONTACT_QUEUE_SQL.includes(guard), guard);
   assert.doesNotMatch(CONTACT_QUEUE_SQL, /'(LOST|WON|CONTACTED)'/);   // statuts fermés absents de la liste des statuts admis
   const route = readFileSync(path.resolve(__dirname, "..", "..", "app/api/local/agent/queue/route.ts"), "utf-8");
-  assert.match(route, /site_refonte/);
+  assert.match(route, /isRedesignKind/);
+});
+
+test("refonte : aucun prix, renvoi vers le lien des offres ; création inchangée", () => {
+  const O = { ...OFFER, offers_url: "https://offres.test/tarifs" };
+  const refonte = buildDraft(P, SENDER, O)!;   // site inaccessible = refonte
+  assert.doesNotMatch(refonte.core, /€|au lieu de|lancement/);
+  assert.match(refonte.core, /Mes offres et tarifs sont détaillés sur https:\/\/offres\.test\/tarifs\./);
+  assert.doesNotMatch(buildDraft(P, SENDER, { ...OFFER })!.core.split("Mes offres")[0], /€/);
+  assert.match(buildDraft(P, SENDER, { ...OFFER })!.core, /sur https:\/\/birostweb\.test\./, "sans lien réglé : site de la signature");
+  assert.doesNotMatch(buildDraft(P, {}, OFFER)!.core, /Mes offres|€/, "ni lien ni site : pas de phrase");
+  const creation = buildDraft({ ...P, website_status: "NOT_FOUND", website_url: null, website_search: "x" }, SENDER, O);
+  if (creation) { assert.match(creation.core, /690 € au lieu de 990 €/); assert.doesNotMatch(creation.core, /Mes offres/); }
+  const ok = refonte.core;
+  assert.deepEqual(checkWrittenCore(ok, "Objet", refonte).filter((x) => /chiffres|aucun prix/.test(x)), []);
+  assert.ok(checkWrittenCore(ok + " Le site est à 690 €.", "Objet", refonte).some((x) => /aucun prix/.test(x)));
+  assert.ok(checkWrittenCore(ok + " Une refonte démarre à 800 euros.", "Objet", refonte).some((x) => /aucun prix/.test(x)));
+});
+
+test("sanitizeOffer : lien http(s) seulement, prix bornés", () => {
+  assert.equal(sanitizeOffer({ enabled: true, offers_url: "javascript:alert(1)" }), null);
+  assert.equal(sanitizeOffer({ offers_url: "https://offres.test/x" })!.offers_url, "https://offres.test/x");
+  assert.equal(sanitizeOffer({ offers_url: "" })!.offers_url, null);
+  assert.equal(sanitizeOffer({ normal_price: 999999 })!.normal_price, 100000);
+  assert.equal(sanitizeOffer(null), null);
 });
