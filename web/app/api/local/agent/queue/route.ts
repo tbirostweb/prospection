@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { shortActivity } from "@/lib/activity";
-import { Offer, Sender, buildDraft, cap, isRedesignKind, kindAngle, offersLink, photosOffered } from "@/lib/draft";
+import { Offer, Sender, buildDraft, cap, isRedesignKind, kindAngle, photosOffered, salutation } from "@/lib/draft";
 import { ANGLE_LABELS } from "@/lib/complete";
 import { CONTACT_QUEUE_SQL, EMAIL_QUEUE_SQL, LIST_COLUMNS, getAutoSend, getSetting, safeRows } from "@/lib/localdb";
 import { splitByTrigger, strongSignals } from "@/lib/local";
@@ -45,15 +45,17 @@ export async function GET(req: NextRequest) {
     items.push({
       id: p.id, entreprise: cap((p.trade_name || p.company_name || "").trim()),
       nom_commercial: p.trade_name ? cap(String(p.trade_name).trim()) : null,   // jamais la raison sociale : chez un entrepreneur individuel, elle contient son nom
+      // formule d'appel imposée (ajoutée par le code au dépôt) : ne jamais écrire de salutation ni de nom dans le cœur du message
+      salutation: salutation(p),
       ville: p.city ? cap(p.city) : null,
       activite: shortActivity(p.activity_label),   // forme courte : jamais un intitulé long dans la phrase
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,
       faits: d.facts, type: d.kind,
       // angle imposé par l'état du site : refonte, creation ou neutre (neutre : ni « votre site » ni « pas de site », refusé au dépôt sinon)
       angle: kindAngle(d.kind), angle_libelle: ANGLE_LABELS[kindAngle(d.kind)],
-      // la SEULE offre à citer pour ce prospect : jamais de prix (création, refonte ou neutre), seulement le renvoi vers la page des offres
-      offre_prospect: { type: kindAngle(d.kind), prix: null, lien_offres: offersLink(offer, sender) || null,
-        regle: "AUCUN prix, aucun montant, aucune réduction : seulement renvoyer vers lien_offres (sans lien, aucune phrase d'offre)" },
+      // jamais de prix ni de lien dans le message (création, refonte ou neutre) : le site est dans la signature, ajoutée par l'application
+      offre_prospect: { type: kindAngle(d.kind), prix: null, lien_offres: null,
+        regle: "AUCUN prix, aucun montant, aucune réduction, AUCUN lien : terminer par « Je vous partage mon site pour plus d'informations. » (le site est dans la signature)" },
       photos_en_option: photosOffered(p, offer), canal: p.email && p.auto_state !== "bounced" ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
       // envoi automatique possible (fiche complète avec e-mail, jamais contactée) ; sinon Théo contacte lui-même (jamais sans métier connu)
       envoi_auto: autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null,
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
   }
   return NextResponse.json({
     // offre générale, SANS prix (jamais de prix dans un message) ; pour rédiger, n'utiliser que `offre_prospect` de chaque prospect
-    offre: { active: !!offer.enabled, zone: offer.area ?? "", lien_offres: offersLink(offer, sender) || null, photos_jusqu_a_km: offer.photos_max_km ?? 20 },
+    offre: { active: !!offer.enabled, zone: offer.area ?? "", lien_offres: null, photos_jusqu_a_km: offer.photos_max_km ?? 20 },
     expediteur: { activite: sender.role || "développeur web indépendant", marque: sender.company || null },
     prospects: items,
   });

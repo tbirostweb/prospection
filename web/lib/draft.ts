@@ -67,8 +67,7 @@ export function offerParagraphs(offer: Offer, opts: { photos?: boolean; redesign
       + "Le site est en ligne en deux à quatre semaines. "   // pas de bilan à trois mois tant que Théo ne l'a pas confirmé
       + (opts.photos ? "En option, je peux aussi créer ou compléter votre fiche Google et passer faire les photos." : "En option, je peux aussi créer ou compléter votre fiche Google."),
   ];
-  // Jamais de prix dans un message (choix de Théo) : création comme refonte, seulement un renvoi vers la page des offres
-  if (opts.link) out.push(`Mes offres et tarifs sont détaillés sur ${opts.link}.`);
+  // Jamais de prix ni de lien dans le message (choix de Théo) : le site de Birostweb est dans la signature ; `link` n'est plus utilisé
   return out;
 }
 
@@ -187,7 +186,7 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const question = kind === "site_refonte" ? "Est-ce un sujet pour vous en ce moment, ou votre site actuel vous convient-il tel qu'il est ?\n\n"
     : kind === "neutre" ? "Est-ce un sujet pour vous en ce moment ?\n\n" : "";
   const ask = question + (offer.enabled
-    ? `${offerParagraphs(offer, { photos: photosOffered(p, offer), redesign: isRedesignKind(kind), link: offersLink(offer, sender) }).join("\n\n")}\n\n${callToAction("")}`
+    ? `${offerParagraphs(offer, { photos: photosOffered(p, offer), redesign: isRedesignKind(kind) }).join("\n\n")}\n\n${callToAction("")}`
     : "Seriez-vous d'accord pour un échange de 10 minutes, sans engagement ? Je peux aussi vous envoyer quelques exemples de réalisations.");
   const core = `${first}${list}\n\nJe suis ${who || "développeur web indépendant"}${area}. ${pitch}\n\n${ask}`;
   const body = wrapDraft(p, sender, core);
@@ -213,9 +212,15 @@ export function checkWrittenCore(core: string, subject: string, ref: Draft): str
   if (numbers.length) problems.push(`chiffres absents des faits et de l'offre : ${numbers.join(", ")}`);
   if (/€|\beuros?\b/i.test(text) || /au lieu de|offre de lancement|prochaines? entreprises?|réduction|remise|promo|prix barré|à partir de \d/i.test(text))
     problems.push("aucun prix ni réduction dans un message (renvoyer vers la page d'offres du brouillon de référence)");
-  const links = [...new Set(text.match(/https?:\/\/\S+|www\.\S+/gi) ?? [])].filter((u) => !known.includes(u.replace(/[).,;:!?]+$/, "")));
-  if (links.length) problems.push(`liens absents des faits : ${links.join(", ")}`);
+  // Aucun lien dans le corps (pour aucun angle) : le site est dans la signature, ajoutée par l'application. Pas de renvoi vers la page des offres.
+  const links = [...new Set(text.match(/https?:\/\/\S+|www\.\S+/gi) ?? [])];
+  if (links.length) problems.push(`aucun lien dans le message (le site est dans la signature, ne pas écrire « ${links.join(", ")} ») : écrire seulement « Je vous partage mon site pour plus d'informations. »`);
   if (/\[[^\]]*\]/.test(text)) problems.push("mention entre crochets à remplacer");
+  // Première ligne : la salutation est ajoutée par l'application. Aucune parenthèse, aucun nom de personne (prénom + nom, « Nicolas George (George) »).
+  const first = core.trim().split("\n")[0] ?? "";
+  if (/[()]/.test(first)) problems.push("première ligne : aucune parenthèse (ni nom entre parenthèses)");
+  if (/^\s*(bonjour|bonsoir|salut|cher|chère|madame|monsieur)\b/i.test(first)) problems.push("ne pas écrire de salutation : « Bonjour, » (ou Monsieur/Madame) est ajouté par l'application");
+  else if (/^\s*[A-ZÀ-Ý][a-zà-ÿ'’-]+\s+[A-ZÀ-Ý][a-zà-ÿA-ZÀ-Ý'’-]+\s*[,:]/.test(first)) problems.push("première ligne : ne pas commencer par un nom de personne");
   if (/garanti/i.test(text)) problems.push("aucune garantie de résultat ne peut être promise");
   // Jamais un message qui parle d'un site non vérifié : un message neutre ne parle ni d'un site existant ni d'une absence de site ;
   // un message de création ne parle pas d'un site existant.
@@ -230,12 +235,18 @@ export function checkWrittenCore(core: string, subject: string, ref: Draft): str
   return problems;
 }
 
+/** Formule d'appel : « Bonjour Monsieur, » / « Bonjour Madame, » UNIQUEMENT si la civilité du dirigeant est connue de façon fiable dans les données
+ *  (`manager_civility` : « M » ou « Mme », jamais déduite du prénom) ; sinon « Bonjour, ». Jamais de nom, ni de prénom + nom, ni de parenthèses. */
+export function salutation(p: any): string {
+  const c = String(p?.manager_civility ?? "").trim().toLowerCase().replace(/\./g, "");
+  return c === "m" || c === "monsieur" ? "Bonjour Monsieur," : c === "mme" || c === "madame" ? "Bonjour Madame," : "Bonjour,";
+}
+
 /** Ce que le CODE ajoute toujours autour du cœur du message (écrit par le modèle ou par /rediger) : salutation, signature, puis UNE ligne
  *  discrète (source, refus des messages suivants, lien vers la notice). Le nom du gérant et les coordonnées ne sortent donc jamais de l'application. */
 export function wrapDraft(p: any, sender: Sender, core: string): string {
   const signature = [sender.name || MISSING_NAME, sender.company, sender.phone, sender.email, sender.website].filter(Boolean).join("\n");
-  const hello = p.manager_name ? `Bonjour ${p.manager_name},` : "Bonjour,";
-  return `${hello}\n\n${core.trim()}\n\n`
+  return `${salutation(p)}\n\n${core.trim()}\n\n`
     + `Bien cordialement,\n${signature}\n\n--\n${informationNotice(p, sender)}`;
 }
 

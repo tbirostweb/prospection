@@ -90,6 +90,17 @@ def test_brouillon_modifie_a_la_main_sans_formule_de_fin():
     assert "dites-le-moi" in page
 
 
+def test_salutation_jamais_de_nom():
+    assert mailer.greeting({"manager_name": "Nicolas George (George)"}) == "Bonjour,"
+    assert mailer.greeting({"manager_name": "X", "manager_civility": "M"}) == "Bonjour Monsieur,"
+    assert mailer.greeting({"manager_civility": "Mme"}) == "Bonjour Madame,"
+
+
+def test_logo_svg_ico_ignores():
+    assert "<img" not in mailer.signature_html({**SENDER, "logo_url": "https://exemple-web.fr/logo.svg"})
+    assert "<img" in mailer.signature_html({**SENDER, "logo_url": "https://exemple-web.fr/favicon.png"})
+
+
 def test_logo_seulement_en_https():
     assert "<img" not in mailer.signature_html({**SENDER, "logo_url": "http://exemple-web.fr/logo.png"})
 
@@ -101,8 +112,8 @@ def test_relances_courtes_en_reponse_au_premier_message():
     assert r1.startswith("Bonjour,\n\nJe vous ai écrit lundi au sujet d'un site internet. Est-ce que c'est un sujet pour vous en ce moment ?")
     assert "dites-le-moi simplement" in r1 and "Le lundi 26 octobre 2026 à 10:12, Théo Exemple a écrit :" in r1
     assert "> Je n'ai pas trouvé de site" in r1 and "> Coordonnées trouvées" not in r1
-    r2 = mailer.followup_body("followup2", {**P, "manager_name": "Mme Martin"}, first, dt.datetime(2026, 11, 2, 10, 0, tzinfo=dt.timezone.utc), "Théo Exemple")
-    assert r2.startswith("Bonjour Mme Martin,\n\nJe vous ai écrit la semaine dernière") and "Je ne vous relancerai plus" in r2
+    r2 = mailer.followup_body("followup2", {**P, "manager_name": "Nicolas George (George)"}, first, dt.datetime(2026, 11, 2, 10, 0, tzinfo=dt.timezone.utc), "Théo Exemple")
+    assert r2.startswith("Bonjour,\n\nJe vous ai écrit la semaine dernière") and "Je ne vous relancerai plus" in r2
     for banned in ("je me permets", "je reviens vers vous", "n'hésitez pas"):
         assert banned not in (r1 + r2).lower()
     msg = mailer.build_message(from_addr="contact@exemple-web.fr", from_name="Théo Exemple", to=P["email"], subject=mailer.reply_subject("Votre garage"),

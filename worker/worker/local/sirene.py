@@ -82,7 +82,8 @@ def manager(unit: dict) -> str | None:
         return None
     d = next((x for x in people if re.search(r"g[ée]rant|pr[ée]sident|exploitant", x.get("qualite") or "", re.I)), people[0])
     first = (d.get("prenoms") or "").split()[:1]
-    return " ".join([*first, d["nom"]]).title()[:160] or None
+    nom = re.sub(r"\s*\([^)]*\)", "", d["nom"]).strip()           # « GEORGE (GEORGE) » : le nom d'usage entre parenthèses n'est pas un nom
+    return " ".join([*first, nom]).title()[:160] or None
 
 
 def parse_unit(unit: dict, origin: tuple[float, float] | None = None, radius_km: float | None = None,

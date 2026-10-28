@@ -189,6 +189,7 @@ def test_sirene_chiffre_d_affaires_et_dirigeant():
             "matching_etablissements": [{"siret": "84962491100010", "etat_administratif": "A", "activite_principale": "96.02A", "latitude": "48.3", "longitude": "4.07"}]}
     e = sirene.parse_unit(unit)[0]
     assert (e.revenue, e.revenue_year, e.manager_name) == (120000, 2024, "Laure Crame")                  # jamais la date de naissance
+    assert sirene.manager({"dirigeants": [{"nom": "GEORGE (GEORGE)", "prenoms": "Nicolas", "type_dirigeant": "personne physique"}]}) == "Nicolas George"
     assert sirene.manager({"dirigeants": [{"nom": "X SAS", "type_dirigeant": "personne morale"}]}) is None
 
 

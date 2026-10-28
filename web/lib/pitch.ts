@@ -2,7 +2,7 @@
 // Construite UNIQUEMENT à partir des données déjà en base (score, signaux, audit, SIRENE, contacts) : aucune source externe, rien d'inventé.
 // Une donnée absente n'est jamais comblée ; sans fait objectif, pas de message conseillé.
 import { searchedAs } from "./activity";
-import { EVENT_OPENINGS, ISSUE_PHRASES, PRIORITY, Sender, cap } from "./draft";
+import { EVENT_OPENINGS, ISSUE_PHRASES, PRIORITY, Sender, cap, salutation } from "./draft";
 import { NETWORK_ICONS, bestTime, followupDue, monthsSince, siteSearched, verifiedSocials } from "./local";
 
 export interface Brief {
@@ -135,7 +135,7 @@ export function salesBrief(p: any, sender: Sender = {}): Brief {
   let message: Brief["message"] = null;
   let messageNote = "aucun fait vérifié ne justifie un message (on n'invente jamais une faiblesse)";
   const cold = ["DISCOVERED", "ENRICHED", "AUDITED", "QUALIFIED", "TO_CONTACT"].includes(p.status);
-  const hello = p.manager_name ? `Bonjour ${p.manager_name},` : "Bonjour,";
+  const hello = salutation(p);
   const signature = [sender.name || "[Votre prénom et nom]", ...(sender.phone ? [sender.phone] : [])];
   if (blocked) messageNote = p.do_not_contact ? "aucun message : a demandé à ne plus être contacté" : "aucun message : prospect écarté";
   else if (p.status === "CONTACTED" && fact) {

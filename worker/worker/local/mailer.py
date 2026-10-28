@@ -123,7 +123,9 @@ def split_draft(body: str) -> tuple[str, str | None, str, str]:
 
 
 def greeting(p: dict) -> str:
-    return f"Bonjour {p['manager_name']}," if p.get("manager_name") else "Bonjour,"
+    """Même règle que lib/draft.ts (salutation) : jamais de nom ; Monsieur/Madame seulement si la civilité est connue (jamais devinée du prénom)."""
+    c = str(p.get("manager_civility") or "").strip().lower().replace(".", "")
+    return "Bonjour Monsieur," if c in ("m", "monsieur") else "Bonjour Madame," if c in ("mme", "madame") else "Bonjour,"
 
 
 def _when(sent_at: dt.datetime, now: dt.datetime) -> str:
@@ -185,7 +187,7 @@ def signature_html(sender: dict) -> str:
         lines.append(f'<a href="{e(href)}" style="color:{ACCENT};text-decoration:none">{e(label)}</a>')
     logo = (sender.get("logo_url") or "").strip()
     logo_cell = (f'<td style="padding:0 12px 0 0;vertical-align:middle"><img src="{e(logo)}" width="48" height="48" alt="{e(sender.get("company") or name)}" '
-                 f'style="display:block;width:48px;height:48px;border:0;border-radius:8px"></td>') if logo.startswith("https://") else ""
+                 f'style="display:block;width:48px;height:48px;border:0;border-radius:8px"></td>') if logo.startswith("https://") and not re.search(r"\.(svg|ico|webp|avif)(\?|#|$)", logo, re.I) else ""
     return (f'<table cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin:4px 0 0;font-family:Arial,Helvetica,sans-serif;'
             f'font-size:13px;line-height:1.45;color:{INK}"><tr>{logo_cell}<td style="border-left:2px solid {ACCENT};padding:0 0 0 12px;'
             f'vertical-align:middle">{"<br>".join(lines)}</td></tr></table>')
