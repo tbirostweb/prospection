@@ -6,8 +6,12 @@ DÉSACTIVÉ par défaut : rien ne part tant que Réglages > Envoi automatique n'
   3. si l'envoi est activé, dans les heures ouvrées (jours ouvrés, hors fériés), DNS vérifié et plafond du jour non atteint :
      UN seul e-mail part (donc au plus un toutes les 2 min) — une relance due (J+3, puis J+7 en réponse au premier message), sinon le prochain premier message en file.
 Adresses de l'entreprise seulement (Gmail, Orange… publiées comme contact : réglage personal_emails, activé par défaut) ; chaque message contient la ligne d'opposition. Formulaires et Facebook : jamais.
-Premier message : seulement pour une FICHE COMPLÈTE avec e-mail (`complete`) ; une fiche en file encore incomplète (métier inconnu, site à
-trancher…) attend sans partir. Premier message ET chaque relance : entreprise fermée, cessée, radiée ou en procédure collective refusée
+Premier message : seulement pour une fiche avec e-mail utilisable (`complete.reason`) ; une fiche en file encore incomplète (métier inconnu,
+traitement en cours…) attend sans partir. L'E-MAIL D'ABORD : le site ne bloque plus l'envoi, il oriente le message (`complete.angle` : refonte,
+création ou neutre). Un brouillon dont l'angle ne correspond plus à l'état du site (refonte alors que le site n'est plus vérifié, « sans site »
+alors qu'un site est connu ou que l'absence n'est plus tranchée) n'est JAMAIS envoyé : effacé, fiche sortie de la file et rendue à la file de
+rédaction (/rediger), qui le réécrit avec le bon angle. Un message neutre ne parle d'aucun site : aucune vérification du site avant lui.
+Premier message ET chaque relance : entreprise fermée, cessée, radiée ou en procédure collective refusée
 (`companystate.send_check` : état SIRENE / BODACC revérifié s'il date de plus de 7 jours ; source injoignable : rien ne part, nouvel essai
 une heure plus tard). Juste avant, sans rien demander au propriétaire :
   * le domaine de l'adresse doit recevoir du courrier (MX, ou A / AAAA ; DoH, résultat positif gardé MX_TTL) : sinon l'adresse est marquée
@@ -15,8 +19,8 @@ une heure plus tard). Juste avant, sans rien demander au propriétaire :
   * message « sans site » : dernière vérification du site, sans moteur de recherche (domaine de l'adresse, domaines devinés d'après le nom, site
     de la fiche Google s'il n'a jamais été vérifié), bornée à PRESEND_TIMEOUT. Site sûr : enregistré comme par `siterecheck` (contacts ajoutés,
     score), brouillon « sans site » effacé, fiche sortie de la file — elle reviendra seule dans la file de rédaction, en refonte. Doute ou réseau
-    en échec : pas d'envoi ce passage-ci, nouvel essai PRESEND_RETRY plus tard, PRESEND_MAX_TRIES fois au plus (ensuite : sortie de la file, site
-    « à trancher »).
+    en échec : pas d'envoi ce passage-ci, nouvel essai PRESEND_RETRY plus tard, PRESEND_MAX_TRIES fois au plus (ensuite : site « à trancher »,
+    brouillon effacé, fiche rendue à la rédaction : le message sera neutre).
   * message « site inaccessible » : l'URL du site est rouverte juste avant (`presend_unreachable`, PRESEND_PROBE_TIMEOUT secondes au plus). Le site
     répond normalement : rien n'est envoyé, le site est revérifié sans moteur (enregistré s'il est le sien, sinon la fiche redevient « sans site »,
     à chercher), brouillon effacé, fiche sortie de la file, aucune alerte. Toujours injoignable (DNS, connexion refusée, erreur HTTP) : le message
@@ -24,7 +28,9 @@ une heure plus tard). Juste avant, sans rien demander au propriétaire :
   * message sur un site EXISTANT (refonte, points à améliorer) : le site est relu juste avant (`presend_identity`, PRESEND_IDENTITY_TIMEOUT
     secondes au plus, sans moteur) avec la règle d'identité (`sitefinder.check_site`). Il ne passe plus (autre entreprise, site de groupe,
     maintenance, certificat invalide, aucune preuve) : rien n'est envoyé, la fiche redevient « site à trancher » (`siterecheck.demote_site` :
-    brouillon effacé, sortie de la file), aucune alerte. Injoignable ou trop lent : reporté (PRESEND_RETRY, PRESEND_MAX_TRIES).
+    brouillon effacé, sortie de la file), aucune alerte ; elle revient dans la file de rédaction, en neutre (ou en création une fois l'absence
+    tranchée). Injoignable ou trop lent : reporté (PRESEND_RETRY, PRESEND_MAX_TRIES) ; au-delà, le site est mis en doute (`presend_identity.doubt`,
+    plus « vérifié » pour `complete.angle`), brouillon effacé, fiche rendue à la rédaction en neutre.
 """
 from __future__ import annotations
 
@@ -152,20 +158,24 @@ def _sans_site(p: dict) -> bool:
 
 def waiting(p: dict, personal: bool, now: dt.datetime) -> str | None:
     """Pourquoi ce premier message en file ne part pas ce passage-ci (None = il peut partir) : fiche incomplète (elle attend que l'app la
-    complète), ou vérification du site à reprendre plus tard. Le site de la fiche Google encore à vérifier n'empêche pas un message « sans site »
-    de passer : il est vérifié juste avant l'envoi (`presend_site`)."""
+    complète), ou vérification du site à reprendre plus tard. Le site « à trancher » n'est plus une attente (il oriente le message) ; le site de
+    la fiche Google encore à vérifier est vérifié juste avant un message « sans site » (`presend_site`), si Google Places est actif."""
     pre = complete._json(p.get("provenance")).get("presend_site")
     if isinstance(pre, dict) and (pre.get("retry_at") or "") > _iso(now):
         return "vérification du site à reprendre"
     if companystate.send_retry_pending(p, now):
         return "état officiel de l'entreprise à revérifier"
     # adresse refusée par le réglage : `mailer.ineligible` retire la fiche de la file, avec sa raison (pas d'attente sans fin)
-    codes = [c for c in complete.missing(p, personal) if c not in ("contact", "email_invalide")]
-    if codes == ["site"] and complete.site_state(p) == "places" and _sans_site(p):
+    # Brouillon de type inconnu (écrit à la main, sans angle) : on ne sait pas s'il parle d'un site, il attend donc un site tranché comme avant.
+    known = complete.draft_angle(p.get("draft_kind")) is not None
+    codes = [c for c in complete.missing(p, personal) if c not in ("contact", "email_invalide") and not (c == "site" and known)]
+    if codes:
+        return "fiche incomplète : " + ", ".join(complete.LABELS[c] for c in codes)
+    if _sans_site(p) and complete.site_state(p) == "places":
         from . import places
-        if places.enabled():
-            return None
-    return "fiche incomplète : " + ", ".join(complete.LABELS[c] for c in codes) if codes else None
+        if not places.enabled():
+            return "fiche incomplète : " + complete.LABELS["site"]
+    return None
 
 
 def _stop(conn, p: dict, reason: str, state: str = "stopped") -> None:
@@ -224,11 +234,27 @@ def _defer(conn, p: dict, now: dt.datetime, why: str) -> None:
     if tries >= PRESEND_MAX_TRIES:
         flag = {**flag, "result": "doubt", "doubt": True, "retry_at": None}
         db.execute(conn, "UPDATE local_prospects SET auto_state=NULL, auto_queued_at=NULL WHERE id=%s AND auto_state='queued'", (p["id"],))
+        angle = complete.draft_angle(p.get("draft_kind"))
+        if angle == "refonte" and (p.get("website_url") or "").strip():
+            # site existant jamais relu à temps : plus « vérifié » (complete.site_verified), le prochain message sera neutre
+            store.set_provenance(conn, p["id"], "presend_identity", {"at": _iso(now), "result": "doubt", "doubt": True,
+                                                                     "url": p["website_url"].strip()[:200], "why": why[:160]})
+        if angle in ("refonte", "creation"):
+            _redraft(conn, p, "site pas vérifiable avant l'envoi")      # le brouillon parle d'un site (ou de son absence) : réécrit en neutre
         log.info("[mail] prospect %s sorti de la file après %d essais : %s (site à trancher)", p["id"], tries, why)
     else:
         log.info("[mail] prospect %s : envoi repoussé (%s), essai %d/%d", p["id"], why, tries, PRESEND_MAX_TRIES)
     store.set_provenance(conn, p["id"], "presend_site", flag)
     conn.commit()
+
+
+def _redraft(conn, p: dict, why: str) -> None:
+    """Brouillon dont l'angle ne correspond plus à l'état du site : effacé, fiche sortie de la file (jamais une fiche contactée ou en séquence).
+    Elle revient dans la file de rédaction (/rediger, fiches sans brouillon), où le brouillon de référence prend l'angle du moment."""
+    from .siterecheck import _drop_no_site_draft
+    _drop_no_site_draft(conn, p["id"])
+    log.info("[mail] prospect %s : brouillon %s effacé (%s), à rédiger de nouveau en %s", p["id"], p.get("draft_kind") or "?", why,
+             complete.angle(p))
 
 
 def _resolve_bounded(company: dict, fetch, thresholds, known: list[str], dns, urls: list[str], timeout: float):
@@ -448,12 +474,13 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
         if state == "retry":
             log.info("[mail] prospect %s : envoi repoussé (%s)", p["id"], why)
             return "deferred"
-        # Message « je n'ai pas trouvé de site » alors que le site est connu depuis (saisi à la main…) : brouillon effacé, sortie de la file.
-        if _sans_site(p) and p.get("website_status") in ("CONFIRMED", "PROBABLE"):
-            from .siterecheck import _drop_no_site_draft
-            _drop_no_site_draft(conn, p["id"])
+        # Brouillon qui ne correspond plus à l'état du site (« sans site » alors que le site est connu depuis ou que l'absence n'est plus
+        # tranchée, refonte alors que le site n'est plus vérifié…) : jamais envoyé ; effacé, sortie de la file, rendu à la rédaction.
+        # Un brouillon neutre ne parle d'aucun site : il part quel que soit le site.
+        d_angle = complete.draft_angle(p.get("draft_kind"))
+        if d_angle in ("refonte", "creation") and complete.angle(p) != d_angle:
+            _redraft(conn, p, f"brouillon {d_angle}, site désormais « {complete.angle(p)} »")
             conn.commit()
-            log.info("[mail] prospect %s : site connu, brouillon « sans site » effacé, à rédiger de nouveau (refonte)", p["id"])
             return "skipped"
         ok = mail_domain_ok(conn, email, now, query=mx_query)
         if ok is False:
@@ -471,6 +498,10 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
                 _defer(conn, p, now, detail)
                 return "deferred"
             p = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (p["id"],)) or p   # verdict Google éventuel posé
+            if complete.angle(p) != "creation":
+                _redraft(conn, p, "absence de site plus tranchée après la dernière vérification")
+                conn.commit()
+                return "skipped"
         elif _site_down_draft(p):
             verdict, detail = presend_unreachable(conn, p, now, fetch=site_fetch)
             if verdict == "up":
@@ -479,7 +510,7 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
             if verdict == "retry":
                 _defer(conn, p, now, detail)
                 return "deferred"
-        elif p.get("website_status") in ("CONFIRMED", "PROBABLE") and p.get("website_url"):
+        elif d_angle != "neutre" and p.get("website_status") in ("CONFIRMED", "PROBABLE") and p.get("website_url"):
             verdict, detail = presend_identity(conn, p, now, fetch=site_fetch)
             if verdict == "demoted":
                 log.info("[mail] prospect %s : le site ne passe plus la vérification d'identité (%s), brouillon effacé, rien d'envoyé", p["id"], detail)
@@ -487,7 +518,8 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
             if verdict == "retry":
                 _defer(conn, p, now, detail)
                 return "deferred"
-        if (why := complete.reason(p, personal)) is not None:
+        if (why := complete.reason(p, personal)) is not None or (d_angle is None and "site" in complete.missing(p, personal)
+                                                                 and (why := "brouillon écrit à la main : site à trancher")):
             log.info("[mail] prospect %s en attente : %s", p["id"], why)
             return "waiting"
         subject, text, to, reply_to = p["draft_subject"].strip(), p["draft_message"], email, None

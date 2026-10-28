@@ -1,6 +1,15 @@
 """« Fiche complète » : LE critère unique de qualité d'une fiche (miroir exact de web/lib/complete.ts, mêmes cas de test :
-worker/tests/fixtures/fiche_complete_cases.json). Qualité plutôt que quantité : seule une fiche complète AVEC e-mail part par l'envoi automatique
-(vérifié juste avant l'envoi, `outbox`) ; une fiche complète « téléphone » se contacte à la main ; les autres attendent que l'app les complète.
+worker/tests/fixtures/fiche_complete_cases.json). Une fiche complète « téléphone » se contacte à la main ; les autres attendent que l'app les complète.
+
+L'E-MAIL D'ABORD (règle du propriétaire) : le site ne bloque plus l'envoi automatique, il ORIENTE le message (`angle`). Une fiche dont seul le
+site reste « à trancher » part quand même par e-mail (`reason` ignore le code « site ») ; « site à trancher » reste affiché et traité par les
+passages automatiques (`emailsearch`), et compte toujours dans la qualité de la liste. Angle du message (`angle`, miroir de ficheAngle) :
+  * « refonte »  : site vérifié (CONFIRMED / PROBABLE hors site importé à vérifier, ou confirmé par toi) et pas mis en doute juste avant l'envoi ;
+  * « creation » : NOT_FOUND tranché (recherche complète, cf. site_reason ; site de la fiche Google vérifié juste avant l'envoi) ;
+  * « neutre »   : tout le reste (UNCERTAIN, UNREACHABLE, site candidat non prouvé, NOT_FOUND pas encore tranché) : le message ne parle ni d'un
+    site existant ni d'une absence de site.
+Un brouillon dont l'angle (`draft_angle`, d'après draft_kind) ne correspond plus à l'état du site n'est jamais envoyé : `outbox` l'efface et la
+fiche revient dans la file de rédaction (/rediger), qui le réécrit avec le bon angle.
 
 Une fiche est complète quand, à la fois :
   1. entreprise active et indépendante : ni « ne plus contacter », ni écartée (excluded_reason : posée aussi par companystate.py quand SIRENE /
@@ -174,8 +183,48 @@ def channel(p: dict, personal: bool) -> str | None:
 
 
 def reason(p: dict, personal: bool) -> str | None:
-    """Pourquoi l'envoi automatique est refusé par ce critère (None = fiche complète avec e-mail)."""
-    codes = missing(p, personal)
+    """Pourquoi l'envoi automatique est refusé par ce critère (None = e-mail utilisable). Le site n'en fait plus partie : il oriente le message
+    (`angle`), il ne bloque pas."""
+    codes = [c for c in missing(p, personal) if c != "site"]
     if codes:
         return "fiche incomplète : " + ", ".join(LABELS[c] for c in codes)
     return None if email_ok(p, personal) else "pas d'e-mail fiable : à contacter par téléphone"
+
+
+ANGLES = ("refonte", "creation", "neutre")
+
+
+def site_verified(p: dict) -> bool:
+    """Site de l'entreprise vérifié : CONFIRMED / PROBABLE (hors site importé à vérifier) ou confirmé par toi, et pas mis en doute par la
+    relecture d'avant l'envoi (`presend_identity.doubt` sur cette même adresse : site qui ne répondait plus)."""
+    url = (p.get("website_url") or "").strip()
+    if not url:
+        return False
+    if p.get("site_review") == "CONFIRMED":
+        return True
+    if p.get("website_status") not in ("CONFIRMED", "PROBABLE") or p.get("site_review") == "PENDING":
+        return False
+    pre = _json(p.get("provenance")).get("presend_identity")
+    return not (isinstance(pre, dict) and pre.get("doubt") and pre.get("url") == url[:200])
+
+
+def angle(p: dict) -> str:
+    """Angle du message d'après l'état du site : 'refonte', 'creation' ou 'neutre' (voir l'en-tête)."""
+    if site_verified(p):
+        return "refonte"
+    if p.get("website_status") == "NOT_FOUND" and site_reason(p) in (None, "places"):
+        return "creation"
+    return "neutre"
+
+
+def draft_angle(kind: str | None) -> str | None:
+    """Angle d'un brouillon d'après son type (draft_kind, lib/draft.ts : préfixes « ai_ » et événement compris). None : type inconnu (brouillon
+    écrit à la main sans passer par l'application). draft_kind est coupé à 24 caractères (« ai_takeover_site_amelior ») : préfixes seulement."""
+    k = kind or ""
+    if "neutre" in k:
+        return "neutre"
+    if "sans_site" in k:
+        return "creation"
+    if re.search(r"site_(?:amel|refo|inac)", k):
+        return "refonte"
+    return None

@@ -7,6 +7,8 @@ leur téléphone. On lit UNIQUEMENT ce que le moteur renvoie — aucune requête
     les 08 (numéros surtaxés, souvent des numéros de mise en relation d'annuaire) sont refusés ;
   * plusieurs numéros différents : le plus cité l'emporte et la confiance baisse ; à égalité, aucun n'est retenu ;
   * e-mail : seulement si son domaine reprend le nom de l'entreprise ou s'il s'agit d'une messagerie grand public ; jamais celui de l'annuaire.
+    Plusieurs adresses admissibles : la meilleure l'emporte (générique pro > nominative pro > autre domaine de l'entreprise > messagerie grand public),
+    à rang égal la plus citée, puis la première rencontrée.
 Confiance plafonnée à 0,55 : information de seconde main, toujours signalée comme telle (ne suffit jamais pour « Très bon »).
 """
 from __future__ import annotations
@@ -15,7 +17,7 @@ from collections import Counter
 from urllib.parse import urlparse
 
 from . import htmlinfo
-from .contacts import FREEMAIL, IGNORED_DOMAINS, IGNORED_LOCALS, classify_email
+from .contacts import FREEMAIL, GENERIC_PREFIXES, IGNORED_DOMAINS, IGNORED_LOCALS, classify_email
 from .textmatch import digits, distinctive_tokens, fold, name_tokens, token_fraction
 
 # Zone des numéros fixes par département (DOM : 0262/0269 → 02, 0590/0594/0596 → 05).
@@ -57,6 +59,7 @@ def extract(company: dict, hits: list) -> dict:
     phones: Counter = Counter()
     phone_src: dict[str, list[tuple[str, str]]] = {}
     emails: dict[str, tuple[str, str]] = {}
+    email_count: Counter = Counter()
     name_words = [w for w in (distinctive_tokens(company.get("trade_name")) + distinctive_tokens(company.get("company_name"))) if len(w) >= 4]
     for h in hits or []:
         text = f"{getattr(h, 'title', '')} {getattr(h, 'content', '')}"
@@ -75,6 +78,7 @@ def extract(company: dict, hits: list) -> dict:
                 continue                                                    # l'adresse de l'annuaire lui-même n'est pas celle de l'entreprise
             if dom in FREEMAIL or any(w in dom.replace("-", "") for w in name_words):
                 emails.setdefault(m, (host, getattr(h, "url", "")))
+                email_count[m] += 1
     if phones:
         ranked = phones.most_common()
         if len(ranked) == 1 or ranked[0][1] > ranked[1][1]:
@@ -87,8 +91,19 @@ def extract(company: dict, hits: list) -> dict:
             out["evidence"].append({"kind": "phone", "value": num, "via": "search_snippet", "source": f"extrait de recherche ({host})", "url": url,
                                     "confidence": conf, "sources": sorted(hosts), "conflicts": len(ranked) - 1})
     if emails:
-        mail, (host, url) = next(iter(emails.items()))
-        kind = "UNCERTAIN" if mail.split("@")[1] in FREEMAIL else (classify_email(mail, mail.split("@")[1]) or "UNCERTAIN")
+        def kind_of(m: str) -> str:
+            return "UNCERTAIN" if m.split("@")[1] in FREEMAIL else (classify_email(m, m.split("@")[1]) or "UNCERTAIN")
+
+        def rank(m: str) -> int:
+            base = m.split("@")[0].split("+")[0]
+            if m.split("@")[1] in FREEMAIL:
+                return 3
+            if kind_of(m) == "GENERIC_BUSINESS" or base in GENERIC_PREFIXES:
+                return 0
+            return 1 if kind_of(m) == "PERSONAL_BUSINESS" else 2
+        mail = min(emails, key=lambda m: (rank(m), -email_count[m]))      # min() garde la première rencontrée à égalité
+        host, url = emails[mail]
+        kind = kind_of(mail)
         out.update(email=mail, email_kind=kind, contact_source_url=out["contact_source_url"] or url)
         out["evidence"].append({"kind": "email", "value": mail, "category": kind, "via": "search_snippet", "source": f"extrait de recherche ({host})",
                                 "url": url, "confidence": 0.45})
@@ -99,10 +114,26 @@ def extract(company: dict, hits: list) -> dict:
 
 
 def email_query(company: dict) -> str | None:
-    """Requête dédiée à l'e-mail (une seule) : les extraits des pages Facebook, des annuaires ou des mentions légales affichent souvent l'adresse."""
+    """Première requête dédiée à l'e-mail : les extraits des pages Facebook, des annuaires ou des mentions légales affichent souvent l'adresse."""
     name = (company.get("trade_name") or company.get("company_name") or "").strip()
     city = (company.get("city") or "").strip()
     return f'"{name}" {city} email' if name and city else None
+
+
+def email_queries(company: dict, limit: int = 3) -> list[str]:
+    """Requêtes dédiées à l'e-mail, de la plus générale à la plus ciblée (au plus `limit`, 4 existent) : l'appelant s'arrête dès qu'une adresse
+    fiable est lue. Même attribution (nom + ville/code postal) pour tous les extraits."""
+    first = email_query(company)
+    if not first:
+        return []
+    name = (company.get("trade_name") or company.get("company_name") or "").strip()
+    city = (company.get("city") or "").strip()
+    cp = (company.get("postal_code") or "").strip()
+    qs = [first, f'"{name}" {city} contact']
+    if cp:
+        qs.append(f'"{name}" "@" {cp}')
+    qs.append(f'"{name}" {city} facebook pagesjaunes mail')           # annuaires et pages sociales : l'extrait y montre souvent l'adresse
+    return qs[:max(1, limit)]
 
 
 def contact_query(company: dict) -> str | None:

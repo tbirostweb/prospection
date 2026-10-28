@@ -23,7 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const sender = await getSetting<Sender>("local_sender", {});
   const offer = await getSetting<Offer>("local_offer", {});
   const d = buildDraft(p, sender, offer);
-  if (!d) return NextResponse.json({ error: "aucun fait objectif ne justifie un message pour ce prospect (site sans problème détecté, ou site non vérifié) : on n'invente jamais une faiblesse" }, { status: 422 });
+  if (!d) return NextResponse.json({ error: "aucun fait objectif ne justifie un message pour ce prospect (site vérifié récent ou sans problème détecté) : on n'invente jamais une faiblesse" }, { status: 422 });
 
   let subject = d.subject, body = d.body, kind = d.kind;
   if (b.source === "rediger") {

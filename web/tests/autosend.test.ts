@@ -45,8 +45,12 @@ test("même liste de messageries gratuites que le worker", () => {
 
 test("fiche incomplète ou adresse invalide : jamais en file d'envoi", () => {
   assert.match(autoIneligible({ ...P, activity_label: null }, true)!, /fiche incomplète : métier inconnu/);
-  assert.match(autoIneligible({ ...P, website_status: "UNCERTAIN" }, true)!, /site à trancher/);
-  assert.match(autoIneligible({ ...P, website_status: "NOT_FOUND", website_absence_confidence: 0.7 }, true)!, /site à trancher/);   // revérification pas faite
+  // l'e-mail d'abord : le site à trancher ne bloque plus (il oriente le message), les autres garde-fous restent
+  assert.equal(autoIneligible({ ...P, website_status: "UNCERTAIN" }, true), null);
+  assert.equal(autoIneligible({ ...P, website_status: "NOT_FOUND", website_absence_confidence: 0.7 }, true), null);   // revérification pas faite
+  assert.equal(autoIneligible({ ...P, website_status: "UNREACHABLE" }, true), null);
+  assert.match(autoIneligible({ ...P, website_status: "UNCERTAIN", excluded_reason: "fermée (SIRENE)" }, true)!, /fiche incomplète : entreprise/);
+  assert.match(autoIneligible({ ...P, website_status: "UNCERTAIN", bodacc: { kind: "collective" } }, true)!, /fiche incomplète : entreprise/);
   assert.equal(autoIneligible({ ...P, website_status: "NOT_FOUND", website_absence_confidence: 0.7,
     provenance: JSON.stringify({ site_recheck: { status: "NOT_FOUND" } }) }, true), null);
   assert.match(autoIneligible({ ...P, pipeline_stage: "AUDIT" }, true)!, /traitement pas terminé/);

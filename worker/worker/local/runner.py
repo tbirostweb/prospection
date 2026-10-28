@@ -331,11 +331,11 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch, res=
                 stats["chains"] = stats.get("chains", 0) + 1
     elif status == "UNREACHABLE":
         issues = [{"code": "unreachable", "label": "Site inaccessible", "severity": "high", "category": "availability", "evidence": ""}]
-        _fallback_contacts(conn, pid, row, res, search)
+        _fallback_contacts(conn, pid, row, res, search, fetch)
     elif status in ("NOT_FOUND", "UNCERTAIN"):
         # Aucun site confirmé : sans contact, un prospect reste plafonné sous le seuil « À contacter ». Sources encore possibles : OpenStreetMap
         # (déjà vérifié par proximité + nom) et les extraits de recherche attribuables (nom + ville) — jamais un contact inventé.
-        _fallback_contacts(conn, pid, row, res, search)
+        _fallback_contacts(conn, pid, row, res, search, fetch)
     store.set_stage(conn, pid, "SCORING")
     fresh = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (pid,))
     _rescore(conn, fresh, ctx, issues)
@@ -349,29 +349,44 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-EMAIL_RECHECK_DAYS = 30
+EMAIL_RECHECK_DAYS = int(os.getenv("LOCAL_EMAIL_RECHECK_DAYS") or "30")               # adresse trouvée (ou fiche sans objet) : pas refaite avant
+EMAIL_RECHECK_MISS_DAYS = int(os.getenv("LOCAL_EMAIL_RECHECK_MISS_DAYS") or "10")     # rien trouvé : nouvel essai plus tôt (une page publiée plus tard)
+EMAIL_QUERIES_PER_PROSPECT = max(1, int(os.getenv("LOCAL_EMAIL_QUERIES_PER_PROSPECT") or "3"))   # requêtes par fiche et par essai (4 au plus utiles)
 
 
 def email_recently_searched(row: dict | None) -> bool:
-    """Recherche dédiée à l'e-mail déjà faite il y a moins de EMAIL_RECHECK_DAYS jours (provenance `email_search`)."""
+    """Recherche dédiée à l'e-mail déjà faite récemment (provenance `email_search`) : moins de EMAIL_RECHECK_MISS_DAYS jours si rien n'a été trouvé,
+    moins de EMAIL_RECHECK_DAYS jours si une adresse l'a été."""
     prov = (row or {}).get("provenance")
     prov = json.loads(prov) if isinstance(prov, (str, bytes)) else (prov or {})
-    at = (prov.get("email_search") or {}).get("checked_at")
+    rec = prov.get("email_search") or {}
+    days = EMAIL_RECHECK_DAYS if rec.get("found") else EMAIL_RECHECK_MISS_DAYS
     try:
-        return bool(at) and time.time() - calendar.timegm(time.strptime(at, "%Y-%m-%dT%H:%M:%SZ")) < EMAIL_RECHECK_DAYS * 86400
+        return bool(rec.get("checked_at")) and time.time() - calendar.timegm(time.strptime(rec["checked_at"], "%Y-%m-%dT%H:%M:%SZ")) < days * 86400
     except (TypeError, ValueError):
         return False
 
 
-def email_search(conn, pid: int, company: dict, search, row: dict | None = None) -> dict | None:
-    """UNE recherche dédiée à l'e-mail (« nom ville email »), lue dans les extraits seulement (mêmes garde-fous d'attribution que snippets.extract).
-    Notée dans la provenance (`email_search`) : pas refaite avant EMAIL_RECHECK_DAYS. None si rien n'a été cherché. SearchUnavailable remonte,
-    comme pour la requête de téléphone : le prospect est repris plus tard, rien n'est conclu."""
-    q = snippets.email_query(company)
-    if not q or search is None or email_recently_searched(row):
+def email_search(conn, pid: int, company: dict, search, row: dict | None = None, deadline: float | None = None) -> dict | None:
+    """Recherche dédiée à l'e-mail : jusqu'à EMAIL_QUERIES_PER_PROSPECT requêtes (« nom ville email », « … contact », « … "@" code postal », annuaires),
+    arrêt dès qu'une adresse attribuable est lue dans les extraits (mêmes garde-fous que snippets.extract). Notée dans la provenance (`email_search` :
+    requêtes faites, source retenue) : pas refaite avant EMAIL_RECHECK_MISS_DAYS (rien trouvé) ou EMAIL_RECHECK_DAYS jours. None si rien n'a été
+    cherché. SearchUnavailable remonte, comme pour la requête de téléphone : le prospect est repris plus tard, rien n'est conclu."""
+    queries = snippets.email_queries(company, EMAIL_QUERIES_PER_PROSPECT)
+    if not queries or search is None or email_recently_searched(row):
         return None
-    found = snippets.extract(company, search(q) or [])
-    store.set_provenance(conn, pid, "email_search", {"checked_at": _now_iso(), "found": bool(found["email"])})
+    done: list[str] = []
+    found = snippets.extract(company, [])
+    for q in queries:
+        if done and deadline is not None and time.monotonic() > deadline:
+            break                                       # budget de temps : la fiche est reprise après le délai court
+        found = snippets.extract(company, search(q) or [])
+        done.append(q)
+        if found["email"]:
+            break
+    ev = next((e for e in found["evidence"] if e["kind"] == "email"), None)
+    store.set_provenance(conn, pid, "email_search", {"checked_at": _now_iso(), "found": bool(found["email"]), "queries": done,
+                                                     "source": (ev or {}).get("url") if ev else None})
     return found
 
 
@@ -392,8 +407,51 @@ def _merge(c: dict, extra: dict) -> dict:
     return c
 
 
-def _fallback_contacts(conn, pid: int, row: dict, res, search) -> None:
-    """Prospect sans site confirmé : OSM, puis extraits de recherche (ceux de la résolution, ou UNE requête dédiée pour un prospect déjà traité)."""
+# Verdicts d'un site candidat qui interdisent d'y lire un e-mail : autre entreprise, groupe, parqué, maintenance… (`no_proof` seul est toléré)
+UNVERIFIED_BAD_VERDICTS = ("other_company", "group_site", "parked", "maintenance", "ssl", "social", "directory")
+
+
+def _unverified_candidate(conn, row: dict, res) -> str | None:
+    """URL du site candidat d'une fiche « à trancher » (UNCERTAIN, ou refusé faute de preuve : `no_proof`) dont on peut lire l'e-mail, sinon None.
+    Jamais : autre entreprise, groupe, parqué / maintenance, annuaire, réseau social, domaine signalé « mauvais site », site injoignable."""
+    cands = list(res.candidates) if res is not None and res.candidates else None
+    if cands is None:
+        ev = row.get("website_evidence")
+        ev = json.loads(ev) if isinstance(ev, (str, bytes)) else (ev or {})
+        cands = ev.get("candidates") or []
+    if not cands:
+        return None
+    c = cands[0]
+    verdict = c.get("verdict")
+    if not c.get("url") or c.get("parked") or c.get("reachable") is False or (verdict and verdict not in ("no_proof", "ok")):
+        return None
+    if verdict is None and row.get("website_status") != "UNCERTAIN" and (res is None or res.status != "UNCERTAIN"):
+        return None                                     # NOT_FOUND sans verdict `no_proof` : aucun site à lire
+    if c.get("domain") in store.bad_domains(conn, row.get("siret"), row.get("fingerprint")):
+        return None
+    return c["url"]
+
+
+def _site_unverified_contacts(conn, row: dict, res, fetch) -> tuple[dict | None, str | None]:
+    """E-mail d'un site à trancher (voir `contacts.extract_unverified`) : (coordonnées, url du site), ou (None, None)."""
+    url = _unverified_candidate(conn, row, res) if fetch is not None else None
+    if not url:
+        return None, None
+    company = {**_company(conn, row), "department": row.get("department")}
+    pages, _home = sitefinder._load_pages(url, fetch, company)
+    if not pages:
+        return None, None
+    domain = pages[0].domain
+    if store.is_do_not_contact(conn, domain=domain):
+        return None, None
+    pages = contacts.discover(pages, fetch, domain)
+    c = contacts.extract_unverified(pages, domain, company)
+    return (c if c["email"] else None), url
+
+
+def _fallback_contacts(conn, pid: int, row: dict, res, search, fetch=None) -> None:
+    """Prospect sans site confirmé : OSM, puis l'e-mail d'un site « à trancher » (si lié à l'entreprise), puis extraits de recherche (ceux de la
+    résolution, ou UNE requête dédiée pour un prospect déjà traité)."""
     prov = row.get("provenance")
     prov = json.loads(prov) if isinstance(prov, (str, bytes)) else (prov or {})
     if "contacts" in prov:
@@ -401,6 +459,11 @@ def _fallback_contacts(conn, pid: int, row: dict, res, search) -> None:
     c = _osm_contacts(row, {"phone": None, "phone_confidence": None, "email": None, "email_kind": None, "contact_form": False, "contact_page": None,
                             "contact_source_url": None, "contact_confidence": None, "evidence": []})
     company = {**_company(conn, row), "department": row.get("department")}
+    unverified_url = None
+    if not c["email"]:
+        site_c, unverified_url = _site_unverified_contacts(conn, row, res, fetch)
+        if site_c:
+            c = _merge(c, site_c)                          # website_status inchangé : le site reste « à trancher »
     if not (c["phone"] and c["email"]):
         hits = res.hits if res is not None else None
         if hits is None and search is not None and (q := snippets.contact_query(company)):
@@ -410,7 +473,8 @@ def _fallback_contacts(conn, pid: int, row: dict, res, search) -> None:
         c = _merge(c, found)
     store.save_contacts(conn, pid, c)
     store.set_provenance(conn, pid, "contacts", {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "found": bool(c["phone"] or c["email"]),
-                                                 "via": sorted({e["via"] for e in c["evidence"]})})
+                                                 "via": sorted({e["via"] for e in c["evidence"]}),
+                                                 **({"unverified_site": unverified_url} if unverified_url and c["email"] else {})})
 
 
 def _analyse_found_site(conn, feedback_id: int, row: dict, res) -> None:

@@ -18,7 +18,8 @@ export const EMAIL_KINDS: Record<string, string> = { first: "Premier message", f
 
 /** Raison pour laquelle ce prospect ne peut pas être mis en file (null = éligible). Le worker revérifie tout juste avant l'envoi.
  *  `personal` (réglage personal_emails) : adresses Gmail, Orange… et adresses incertaines acceptées.
- *  Seules les FICHES COMPLÈTES avec e-mail (lib/complete.ts) partent : métier connu, site tranché, entreprise active et indépendante. */
+ *  E-mail d'abord (lib/complete.ts ficheReason) : métier connu, entreprise active et indépendante, adresse acceptée, QUEL QUE SOIT LE SITE ; le site
+ *  oriente seulement le message (ficheAngle). Un brouillon dont l'angle ne correspond plus au site est effacé avant l'envoi par le worker. */
 export function autoIneligible(p: FicheFields & { contacted_at?: any; draft_message?: string | null }, personal: boolean): string | null {
   const email = String(p.email ?? "").trim().toLowerCase();
   if (p.do_not_contact) return "entreprise en liste « ne plus contacter »";

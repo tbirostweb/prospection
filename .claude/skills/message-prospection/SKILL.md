@@ -46,6 +46,8 @@ Le bénéfice choisi doit être propre au métier : « présenter votre activit�
    - un événement vérifié (reprise, déménagement publiés au BODACC) : partir de l'événement ;
    - rien d'autre que « pas de site trouvé » : partir du métier ou de la proximité, et glisser l'absence de site plus loin, prudemment ;
    - absence de site incertaine : ne pas en parler comme d'un fait.
+   **L'angle est imposé par l'application** (`angle` de chaque prospect dans la file /rediger) : `refonte` (site vérifié : partir du site), `creation` (aucun site trouvé après recherche) ou `neutre`.
+   **Angle neutre** (site incertain : candidat non prouvé, site injoignable, recherche pas terminée) : présenter l'offre sans supposer que l'entreprise a un site ni qu'elle n'en a pas. Ne jamais écrire « votre site », « votre site actuel », « j'ai regardé votre site », « je n'ai pas trouvé de site » ni « vous n'avez pas de site » ; partir du métier, de la proximité ou d'un événement vérifié, parler de « présence sur internet » ou d'être trouvé sur Google, puis renvoyer vers la page des offres (`lien_offres`). Aucun prix, comme toujours. L'application refuse au dépôt un message neutre qui parle d'un site.
    Dès la première ou la deuxième phrase, on doit comprendre que c'est un développeur web qui écrit (pas « Je cherchais des photographes dans le coin », qui se lit comme un client).
    Règles :
    - « Je n'ai pas trouvé de site » n'est pas « vous n'avez pas de site ». Formuler l'absence prudemment (« je n'ai pas trouvé de site », « sauf erreur de ma part ») ou choisir un autre fait.

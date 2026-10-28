@@ -46,3 +46,44 @@ def test_jamais_l_adresse_de_l_annuaire_ni_une_adresse_sans_rapport():
 def test_requete_dediee_aux_coordonnees():
     assert snippets.contact_query(DUPONT) == '"BOULANGERIE DUPONT" TROYES téléphone'
     assert snippets.contact_query({"company_name": "X"}) is None
+
+
+def test_email_meilleur_choisi_parmi_plusieurs():
+    hits = [pj("Boulangerie Dupont Troyes 10000 : dupont.boulangerie@gmail.com"),
+            pj("Boulangerie Dupont Troyes 10000 : jean@boulangerie-dupont.fr", url="https://www.facebook.com/x"),
+            pj("Boulangerie Dupont Troyes 10000 : contact@boulangerie-dupont.fr", url="https://www.118712.fr/x")]
+    c = snippets.extract(DUPONT, hits)
+    assert c["email"] == "contact@boulangerie-dupont.fr" and c["email_kind"] == "GENERIC_BUSINESS"
+    assert snippets.extract(DUPONT, hits[:2])["email"] == "jean@boulangerie-dupont.fr"          # nominatif pro avant freemail
+    assert snippets.extract(DUPONT, hits[:1])["email"] == "dupont.boulangerie@gmail.com"
+    assert snippets.extract(DUPONT, [pj("Boulangerie Dupont Troyes 10000 : contact@pagesjaunes.fr")])["email"] is None   # adresse de l'annuaire
+    assert snippets.extract(DUPONT, [pj("Boulangerie Dupont : x@gmail.com", title="Boulangerie Dupont")])["email"] is None                           # pas de ville : non attribué
+
+
+def test_requetes_email_plafonnees():
+    qs = snippets.email_queries(DUPONT, 4)
+    assert len(qs) == 4 and qs[0] == snippets.email_query(DUPONT) and '"@" 10000' in qs[2]
+    assert len(snippets.email_queries(DUPONT, 2)) == 2 and snippets.email_queries({"company_name": "X"}) == []
+
+
+def test_email_search_s_arrete_au_premier_email_et_delai_court_si_rien(monkeypatch):
+    import json
+    from worker.local import runner, store
+    saved = {}
+    monkeypatch.setattr(store, "set_provenance", lambda conn, pid, key, val: saved.update(val))
+    monkeypatch.setattr(runner, "EMAIL_QUERIES_PER_PROSPECT", 3)
+    calls = []
+
+    def search(q):
+        calls.append(q)
+        return [pj("Boulangerie Dupont Troyes 10000 contact@boulangerie-dupont.fr")] if len(calls) == 2 else []
+    found = runner.email_search(None, 1, DUPONT, search)
+    assert found["email"] == "contact@boulangerie-dupont.fr" and len(calls) == 2
+    assert saved["found"] is True and saved["queries"] == calls and saved["source"]
+    calls.clear()
+    assert runner.email_search(None, 1, DUPONT, lambda q: calls.append(q) or []) ["email"] is None and len(calls) == 3 and saved["found"] is False
+    import time
+    old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 15 * 86400))
+    miss = {"provenance": json.dumps({"email_search": {"checked_at": old, "found": False}})}
+    hit = {"provenance": json.dumps({"email_search": {"checked_at": old, "found": True}})}
+    assert runner.email_recently_searched(miss) is False and runner.email_recently_searched(hit) is True

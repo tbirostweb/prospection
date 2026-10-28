@@ -2,7 +2,8 @@
 // Construit UNIQUEMENT avec des faits réellement détectés sur l'entreprise (site non trouvé, problèmes objectifs du site, création récente…).
 // Ton : court, courtois, sans fausse affirmation (« sauf erreur de ma part »), toujours avec une ligne permettant de refuser tout nouveau contact.
 
-import { siteSearched, verifiedSocials } from "./local";
+import { verifiedSocials } from "./local";
+import { Angle, ficheAngle } from "./complete";
 
 export interface Sender { name?: string; company?: string; role?: string; phone?: string; email?: string; website?: string; pitch?: string; privacy_url?: string }
 
@@ -31,6 +32,8 @@ export interface Offer { enabled?: boolean; area?: string; launch_price?: number
   offers_url?: string | null }
 /** Messages concernant un site existant (refonte) : l'offre de création (prix de lancement, prix barré) n'y a pas sa place. */
 export const isRedesignKind = (kind: string) => /site_ameliorable|site_refonte|site_inaccessible/.test(kind);
+/** Angle d'un type de brouillon (buildDraft) : refonte, creation (« sans_site ») ou neutre (site incertain : on ne parle d'aucun site). */
+export const kindAngle = (kind: string): Angle => (isRedesignKind(kind) ? "refonte" : kind.includes("sans_site") ? "creation" : "neutre");
 const clampNum = (v: unknown, lo: number, hi: number): number | null => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null; };
 /** Valide le réglage « Mon offre » (null = refus). */
 export function sanitizeOffer(value: any): Offer | null {
@@ -130,18 +133,23 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const event = sigs.find((x) => EVENT_OPENINGS[x.code]);
   const ref = event ? "votre entreprise" : `${name}${where}`;                    // on vient de nommer l'entreprise dans l'ouverture : pas de répétition
 
-  if (status === "NOT_FOUND" && !siteSearched(p)) {
-    return null;                                                                   // recherche trop maigre : « pas de site » n'est pas encore un fait
-  } else if (status === "NOT_FOUND") {
+  // L'e-mail d'abord : l'état du site choisit l'angle (lib/complete.ts ficheAngle), il n'empêche plus d'écrire. Site incertain (UNCERTAIN,
+  // UNREACHABLE, candidat non prouvé, absence pas encore tranchée) : message neutre, qui ne parle ni d'un site existant ni d'une absence de site.
+  const angle = ficheAngle(p);
+  if (angle === "neutre") {
+    kind = "neutre";
+    opening = ` Je vous écris au sujet de la présence sur internet ${event ? "de votre entreprise" : `${deName(name)}${where}`}.`;
+    facts.push("aucun constat vérifié sur un site : ne parler ni d'un site existant ni d'une absence de site");
+  } else if (angle === "creation") {
     kind = "sans_site";
     const onSocial = socials.length ? ` Je vois que vous êtes présent${socials.some((u) => /facebook/.test(u)) ? " sur Facebook" : " sur les réseaux sociaux"}, mais` : " En faisant quelques recherches,";
     opening = `${onSocial} je n'ai pas trouvé de site internet pour ${ref}, sauf erreur de ma part.`;
     facts.push("aucun site internet officiel trouvé lors de mes recherches");
-  } else if (status === "UNREACHABLE") {
+  } else if (status === "UNREACHABLE") {                                           // site confirmé par toi mais en panne
     kind = "site_inaccessible";
     opening = ` En voulant consulter le site de ${name}, je n'ai pas pu y accéder lors de ma vérification${p.website_url ? ` (${p.website_url})` : ""}.`;
     facts.push("site inaccessible lors de ma vérification");
-  } else if (status === "CONFIRMED" || status === "PROBABLE") {
+  } else {                                                                         // refonte : site vérifié
     const codes = new Set(issues.map((i) => i.code));
     const found = PRIORITY.filter((c) => codes.has(c)).map((c) => ISSUE_PHRASES[c]);
     const year = Number(p.site_year);
@@ -159,8 +167,6 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
       facts.push(`site regardé (${addr}), aucun défaut précis relevé : ne pas en citer`);
       opening = ` J'ai regardé le site de ${name} (${addr}), seulement ce qui est visible publiquement.`;
     }
-  } else {
-    return null;
   }
 
   const first = event ? `${EVENT_OPENINGS[event.code](name, where)}${opening}`
@@ -169,6 +175,8 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   const pitch = sender.pitch?.trim()
     || (kind === "sans_site"
       ? `Je crée des sites simples et efficaces pour les indépendants et les petites entreprises de la région : être trouvé sur Google, présenter vos services et être joignable facilement depuis un téléphone.`   // jamais de spécialisation inventée par métier
+      : kind === "neutre"
+        ? "Je crée des sites internet simples et efficaces pour les indépendants et les petites entreprises de la région, et je modernise ceux qui ont vieilli : être trouvé sur Google, présenter vos services et être joignable facilement depuis un téléphone."
       : kind === "site_refonte"
         ? "Je n'ai rien relevé à lui reprocher. Je propose simplement un regard neuf : un site plus moderne, que vous pouvez mettre à jour plus facilement, qui facilite les demandes de devis et met mieux en valeur vos réalisations."
       : kind === "site_inaccessible"
@@ -176,13 +184,15 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
         : "Je peux vous proposer une refonte : un nouveau site, plus actuel, agréable à consulter sur téléphone et pensé pour qu'on vous trouve sur Google, dont j'écris les textes avec vous.");   // une refonte, jamais « corriger » le site actuel
   const list = kind === "site_ameliorable" ? "\n" + facts.map((f) => `- ${f}`).join("\n") : "";
   const area = offer.enabled && offer.area?.trim() ? `, ${offer.area.trim()}` : "";
-  const question = kind === "site_refonte" ? "Est-ce un sujet pour vous en ce moment, ou votre site actuel vous convient-il tel qu'il est ?\n\n" : "";
+  const question = kind === "site_refonte" ? "Est-ce un sujet pour vous en ce moment, ou votre site actuel vous convient-il tel qu'il est ?\n\n"
+    : kind === "neutre" ? "Est-ce un sujet pour vous en ce moment ?\n\n" : "";
   const ask = question + (offer.enabled
     ? `${offerParagraphs(offer, { photos: photosOffered(p, offer), redesign: isRedesignKind(kind), link: offersLink(offer, sender) }).join("\n\n")}\n\n${callToAction("")}`
     : "Seriez-vous d'accord pour un échange de 10 minutes, sans engagement ? Je peux aussi vous envoyer quelques exemples de réalisations.");
   const core = `${first}${list}\n\nJe suis ${who || "développeur web indépendant"}${area}. ${pitch}\n\n${ask}`;
   const body = wrapDraft(p, sender, core);
   const subject = kind === "sans_site" ? `${name} : votre présence en ligne${city ? ` à ${city}` : ""}`
+    : kind === "neutre" ? `${name} : votre présence sur internet${city ? ` à ${city}` : ""}`
     : kind === "site_inaccessible" ? `${name} : votre site semble inaccessible`
     : kind === "site_refonte" ? `${name} : un regard neuf sur votre site ?`
     : `${name} : quelques remarques sur votre site`;
@@ -207,6 +217,14 @@ export function checkWrittenCore(core: string, subject: string, ref: Draft): str
   if (links.length) problems.push(`liens absents des faits : ${links.join(", ")}`);
   if (/\[[^\]]*\]/.test(text)) problems.push("mention entre crochets à remplacer");
   if (/garanti/i.test(text)) problems.push("aucune garantie de résultat ne peut être promise");
+  // Jamais un message qui parle d'un site non vérifié : un message neutre ne parle ni d'un site existant ni d'une absence de site ;
+  // un message de création ne parle pas d'un site existant.
+  const angle = kindAngle(ref.kind);
+  const existing = /site (?:internet )?(?:actuel|existant)|(?:regardé|consulté|visité|vu) (?:le|votre) site|site (?:de [^.\n]{1,60} )?(?:semble |est )?(?:inaccessible|en panne)/i;
+  const absent = /pas (?:encore )?(?:de|trouvé de|trouvé votre) site|aucun site|sans site|site introuvable|(?:n'avez|n'a) pas (?:encore )?de site/i;
+  if (angle === "neutre" && (existing.test(text) || absent.test(text) || /\bvotre site\b/i.test(text)))
+    problems.push("site incertain : ne parler ni d'un site existant ni d'une absence de site (message neutre, voir reference)");
+  if (angle === "creation" && existing.test(text)) problems.push("aucun site trouvé : ne pas parler d'un site existant");
   if (/cherch\w* (un |une )?(développeur|prestataire|agence)/i.test(text)) problems.push("ne jamais laisser entendre que l'entreprise cherche un prestataire");
   if (/ne souhaitez (pas être recontacté|plus de message)|sources publiques|proviennent de/i.test(core)) problems.push("la phrase d'opposition et la notice sont ajoutées par l'application : ne pas les écrire");
   return problems;

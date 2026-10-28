@@ -8,7 +8,9 @@
  *     UNREACHABLE encore injoignable après UNREACHABLE_MAX_TRIES nouvelles tentatives (site en panne) ; sinon une raison (siteReason, SITE_REASONS) ;
  *  5. contact fiable : e-mail GENERIC_BUSINESS / PERSONAL_BUSINESS (UNCERTAIN et messageries gratuites seulement avec le réglage personal_emails),
  *     jamais une adresse revenue ou sans serveur de messagerie (auto_state 'bounced') ; à défaut un téléphone (fiche complète « téléphone ») ;
- *     sinon une raison (contactReason, CONTACT_REASONS). */
+ *     sinon une raison (contactReason, CONTACT_REASONS).
+ *  L'E-MAIL D'ABORD : le site ne bloque plus l'envoi automatique (ficheReason ignore « site à trancher »), il oriente le message (ficheAngle :
+ *  refonte, création ou neutre ; miroir de angle, complete.py). « Site à trancher » reste affiché, compté et traité par les passages automatiques. */
 import { FREEMAIL } from "./autosend";
 import { ABSENCE_MIN } from "./local";
 
@@ -128,11 +130,48 @@ export function ficheChannel(p: FicheFields, personal: boolean): "email" | "phon
   return emailOk(p, personal) ? "email" : "phone";
 }
 
-/** Pourquoi l'envoi automatique est refusé par ce critère (null = fiche complète avec e-mail). */
+/** Pourquoi l'envoi automatique est refusé par ce critère (null = e-mail utilisable). Le site n'en fait plus partie : il oriente le message (ficheAngle). */
 export function ficheReason(p: FicheFields, personal: boolean): string | null {
-  const codes = ficheMissing(p, personal);
+  const codes = ficheMissing(p, personal).filter((c) => c !== "site");
   if (codes.length) return `fiche incomplète : ${codes.map((c) => MISSING_LABELS[c]).join(", ")}`;
   return emailOk(p, personal) ? null : "pas d'e-mail fiable : à contacter par téléphone";
+}
+
+export type Angle = "refonte" | "creation" | "neutre";
+/** Libellés de l'angle du message (fiche, file /rediger). */
+export const ANGLE_LABELS: Record<Angle, string> = {
+  refonte: "refonte (site vérifié)",
+  creation: "création (aucun site trouvé)",
+  neutre: "neutre (site incertain : ni « votre site » ni « pas de site »)",
+};
+
+/** Site vérifié (miroir de site_verified, complete.py) : CONFIRMED / PROBABLE hors site importé à vérifier, ou confirmé par toi, et pas mis en
+ *  doute par la relecture d'avant l'envoi (`presend_identity.doubt` sur cette même adresse). */
+export function siteVerified(p: FicheFields & { website_url?: string | null }): boolean {
+  const url = String(p.website_url ?? "").trim();
+  if (!url) return false;
+  if (p.site_review === "CONFIRMED") return true;
+  if (!(p.website_status === "CONFIRMED" || p.website_status === "PROBABLE") || p.site_review === "PENDING") return false;
+  const pre = obj(obj(p.provenance).presend_identity);
+  return !(pre.doubt && pre.url === url.slice(0, 200));
+}
+
+/** Angle du message d'après l'état du site (miroir de angle, complete.py) : refonte (site vérifié), creation (NOT_FOUND tranché, site de la
+ *  fiche Google vérifié juste avant l'envoi), neutre (tout le reste : UNCERTAIN, UNREACHABLE, candidat non prouvé, absence pas tranchée). */
+export function ficheAngle(p: FicheFields & { website_url?: string | null }): Angle {
+  if (siteVerified(p)) return "refonte";
+  const why = siteReason(p);
+  if (p.website_status === "NOT_FOUND" && (why === null || why === "places")) return "creation";
+  return "neutre";
+}
+
+/** Angle d'un brouillon d'après son type (draft_kind, coupé à 24 caractères : préfixes seulement). null = type inconnu. Miroir de draft_angle. */
+export function draftAngle(kind: string | null | undefined): Angle | null {
+  const k = kind ?? "";
+  if (k.includes("neutre")) return "neutre";
+  if (k.includes("sans_site")) return "creation";
+  if (/site_(?:amel|refo|inac)/.test(k)) return "refonte";
+  return null;
 }
 
 /** Le même critère en SQL (alias `p` = local_prospects), pour compter côté base (Statistiques → Qualité de la liste). Chaque morceau vaut 0 ou 1. */

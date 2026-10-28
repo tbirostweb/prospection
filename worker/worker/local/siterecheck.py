@@ -114,10 +114,11 @@ def raise_absence(conn, row: dict, res) -> float | None:
     return conf
 
 
-def _site_contacts(conn, row: dict, res, fetch) -> tuple[list, list[str]]:
-    """Contacts lus sur le site trouvé, AJOUTÉS à ceux déjà connus (jamais remplacés). Renvoie (pages lues, champs ajoutés)."""
+def _site_contacts(conn, row: dict, res, fetch, deep: bool = False) -> tuple[list, list[str]]:
+    """Contacts lus sur le site trouvé, AJOUTÉS à ceux déjà connus (jamais remplacés). Renvoie (pages lues, champs ajoutés).
+    `deep` : relecture d'un site sans e-mail (pages /contact et /mentions-legales cherchées même sans lien)."""
     pid = row["id"]
-    pages = contacts.discover(res.pages or [], fetch, res.canonical_domain or "")
+    pages = contacts.discover(res.pages or [], fetch, res.canonical_domain or "", deep=deep)
     c = contacts.extract(pages, res.canonical_domain or "")
     if c.get("email") and store.is_do_not_contact(conn, row.get("siret"), row.get("siren"), email=c["email"]):
         c["email"], c["email_kind"] = None, None                       # adresse opposée : jamais enregistrée
@@ -158,7 +159,7 @@ def demote_site(conn, row: dict, verdict: str, label: str, a, ctx) -> dict | Non
     — NOT_FOUND (à chercher de nouveau : `enrich.search_more`) si c'est le site d'une AUTRE entreprise (domaine ajouté aux mauvais sites de ce
     SIRET), sinon UNCERTAIN avec le site en candidat (groupe, maintenance, certificat invalide, preuve absente : à toi de trancher). Brouillon
     effacé, fiche sortie de la file d'envoi (auto_state queued → NULL), sans alerte ; e-mail / téléphone / page de contact lus sur CE site
-    retirés (ceux d'une autre entreprise ou d'un groupe). Jamais une fiche contactée, en séquence, ou dont tu as confirmé le site.
+    retirés (ceux d'une autre entreprise ou d'un groupe ; l'e-mail d'un site refusé faute de preuve reste, en UNCERTAIN). Jamais une fiche contactée, en séquence, ou dont tu as confirmé le site.
     Renvoie ce qui a changé, ou None si la fiche a bougé entre-temps."""
     pid = row["id"]
     status = "NOT_FOUND" if verdict == "other_company" else "UNCERTAIN"
@@ -190,6 +191,10 @@ def demote_site(conn, row: dict, verdict: str, label: str, a, ctx) -> dict | Non
         for kind, cols in (("email", "email=NULL, email_kind=NULL"), ("phone", "phone=NULL, phone_confidence=NULL")):
             src = prov.get(kind) if isinstance(prov.get(kind), dict) else {}
             if row.get(kind) and _host(src.get("url")) == domain:
+                if kind == "email" and verdict == "no_proof":      # preuve absente (≠ autre entreprise / groupe) : l'e-mail reste, en « incertain »
+                    sets.append("email_kind='UNCERTAIN'")
+                    store.set_provenance(conn, pid, "email", {**src, "site_unverified": True, "note": "site non vérifié (preuve d'identité absente)"})
+                    continue
                 sets.append(cols)
                 cleared.append(kind)
         if _host(row.get("contact_page")) == domain:

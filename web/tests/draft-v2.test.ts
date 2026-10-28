@@ -72,7 +72,8 @@ test("élision devant une voyelle : « d'Atelier Exemple », jamais « de Atelie
 
 test("jamais de « félicitations pour le lancement » d'après la seule date d'immatriculation", () => {
   const p = { company_name: "ATELIER EXEMPLE", city: "VILLE-TEST", website_status: "NOT_FOUND", website_absence_confidence: 0.85,
-    website_search_tried: 8, website_search_total: 10, company_created_at: new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10), issues: "[]" };
+    website_search_tried: 8, website_search_total: 10, company_created_at: new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10), issues: "[]",
+    provenance: { site_recheck: { status: "NOT_FOUND" } } };   // absence tranchée (recherche + revérification) : message de création
   const d = buildDraft(p, SENDER, OFFER)!;
   assert.doesNotMatch(d.body, /Félicitations|lancement d'Atelier/);
   assert.match(d.body, /sauf erreur de ma part\./);
@@ -124,7 +125,8 @@ test("site sans défaut relevé : message prudent « site_refonte », aucune fai
   assert.match(d.core, /regard neuf/);
   assert.match(d.core, /\?/);
   assert.ok(!d.kind.includes("sans_site"));
-  assert.equal(buildDraft({ ...site, website_url: null }, SENDER, OFFER), null);
+  assert.equal(buildDraft({ ...site, website_url: null }, SENDER, OFFER)!.kind, "neutre");   // site sans adresse : pas vérifié, message neutre
+  assert.equal(buildDraft({ ...site, site_year: new Date().getFullYear() }, SENDER, OFFER), null);   // site récent sans défaut : rien à proposer
   const old = buildDraft({ ...site, site_year: 2015, issues: null }, SENDER, OFFER)!;
   assert.equal(old.kind, "site_ameliorable");   // un fait vérifié (© 2015) reste cité comme fait
 });
@@ -142,14 +144,19 @@ test("file de rédaction : les fiches avec site (CONFIRMED/PROBABLE/UNREACHABLE)
 
 test("refonte : aucun prix, renvoi vers le lien des offres ; création inchangée", () => {
   const O = { ...OFFER, offers_url: "https://offres.test/tarifs" };
-  const refonte = buildDraft(P, SENDER, O)!;   // site inaccessible = refonte
+  const refonte = buildDraft({ ...P, site_review: "CONFIRMED" }, SENDER, O)!;   // site confirmé par toi mais inaccessible = refonte
+  assert.equal(refonte.kind, "site_inaccessible");
   assert.doesNotMatch(refonte.core, /€|au lieu de|lancement/);
   assert.match(refonte.core, /Mes offres et tarifs sont détaillés sur https:\/\/offres\.test\/tarifs\./);
   assert.doesNotMatch(buildDraft(P, SENDER, { ...OFFER })!.core.split("Mes offres")[0], /€/);
   assert.match(buildDraft(P, SENDER, { ...OFFER })!.core, /sur https:\/\/birostweb\.test\./, "sans lien réglé : site de la signature");
   assert.doesNotMatch(buildDraft(P, {}, OFFER)!.core, /Mes offres|€/, "ni lien ni site : pas de phrase");
-  const creation = buildDraft({ ...P, website_status: "NOT_FOUND", website_url: null, website_search: "x" }, SENDER, O);
-  if (creation) { assert.match(creation.core, /690 € au lieu de 990 €/); assert.doesNotMatch(creation.core, /Mes offres/); }
+  for (const p of [{ ...P, website_status: "NOT_FOUND", website_url: null, website_absence_confidence: 0.9, provenance: { site_recheck: { status: "NOT_FOUND" } } },
+    { ...P, website_status: "NOT_FOUND", website_url: null }, P]) {   // création, puis neutre (recherche pas faite ; site injoignable)
+    const d = buildDraft(p, SENDER, O)!;
+    assert.doesNotMatch(d.core, /€|au lieu de|lancement/);
+    assert.match(d.core, /Mes offres et tarifs sont détaillés sur https:\/\/offres\.test\/tarifs\./);
+  }
   const ok = refonte.core;
   assert.deepEqual(checkWrittenCore(ok, "Objet", refonte).filter((x) => /chiffres|aucun prix/.test(x)), []);
   assert.ok(checkWrittenCore(ok + " Le site est à 690 €.", "Objet", refonte).some((x) => /aucun prix/.test(x)));
@@ -162,4 +169,38 @@ test("sanitizeOffer : lien http(s) seulement, prix bornés", () => {
   assert.equal(sanitizeOffer({ offers_url: "" })!.offers_url, null);
   assert.equal(sanitizeOffer({ normal_price: 999999 })!.normal_price, 100000);
   assert.equal(sanitizeOffer(null), null);
+});
+
+test("e-mail d'abord : site incertain → message neutre, qui ne parle ni d'un site existant ni d'une absence de site, sans prix", () => {
+  const O = { ...OFFER, offers_url: "https://offres.test/tarifs" };
+  for (const p of [{ ...P, website_status: "UNCERTAIN" }, P, { ...P, website_status: "PROBABLE", site_review: "PENDING" }, { ...P, website_status: null, website_url: null }]) {
+    const d = buildDraft(p, SENDER, O)!;
+    assert.equal(d.kind, "neutre", String(p.website_status));
+    assert.match(d.core, /présence sur internet de la Plomberie Durand|présence sur internet de Plomberie Durand/);
+    assert.doesNotMatch(d.core, /votre site|site actuel|pas trouvé de site|pas de site|inaccessible|durand\.test|€/i);
+    assert.match(d.core, /Mes offres et tarifs sont détaillés sur https:\/\/offres\.test\/tarifs\./);
+    assert.deepEqual(checkWrittenCore(d.core, d.subject, d), [], "la référence passe ses propres garde-fous");
+    for (const bad of [" J'ai regardé votre site.", " Je n'ai pas trouvé de site pour vous.", " Votre site actuel a vieilli.", " Votre site semble inaccessible."])
+      assert.ok(checkWrittenCore(d.core + bad, d.subject, d).some((x) => /site incertain/.test(x)), bad);
+  }
+  const ev = buildDraft({ ...P, website_status: "UNCERTAIN", buy_signals: [{ code: "takeover" }] }, SENDER, O)!;
+  assert.equal(ev.kind, "takeover_neutre");
+  assert.match(ev.core, /^J'ai vu que vous aviez repris .* présence sur internet de votre entreprise\./s);
+});
+
+test("message de création : jamais d'allusion à un site existant", () => {
+  const p = { ...P, website_status: "NOT_FOUND", website_url: null, website_absence_confidence: 0.9, provenance: { site_recheck: { status: "NOT_FOUND" } } };
+  const d = buildDraft(p, SENDER, OFFER)!;
+  assert.equal(d.kind, "sans_site");
+  assert.deepEqual(checkWrittenCore(d.core, d.subject, d).filter((x) => /site/.test(x)), []);
+  assert.ok(checkWrittenCore(d.core + " Votre site actuel a vieilli.", d.subject, d).some((x) => /site existant/.test(x)));
+});
+
+test("file e-mail d'abord : toute fiche avec e-mail jamais contactée, quel que soit le site, exclusions gardées", () => {
+  const src = readFileSync(path.resolve(__dirname, "..", "..", "lib/localdb.ts"), "utf-8");
+  const sql = src.slice(src.indexOf("export const EMAIL_QUEUE_SQL"));
+  assert.doesNotMatch(sql.slice(0, sql.indexOf("ORDER BY")), /website_status/);
+  for (const guard of ["p.do_not_contact = 0", "p.excluded_reason IS NULL", "p.is_chain = 0", "p.contacted_at IS NULL", "<> 'IGNORER'", "<> 'bounced'"])
+    assert.ok(sql.includes(guard), guard);
+  assert.doesNotMatch(sql.slice(0, sql.indexOf("ORDER BY")), /'(LOST|WON|CONTACTED|DO_NOT_CONTACT)'/);
 });

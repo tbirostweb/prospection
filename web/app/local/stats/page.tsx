@@ -8,7 +8,7 @@ import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engine
 export const dynamic = "force-dynamic";
 
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)} %` : "—");
-const MESSAGE_LABELS: Record<string, string> = { sans_site: "« pas de site trouvé »", site_inaccessible: "« site inaccessible »", site_ameliorable: "« points à améliorer sur le site »",
+const MESSAGE_LABELS: Record<string, string> = { sans_site: "« pas de site trouvé »", site_inaccessible: "« site inaccessible »", site_ameliorable: "« points à améliorer sur le site »", site_refonte: "« regard neuf sur le site »", neutre: "« neutre (sans parler du site) »",
   takeover: "reprise", rename: "changement de nom", move: "déménagement" };
 const messageLabel = (k: string) => k.split("_").length > 1 && MESSAGE_LABELS[k.split("_")[0]] && !MESSAGE_LABELS[k]
   ? `${MESSAGE_LABELS[k.split("_")[0]]} + ${MESSAGE_LABELS[k.split("_").slice(1).join("_")] ?? k}` : MESSAGE_LABELS[k] ?? k;

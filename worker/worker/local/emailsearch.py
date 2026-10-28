@@ -1,8 +1,8 @@
 """Enrichissement des fiches existantes :  python -m worker.local.emailsearch [--no-engines]   (voir `enrich.main` : ordre, verrous, budgets, état)
 
 Une fiche n'est vérifiée qu'une fois ; une adresse publiée plus tard (page Facebook, annuaire, mentions légales) ne serait jamais vue. Ici, à
-chaque passage, LOCAL_EMAIL_SEARCH_PER_RUN prospects sans e-mail (jamais contactés, hors « ne plus contacter » et écartés) reçoivent UNE recherche
-dédiée (`runner.email_search`), au plus une fois tous les EMAIL_RECHECK_DAYS jours. Une adresse trouvée complète la fiche (jamais elle ne
+chaque passage, LOCAL_EMAIL_SEARCH_PER_RUN prospects sans e-mail (jamais contactés, hors « ne plus contacter » et écartés) reçoivent une recherche
+dédiée (`runner.email_search`, plusieurs requêtes, arrêt dès une adresse), au plus une fois tous les EMAIL_RECHECK_MISS_DAYS jours (rien trouvé) ou EMAIL_RECHECK_DAYS. Une adresse trouvée complète la fiche (jamais elle ne
 remplace une coordonnée connue) et le score est recalculé : la fiche peut alors passer « À contacter » et partir par l'envoi automatique.
 Ordre : brouillon déjà rédigé, puis site vérifié sans e-mail (son site a été relu par `enrich.site_emails`), puis fiche avec téléphone (complète
 « téléphone » : l'e-mail la rend envoyable), puis les plus prometteuses. Utilise les moteurs : sous le verrou des campagnes (`enrich.main`), même
@@ -18,8 +18,9 @@ from ..config import env
 from . import runner, store
 from .errors import SearchUnavailable
 
-PER_RUN = int(env("LOCAL_EMAIL_SEARCH_PER_RUN", "10") or 10)
+PER_RUN = int(env("LOCAL_EMAIL_SEARCH_PER_RUN", "40") or 40)
 EMAIL_RECHECK_DAYS = runner.EMAIL_RECHECK_DAYS
+EMAIL_RECHECK_MISS_DAYS = runner.EMAIL_RECHECK_MISS_DAYS
 
 
 def candidates(conn, limit: int) -> list[dict]:
@@ -31,7 +32,8 @@ def candidates(conn, limit: int) -> list[dict]:
           AND p.status NOT IN ('LOST','WON','DO_NOT_CONTACT')
           AND (JSON_EXTRACT(p.provenance, '$.email_search.checked_at') IS NULL
                OR STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.email_search.checked_at')), '%%Y-%%m-%%dT%%H:%%i:%%sZ')
-                  < UTC_TIMESTAMP() - INTERVAL {EMAIL_RECHECK_DAYS} DAY)
+                  < UTC_TIMESTAMP() - INTERVAL IF(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.email_search.found')) = 'true',
+                                                  {EMAIL_RECHECK_DAYS}, {EMAIL_RECHECK_MISS_DAYS}) DAY)
         ORDER BY (p.draft_message IS NOT NULL) DESC, (p.website_status IN ('CONFIRMED','PROBABLE')) DESC, (TRIM(COALESCE(p.phone, '')) <> '') DESC,
                  FIELD(p.category, 'A_EXAMINER', 'A_CONTACTER', 'TRES_BON') DESC, p.prospect_score DESC, p.id
         LIMIT %s""", (limit,))
@@ -66,7 +68,7 @@ def run(conn, search, limit: int = PER_RUN, deadline: float | None = None, manua
             break
         company = {**runner._company(conn, row), "department": row.get("department")}
         try:
-            found = runner.email_search(conn, row["id"], company, search, row)
+            found = runner.email_search(conn, row["id"], company, search, row, deadline=deadline)
         except SearchUnavailable:
             conn.rollback()
             stats["stop"] = "engines"

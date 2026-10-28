@@ -61,6 +61,8 @@ SITE_GUESS_PER_RUN = _env_int("LOCAL_SITE_GUESS_PER_RUN", 20)
 SITE_SEARCH_PER_RUN = _env_int("LOCAL_SITE_SEARCH_PER_RUN", 3)      # ≈ 6 requêtes chacune
 UNREACHABLE_PER_RUN = _env_int("LOCAL_UNREACHABLE_RETRY_PER_RUN", 5)
 SITE_EMAIL_PER_RUN = _env_int("LOCAL_SITE_EMAIL_PER_RUN", 10)
+SITE_EMAIL_RETRY_DAYS = _env_int("LOCAL_SITE_EMAIL_RETRY_DAYS", 14)  # site retenu toujours sans e-mail : relu après ce délai…
+SITE_EMAIL_MAX_TRIES = _env_int("LOCAL_SITE_EMAIL_MAX_TRIES", 3)     # … au plus ce nombre de lectures en tout (la première comprise)
 STUCK_PER_RUN = _env_int("LOCAL_STUCK_PER_RUN", 10)
 SITE_IDENTITY_PER_RUN = _env_int("LOCAL_SITE_IDENTITY_PER_RUN", 25)  # ≈ 3 lectures chacune, aucune requête aux moteurs
 IDENTITY_RETRY_DAYS, IDENTITY_MAX_TRIES = 1, 3                       # site injoignable à la relecture : repris le lendemain, 3 fois au plus
@@ -248,25 +250,32 @@ def unreachable_retry(conn, fetch, limit: int = UNREACHABLE_PER_RUN, deadline: f
 
 def site_emails(conn, fetch, limit: int = SITE_EMAIL_PER_RUN, deadline: float | None = None) -> dict:
     """Site vérifié sans e-mail : accueil, contact et mentions légales relus (lecteurs d'adresses masquées compris), une fois par fiche ; les
-    coordonnées trouvées sont AJOUTÉES (jamais remplacées). Celles sans aucun contact d'abord."""
+    coordonnées trouvées sont AJOUTÉES (jamais remplacées). Celles sans aucun contact d'abord. Toujours sans e-mail après SITE_EMAIL_RETRY_DAYS
+    jours : relue (au plus SITE_EMAIL_MAX_TRIES lectures, compteur `tries` dans la provenance `site_email`), avec en plus les pages /contact et
+    /mentions-legales cherchées même sans lien."""
     if limit <= 0:
         return _out(stop="off")
+    tries = f"COALESCE(CAST(JSON_UNQUOTE({_prov('site_email.tries')}) AS UNSIGNED), 1)"
     rows = _rows(conn, f"""p.website_status IN ('CONFIRMED','PROBABLE') AND COALESCE(p.site_review, '') <> 'PENDING' AND p.website_url IS NOT NULL
-        AND (p.email IS NULL OR p.email = '') AND p.pipeline_stage = 'DONE' AND {BASE} AND {_prov('site_email')} IS NULL""",
-                 limit, f"(TRIM(COALESCE(p.phone, '')) = '') DESC, {ORDER}")
+        AND (p.email IS NULL OR p.email = '') AND p.pipeline_stage = 'DONE' AND {BASE}
+        AND ({_prov('site_email')} IS NULL OR ({tries} < {SITE_EMAIL_MAX_TRIES} AND {_date('site_email.checked_at')}
+             < UTC_TIMESTAMP() - INTERVAL {SITE_EMAIL_RETRY_DAYS} DAY))""",
+                 limit, f"({_prov('site_email')} IS NOT NULL), (TRIM(COALESCE(p.phone, '')) = '') DESC, {ORDER}")
 
     def one(row):
         from . import emailsearch
         pages, _home = sitefinder._load_pages(row["website_url"], fetch, runner._company(conn, row))
         added: list[str] = []
+        prev = siterecheck._jv(row.get("provenance")).get("site_email")
+        tries = (int(prev.get("tries") or 1) + 1) if isinstance(prev, dict) else 1
         if pages:
             res = SimpleNamespace(pages=pages, canonical_domain=row.get("canonical_domain") or pages[0].domain)
-            _pages, added = siterecheck._site_contacts(conn, row, res, fetch)
-        store.set_provenance(conn, row["id"], "site_email", {"checked_at": runner._now_iso(), "read": bool(pages), "added": added})
+            _pages, added = siterecheck._site_contacts(conn, row, res, fetch, deep=tries > 1)
+        store.set_provenance(conn, row["id"], "site_email", {"checked_at": runner._now_iso(), "read": bool(pages), "added": added, "tries": tries})
         if added:
             emailsearch._rescore(conn, row["id"])
         return "email" in added
-    return _loop(conn, rows, limit, deadline, one, _mark(conn, "site_email"))
+    return _loop(conn, rows, limit, deadline, one, _mark(conn, "site_email", tries=True))
 
 
 def finish_stuck(conn, fetch, search=None, limit: int = STUCK_PER_RUN, deadline: float | None = None) -> dict:

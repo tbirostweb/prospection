@@ -66,6 +66,8 @@ def test_doute_ou_delai_depasse_pas_d_envoi_puis_sortie_de_file(mail, conn, monk
     p = row(conn, pid)
     assert p["auto_state"] is None and json.loads(p["provenance"])["presend_site"]["doubt"] is True   # sortie de la file
     assert complete.missing(p, True) == ["site"] and mail.tg.texts == []                               # site « à trancher », sans alerte
+    # le message « sans site » n'est plus sûr : brouillon effacé, fiche rendue à la rédaction, en neutre
+    assert p["draft_message"] is None and p["draft_kind"] is None and complete.angle(p) == "neutre"
     assert mail.run(t, fetch=web)["status"] == "idle"
 
 
@@ -79,11 +81,13 @@ def row_by_siret(conn) -> int:
     return db.fetch_one(conn, "SELECT id FROM local_prospects WHERE siret=%s", (DUPONT,))["id"]
 
 
-def _queue_down(conn, monkeypatch):
-    """Fiche complète au site « en panne » (2 nouveaux essais déjà faits), brouillon « site inaccessible » en file."""
+def _queue_down(conn, monkeypatch, confirmed: bool = True):
+    """Fiche complète au site « en panne » (2 nouveaux essais déjà faits), brouillon « site inaccessible » en file. Le site est confirmé par
+    toi (`site_review`) : seul cas où un site injoignable reste « vérifié » (angle refonte) ; sinon l'angle est neutre."""
     web, _search = _setup(conn, monkeypatch)
     sets = {"email": "boulangerie.dupont@gmail.com", "email_kind": "UNCERTAIN", "activity_label": "Boulangeries, pâtisseries", "draft_message": BODY,
-            "website_status": "UNREACHABLE", "website_url": f"https://{DOWN}/", "draft_kind": "site_inaccessible"}
+            "website_status": "UNREACHABLE", "website_url": f"https://{DOWN}/", "draft_kind": "site_inaccessible",
+            "site_review": "CONFIRMED" if confirmed else None}
     db.execute(conn, f"UPDATE local_prospects SET {', '.join(f'{k}=%s' for k in sets)} WHERE siret=%s", (*sets.values(), DUPONT))
     db.execute(conn, """UPDATE local_prospects SET provenance = JSON_SET(COALESCE(provenance, JSON_OBJECT()), '$.unreachable_retry',
                         JSON_OBJECT('tries', 2, 'status', 'UNREACHABLE', 'checked_at', '2026-10-20T10:00:00Z')) WHERE siret=%s""", (DUPONT,))
@@ -92,6 +96,15 @@ def _queue_down(conn, monkeypatch):
     monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])
     assert complete.missing(row(conn, pid), True) == []
     return pid, web
+
+
+def test_site_injoignable_non_confirme_brouillon_rendu_a_la_redaction_en_neutre(mail, conn, monkeypatch):
+    pid, web = _queue_down(conn, monkeypatch, confirmed=False)
+    mail.enable()
+    assert mail.run(T0, fetch=web)["status"] == "idle" and mail.smtp.sent == [] and f"https://{DOWN}/" not in web.calls   # ni envoi ni lecture
+    p = row(conn, pid)
+    assert p["draft_message"] is None and p["draft_kind"] is None and p["auto_state"] is None and p["contacted_at"] is None
+    assert complete.angle(p) == "neutre" and complete.reason(p, True) is None                         # e-mail toujours utilisable
 
 
 def test_site_toujours_injoignable_le_message_part(mail, conn, monkeypatch):

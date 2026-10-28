@@ -3,6 +3,7 @@
     python3 scripts/rediger.py queue [--limit 5] [--include-drafted] [--email-only]
                                                                        -> file de rédaction (faits vérifiés + brouillon de référence), en JSON ;
                                                                           --email-only : seulement les prospects qui peuvent partir par e-mail automatique
+                                                                          (quel que soit leur site : il fixe seulement l'angle, refonte / creation / neutre)
     python3 scripts/rediger.py save ID fichier.json [--no-auto]        -> dépose {"subject", "core"} comme brouillon (refusé si un garde-fou échoue)
                                                                           et le met en file d'envoi automatique si le prospect est éligible
                                                                           (l'envoi est fait par le worker, seulement s'il est activé dans Réglages)

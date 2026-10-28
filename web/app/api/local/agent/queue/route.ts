@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { shortActivity } from "@/lib/activity";
-import { Offer, Sender, buildDraft, cap, isRedesignKind, offersLink, photosOffered } from "@/lib/draft";
-import { CONTACT_QUEUE_SQL, LIST_COLUMNS, getAutoSend, getSetting, safeRows } from "@/lib/localdb";
+import { Offer, Sender, buildDraft, cap, isRedesignKind, kindAngle, offersLink, photosOffered } from "@/lib/draft";
+import { ANGLE_LABELS } from "@/lib/complete";
+import { CONTACT_QUEUE_SQL, EMAIL_QUEUE_SQL, LIST_COLUMNS, getAutoSend, getSetting, safeRows } from "@/lib/localdb";
 import { splitByTrigger, strongSignals } from "@/lib/local";
 import { autoIneligible } from "@/lib/autosend";
 
@@ -9,8 +10,10 @@ import { autoIneligible } from "@/lib/autosend";
  *  Uniquement des FAITS sur l'entreprise (nom commercial, ville, activité, déclencheur, constats vérifiés) et le brouillon de référence construit
  *  par le code : ni le nom du gérant, ni e-mail, ni téléphone ne sortent d'ici (salutation, signature et notice sont ajoutées au dépôt).
  *  Prospects prêts de la file « À contacter », sans brouillon (sauf `?include_drafted=1`), déclencheurs forts d'abord.
- *  `?email_only=1` : seulement ceux qui peuvent partir par l'envoi automatique : FICHE COMPLÈTE avec e-mail (lib/complete.ts : métier connu, site
- *  tranché, adresse acceptée par le réglage, entreprise active), jamais contactés. Les autres attendent : l'app continue à les compléter seule. */
+ *  `?email_only=1` : seulement ceux qui peuvent partir par l'envoi automatique : e-mail utilisable (lib/complete.ts : métier connu, adresse
+ *  acceptée par le réglage, entreprise active), jamais contactés, QUEL QUE SOIT LE SITE (file EMAIL_QUEUE_SQL : l'e-mail d'abord). Le site
+ *  oriente seulement le message : `angle` refonte (site vérifié), creation (aucun site, recherche faite) ou neutre (site incertain : ne parler ni
+ *  d'un site existant ni d'une absence de site). */
 export async function GET(req: NextRequest) {
   const limit = Math.min(50, Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 5));
   const withDrafts = req.nextUrl.searchParams.get("include_drafted") === "1";
@@ -18,7 +21,7 @@ export async function GET(req: NextRequest) {
   const sender = await getSetting<Sender>("local_sender", {});
   const offer = await getSetting<Offer>("local_offer", {});
   const auto = await getAutoSend();
-  const rows = (await safeRows<any>(`SELECT ${LIST_COLUMNS}, p.website_evidence, p.contact_source_url, p.draft_message, p.provenance, p.auto_state ${CONTACT_QUEUE_SQL}`))
+  const rows = (await safeRows<any>(`SELECT ${LIST_COLUMNS}, p.website_evidence, p.contact_source_url, p.draft_message, p.provenance, p.auto_state ${emailOnly ? EMAIL_QUEUE_SQL : CONTACT_QUEUE_SQL}`))
     .filter((p) => withDrafts || !p.draft_message)
     .filter((p) => !emailOnly || autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null);
   const { triggered, others } = splitByTrigger(rows);
@@ -46,8 +49,10 @@ export async function GET(req: NextRequest) {
       activite: shortActivity(p.activity_label),   // forme courte : jamais un intitulé long dans la phrase
       declencheur: t ? { libelle: t.label, detail: t.detail ?? null } : null,
       faits: d.facts, type: d.kind,
-      // la SEULE offre à citer pour ce prospect : jamais de prix (création comme refonte), seulement le renvoi vers la page des offres
-      offre_prospect: { type: isRedesignKind(d.kind) ? "refonte" : "creation", prix: null, lien_offres: offersLink(offer, sender) || null,
+      // angle imposé par l'état du site : refonte, creation ou neutre (neutre : ni « votre site » ni « pas de site », refusé au dépôt sinon)
+      angle: kindAngle(d.kind), angle_libelle: ANGLE_LABELS[kindAngle(d.kind)],
+      // la SEULE offre à citer pour ce prospect : jamais de prix (création, refonte ou neutre), seulement le renvoi vers la page des offres
+      offre_prospect: { type: kindAngle(d.kind), prix: null, lien_offres: offersLink(offer, sender) || null,
         regle: "AUCUN prix, aucun montant, aucune réduction : seulement renvoyer vers lien_offres (sans lien, aucune phrase d'offre)" },
       photos_en_option: photosOffered(p, offer), canal: p.email && p.auto_state !== "bounced" ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
       // envoi automatique possible (fiche complète avec e-mail, jamais contactée) ; sinon Théo contacte lui-même (jamais sans métier connu)

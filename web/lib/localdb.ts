@@ -27,6 +27,15 @@ export const CONTACT_QUEUE_SQL = `FROM local_prospects p
 export const BOARD_LIMIT = 3000;
 export const BOARD_SQL = `FROM local_prospects p ORDER BY p.prospect_score DESC, p.id LIMIT ${BOARD_LIMIT}`;
 
+/** File de rédaction « e-mail d'abord » (/rediger --email-only) : toute fiche jamais contactée avec une adresse e-mail, QUEL QUE SOIT son site
+ *  (le site oriente le message : lib/complete.ts ficheAngle). Même garde que la file « À contacter » (opposition, exclusion, chaîne, « Ignorer »,
+ *  statuts fermés) ; l'éligibilité fine (adresse acceptée, fiche active, métier connu…) est revérifiée par autoIneligible. */
+export const EMAIL_QUEUE_SQL = `FROM local_prospects p
+    WHERE p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.status IN ('QUALIFIED','AUDITED','ENRICHED','DISCOVERED','TO_CONTACT')
+      AND p.is_chain = 0 AND p.contacted_at IS NULL AND COALESCE(p.category, '') <> 'IGNORER' AND p.pipeline_stage = 'DONE'
+      AND TRIM(COALESCE(p.email, '')) <> '' AND COALESCE(p.auto_state, '') <> 'bounced'
+    ORDER BY p.status = 'TO_CONTACT' DESC, p.prospect_score DESC LIMIT ${CONTACT_QUEUE_LIMIT}`;
+
 export async function getLocalHome(): Promise<{ city?: string; postalCode?: string; defaultRadius?: number }> {
   try {
     const rows = await query<any>("SELECT value_json FROM settings WHERE skey='local_home' LIMIT 1");

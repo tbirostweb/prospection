@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from worker import db
-from worker.local import http, outbox, sitefinder
+from worker.local import complete, http, outbox, sitefinder
 
 from local_fixtures import FakeWeb, html
 
@@ -394,3 +394,45 @@ def test_etat_officiel_injoignable_rien_ne_part_puis_reprise(mail, conn, monkeyp
     assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "idle"           # moins d'une heure : la fiche attend, sans requête
     monkeypatch.setattr(http, "_transport", httpx.MockTransport(official_api()))
     assert mail.run(T0 + dt.timedelta(hours=2))["status"] == "sent"              # source revenue, entreprise active : le message part
+
+
+# ── L'e-mail d'abord : le site oriente le message (complete.angle), il ne bloque plus l'envoi ─────────────────────────────────────────
+def test_message_neutre_part_quel_que_soit_le_site_sans_le_relire(mail, conn):
+    pid = add(conn, "10000000000011")
+    db.execute(conn, "UPDATE local_prospects SET website_status='UNCERTAIN', draft_kind='ai_neutre' WHERE id=%s", (pid,))   # site incertain
+    mail.enable()
+
+    def no_read(url):
+        raise AssertionError(f"site lu avant un message neutre : {url}")
+    assert mail.run(T0, fetch=no_read)["status"] == "sent" and row(conn, pid)["auto_state"] == "active"
+
+
+def test_brouillon_refonte_pour_un_site_plus_verifie_jamais_envoye(mail, conn):
+    pid = add(conn, "10000000000011")
+    db.execute(conn, "UPDATE local_prospects SET website_status='UNCERTAIN', draft_kind='site_ameliorable' WHERE id=%s", (pid,))
+    mail.enable()
+    assert mail.run(T0)["status"] == "idle" and mail.smtp.sent == []
+    p = row(conn, pid)
+    assert p["draft_message"] is None and p["draft_kind"] is None and p["auto_state"] is None and p["contacted_at"] is None   # rendu à la rédaction
+    assert complete.angle(p) == "neutre" and complete.reason(p, True) is None                                             # e-mail toujours utilisable
+
+
+def test_site_qui_ne_repond_plus_avant_une_refonte_brouillon_rendu_en_neutre(mail, conn, monkeypatch):
+    pid = add(conn, "10000000000011")
+    db.execute(conn, "UPDATE local_prospects SET draft_kind='site_ameliorable' WHERE id=%s", (pid,))
+    monkeypatch.setattr(outbox, "presend_identity", lambda *a, **k: ("retry", "le site ne répond pas"))
+    mail.enable()
+    t = T0
+    for _ in range(outbox.PRESEND_MAX_TRIES):
+        assert mail.run(t)["status"] == "deferred" and mail.smtp.sent == []
+        t += outbox.PRESEND_RETRY + dt.timedelta(minutes=1)
+    p = row(conn, pid)
+    assert p["draft_message"] is None and p["auto_state"] is None                                   # jamais envoyé tel quel
+    assert json.loads(p["provenance"])["presend_identity"]["doubt"] is True and complete.angle(p) == "neutre"
+
+
+def test_brouillon_ecrit_a_la_main_attend_toujours_un_site_tranche(mail, conn):
+    pid = add(conn, "10000000000011")                                             # draft_kind NULL : on ne sait pas s'il parle d'un site
+    db.execute(conn, "UPDATE local_prospects SET website_status='UNCERTAIN' WHERE id=%s", (pid,))
+    mail.enable()
+    assert mail.run(T0)["status"] == "idle" and mail.smtp.sent == [] and row(conn, pid)["auto_state"] == "queued"

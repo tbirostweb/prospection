@@ -211,7 +211,8 @@ def test_categories_d_email_et_jamais_d_email_invente():
     assert contacts.classify_email("info2@boulangerie-martin.fr", "boulangerie-martin.fr") == "GENERIC_BUSINESS"
     assert contacts.classify_email("jean.martin@boulangerie-martin.fr", "boulangerie-martin.fr") == "PERSONAL_BUSINESS"
     assert contacts.classify_email("martin.perso@gmail.com", "boulangerie-martin.fr") == "UNCERTAIN"
-    assert contacts.classify_email("sav@agence-web.fr", "boulangerie-martin.fr") is None
+    assert contacts.classify_email("sav@agence-web.fr", "boulangerie-martin.fr") == "UNCERTAIN"      # autre domaine : gardé, jamais prioritaire
+    assert contacts.classify_email("sav@agence-web.fr", "boulangerie-martin.fr", foreign=False) is None
     only_named = contacts.extract([_page("<p>Jean Martin, gérant</p>")], "boulangerie-martin.fr")
     assert only_named["email"] is None                                                    # JAMAIS de prénom.nom@domaine fabriqué
     assert contacts.extract(pages, "boulangerie-martin.fr")["email_kind"] == "GENERIC_BUSINESS"
