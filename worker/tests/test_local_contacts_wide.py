@@ -87,4 +87,4 @@ def test_relecture_enrich_compteur_et_delai(monkeypatch):
     monkeypatch.setattr(enrich, "_rows", lambda conn, where, limit, order=None: seen.setdefault("where", where) and [])
     enrich.site_emails(Conn(), lambda u: None, limit=5)
     w = seen["where"]
-    assert "site_email.tries" in w and "INTERVAL 14 DAY" in w and f"< {enrich.SITE_EMAIL_MAX_TRIES}" in w
+    assert "site_email.tries" in w and "INTERVAL 14 DAY" in w and f"< {enrich.SITE_EMAIL_MAX_TRIES}" in w and "site_email.deep" in w   # jamais lu en profondeur : sans délai

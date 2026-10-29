@@ -251,15 +251,16 @@ def unreachable_retry(conn, fetch, limit: int = UNREACHABLE_PER_RUN, deadline: f
 def site_emails(conn, fetch, limit: int = SITE_EMAIL_PER_RUN, deadline: float | None = None) -> dict:
     """Site vérifié sans e-mail : accueil, contact et mentions légales relus (lecteurs d'adresses masquées compris), une fois par fiche ; les
     coordonnées trouvées sont AJOUTÉES (jamais remplacées). Celles sans aucun contact d'abord. Toujours sans e-mail après SITE_EMAIL_RETRY_DAYS
-    jours : relue (au plus SITE_EMAIL_MAX_TRIES lectures, compteur `tries` dans la provenance `site_email`), avec en plus les pages /contact et
-    /mentions-legales cherchées même sans lien."""
+    jours : relue (au plus SITE_EMAIL_MAX_TRIES lectures, compteur `tries` dans la provenance `site_email`). Chaque lecture est approfondie (pages
+    /contact, /nous-contacter, /mentions-legales cherchées même sans lien, `deep` dans la provenance) ; un site jamais lu ainsi est relu sans
+    attendre le délai."""
     if limit <= 0:
         return _out(stop="off")
     tries = f"COALESCE(CAST(JSON_UNQUOTE({_prov('site_email.tries')}) AS UNSIGNED), 1)"
     rows = _rows(conn, f"""p.website_status IN ('CONFIRMED','PROBABLE') AND COALESCE(p.site_review, '') <> 'PENDING' AND p.website_url IS NOT NULL
         AND (p.email IS NULL OR p.email = '') AND p.pipeline_stage = 'DONE' AND {BASE}
-        AND ({_prov('site_email')} IS NULL OR ({tries} < {SITE_EMAIL_MAX_TRIES} AND {_date('site_email.checked_at')}
-             < UTC_TIMESTAMP() - INTERVAL {SITE_EMAIL_RETRY_DAYS} DAY))""",
+        AND ({_prov('site_email')} IS NULL OR ({tries} < {SITE_EMAIL_MAX_TRIES} AND ({_prov('site_email.deep')} IS NULL
+             OR {_date('site_email.checked_at')} < UTC_TIMESTAMP() - INTERVAL {SITE_EMAIL_RETRY_DAYS} DAY)))""",
                  limit, f"({_prov('site_email')} IS NOT NULL), (TRIM(COALESCE(p.phone, '')) = '') DESC, {ORDER}")
 
     def one(row):
@@ -270,8 +271,9 @@ def site_emails(conn, fetch, limit: int = SITE_EMAIL_PER_RUN, deadline: float | 
         tries = (int(prev.get("tries") or 1) + 1) if isinstance(prev, dict) else 1
         if pages:
             res = SimpleNamespace(pages=pages, canonical_domain=row.get("canonical_domain") or pages[0].domain)
-            _pages, added = siterecheck._site_contacts(conn, row, res, fetch, deep=tries > 1)
-        store.set_provenance(conn, row["id"], "site_email", {"checked_at": runner._now_iso(), "read": bool(pages), "added": added, "tries": tries})
+            _pages, added = siterecheck._site_contacts(conn, row, res, fetch, deep=True)
+        store.set_provenance(conn, row["id"], "site_email", {"checked_at": runner._now_iso(), "read": bool(pages), "added": added, "tries": tries,
+                                                         "deep": True})
         if added:
             emailsearch._rescore(conn, row["id"])
         return "email" in added
