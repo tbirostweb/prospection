@@ -134,6 +134,22 @@ export async function getIdentityStats() {
   return { reasons, total: reasons.reduce((a, r) => a + r.n, 0), contacted: reasons.reduce((a, r) => a + r.contacted, 0), pending: Number(left?.n ?? 0) };
 }
 
+/** Statistiques → « Recherche d'e-mail par moteur » : sur 7 jours, fiches cherchées, e-mails trouvés et rendement par requête
+ *  (provenance `email_search` : `tried` = identifiants des requêtes faites, `hit` = celle qui a trouvé ; worker/local/snippets.py email_query_plan). */
+export const EMAIL_QUERY_IDS: [string, string][] = [["email", "« nom » ville email"], ["annuaires", "annuaires / facebook / pagesjaunes"],
+  ["contact", "« nom » ville contact"], ["arobase", "« nom » \"@\" code postal"]];
+export async function getEmailSearchStats() {
+  const E = `JSON_EXTRACT(p.provenance, '$.email_search')`;
+  const per = EMAIL_QUERY_IDS.map(([id]) => `COALESCE(SUM(JSON_CONTAINS(JSON_EXTRACT(p.provenance, '$.email_search.tried'), '"${id}"')),0) AS tried_${id},
+      COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.email_search.hit')) = '${id}'),0) AS hit_${id}`).join(",\n      ");
+  const [r] = await safeRows<any>(`SELECT COUNT(*) AS searched, COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.email_search.found')) = 'true'),0) AS found,
+      ${per}
+      FROM local_prospects p WHERE ${E} IS NOT NULL
+        AND STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(p.provenance, '$.email_search.checked_at')), '%Y-%m-%dT%H:%i:%sZ') >= UTC_TIMESTAMP() - INTERVAL 7 DAY`);
+  const queries = EMAIL_QUERY_IDS.map(([id, label]) => ({ id, label, tried: Number(r?.[`tried_${id}`] ?? 0), hits: Number(r?.[`hit_${id}`] ?? 0) }));
+  return { searched: Number(r?.searched ?? 0), found: Number(r?.found ?? 0), queries };
+}
+
 /** Statistiques → « Dernier passage d'enrichissement » (worker/local/enrich.py, table local_enrich_runs : absente avant la migration 033 → null). */
 export async function getEnrichStats() {
   const run = (r: any): EnrichRun | null => r ? { started_at: r.started_at, duration_ms: Number(r.duration_ms ?? 0), mode: String(r.mode ?? ""),

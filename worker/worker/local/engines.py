@@ -340,6 +340,20 @@ class SearchPool:
         order = {n: i for i, n in enumerate(self.names)}
         return sorted(ok, key=lambda n: (self.tier(n), -(rows[n]["health"] if rows[n]["health"] is not None else 60) if self.tier(n) == 0 else order[n]))
 
+    def budget_share_left(self) -> float:
+        """Part (0-1) du budget de 24 h encore disponible sur les moteurs gratuits (palier 0) utilisables maintenant (activés, hors cooldown).
+        0 si aucun n'est utilisable. Sert à la recherche d'e-mail pour s'arrêter avant d'avoir tout brûlé (emailsearch.MIN_BUDGET_PCT)."""
+        now = db.fetch_one(self.conn, "SELECT UTC_TIMESTAMP() AS n")["n"]
+        left = total = 0
+        for n, r in self.rows().items():
+            p = self.providers.get(n)
+            if p is None or p.tier != 0 or not r["enabled"] or (r["cooldown_until"] is not None and r["cooldown_until"] > now):
+                continue
+            fresh = r["window_start"] is not None and (now - r["window_start"]).total_seconds() < 24 * 3600
+            total += p.daily_budget
+            left += max(0, p.daily_budget - int(r["window_requests"] or 0)) if fresh else p.daily_budget
+        return left / total if total else 0.0
+
     def _record(self, engine: str, *, ok: bool, ms: int | None, results: int = 0, useful: int = 0, category: str | None = None, error: str | None = None) -> None:
         row = self.rows().get(engine) or {}
         req = int(row.get("requests") or 0) + 1

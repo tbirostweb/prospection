@@ -500,3 +500,14 @@ def test_reserve_des_fiches_existantes_les_campagnes_s_arretent_avant(conn, pool
     enrichissement("q8")
     enrichissement("q9")
     assert enrichissement.available() == [] and health(conn, "google")["window_requests"] == 10   # budget du moteur jamais dépassé
+
+
+def test_part_du_budget_restante_pour_la_recherche_d_email(conn, pool_factory, monkeypatch):
+    monkeypatch.setattr(engines, "DAILY_BUDGET", 10)
+    pool = pool_factory({}, engines_list="google")
+    assert pool.budget_share_left() == 1.0
+    for i in range(7):
+        pool(f"q{i}")
+    assert abs(pool.budget_share_left() - 0.3) < 1e-9                                  # 3 requêtes sur 10 restent
+    db.execute(conn, "UPDATE local_engine_health SET cooldown_until=UTC_TIMESTAMP() + INTERVAL 1 HOUR WHERE engine='google'")
+    assert pool.budget_share_left() == 0.0                                             # aucun moteur utilisable

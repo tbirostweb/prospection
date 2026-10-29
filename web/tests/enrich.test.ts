@@ -17,5 +17,5 @@ test("mêmes sous-passages et raisons d'arrêt que le worker", () => {
   const py = fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "worker", "worker", "local", "enrich.py"), "utf8");
   const steps = (name: string) => (py.match(new RegExp(`${name} = \\(([^)]*)\\)`))?.[1] ?? "").match(/"([a-z_]+)"/g)!.map((s) => s.slice(1, -1));
   assert.deepEqual([...steps("FREE_STEPS"), ...steps("ENGINE_STEPS")].sort(), Object.keys(STEP_LABELS).sort());
-  for (const code of ["nothing", "limit", "time", "quota", "engines", "lock", "error", "off"]) assert.ok(STOP_LABELS[code], code);
+  for (const code of ["nothing", "limit", "time", "quota", "engines", "budget", "lock", "error", "off"]) assert.ok(STOP_LABELS[code], code);
 });

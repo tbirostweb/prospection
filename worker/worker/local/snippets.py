@@ -120,20 +120,27 @@ def email_query(company: dict) -> str | None:
     return f'"{name}" {city} email' if name and city else None
 
 
-def email_queries(company: dict, limit: int = 3) -> list[str]:
-    """Requêtes dédiées à l'e-mail, de la plus générale à la plus ciblée (au plus `limit`, 4 existent) : l'appelant s'arrête dès qu'une adresse
-    fiable est lue. Même attribution (nom + ville/code postal) pour tous les extraits."""
+def email_query_plan(company: dict, limit: int = 2) -> list[tuple[str, str]]:
+    """Requêtes dédiées à l'e-mail, (identifiant stable, requête), de la plus prometteuse à la moins (au plus `limit`) : l'appelant s'arrête dès
+    qu'une adresse fiable est lue. Même attribution (nom + ville/code postal) pour tous les extraits. L'ORDRE ci-dessous est celui à changer d'après la
+    mesure (Statistiques → « Recherche d'e-mail par moteur », rendement par identifiant) ; les identifiants, eux, restent stables (provenance `hit`)."""
     first = email_query(company)
     if not first:
         return []
     name = (company.get("trade_name") or company.get("company_name") or "").strip()
     city = (company.get("city") or "").strip()
     cp = (company.get("postal_code") or "").strip()
-    qs = [first, f'"{name}" {city} contact']
+    plan = [("email", first),
+            ("annuaires", f'"{name}" {city} facebook pagesjaunes mail'),     # annuaires et pages sociales : l'extrait y montre souvent l'adresse
+            ("contact", f'"{name}" {city} contact')]
     if cp:
-        qs.append(f'"{name}" "@" {cp}')
-    qs.append(f'"{name}" {city} facebook pagesjaunes mail')           # annuaires et pages sociales : l'extrait y montre souvent l'adresse
-    return qs[:max(1, limit)]
+        plan.append(("arobase", f'"{name}" "@" {cp}'))
+    return plan[:max(1, limit)]
+
+
+def email_queries(company: dict, limit: int = 2) -> list[str]:
+    """Les requêtes seules de `email_query_plan`."""
+    return [q for _id, q in email_query_plan(company, limit)]
 
 
 def contact_query(company: dict) -> str | None:

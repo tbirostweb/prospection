@@ -62,8 +62,14 @@ def test_email_meilleur_choisi_parmi_plusieurs():
 
 def test_requetes_email_plafonnees():
     qs = snippets.email_queries(DUPONT, 4)
-    assert len(qs) == 4 and qs[0] == snippets.email_query(DUPONT) and '"@" 10000' in qs[2]
+    assert len(qs) == 4 and qs[0] == snippets.email_query(DUPONT) and "pagesjaunes" in qs[1] and '"@" 10000' in qs[3]
+    assert [i for i, _ in snippets.email_query_plan(DUPONT, 4)] == ["email", "annuaires", "contact", "arobase"]
     assert len(snippets.email_queries(DUPONT, 2)) == 2 and snippets.email_queries({"company_name": "X"}) == []
+
+
+def test_email_defaut_deux_requetes():
+    from worker.local import runner
+    assert runner.EMAIL_QUERIES_PER_PROSPECT == 2
 
 
 def test_email_search_s_arrete_au_premier_email_et_delai_court_si_rien(monkeypatch):
@@ -80,10 +86,21 @@ def test_email_search_s_arrete_au_premier_email_et_delai_court_si_rien(monkeypat
     found = runner.email_search(None, 1, DUPONT, search)
     assert found["email"] == "contact@boulangerie-dupont.fr" and len(calls) == 2
     assert saved["found"] is True and saved["queries"] == calls and saved["source"]
+    assert saved["tried"] == ["email", "annuaires"] and saved["hit"] == "annuaires"
     calls.clear()
     assert runner.email_search(None, 1, DUPONT, lambda q: calls.append(q) or []) ["email"] is None and len(calls) == 3 and saved["found"] is False
+    assert saved["hit"] is None and saved["tried"] == ["email", "annuaires", "contact"]
     import time
     old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 15 * 86400))
     miss = {"provenance": json.dumps({"email_search": {"checked_at": old, "found": False}})}
     hit = {"provenance": json.dumps({"email_search": {"checked_at": old, "found": True}})}
     assert runner.email_recently_searched(miss) is False and runner.email_recently_searched(hit) is True
+
+
+def test_emailsearch_s_arrete_quand_il_reste_peu_de_budget(monkeypatch):
+    from worker.local import emailsearch
+    monkeypatch.setattr(emailsearch, "rescore_manual", lambda conn: 0)
+    monkeypatch.setattr(emailsearch, "candidates", lambda conn, limit: [{"id": 1}])
+    pool = lambda q: []                                    # noqa: E731
+    pool.budget_share_left = lambda: 0.3                   # moins de 40 % restants
+    assert emailsearch.run(None, pool)["stop"] == "budget"

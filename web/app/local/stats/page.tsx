@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
 import PlacesBackfillButton from "@/components/PlacesBackfillButton";
-import { getEnrichStats, getIdentityStats, getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
+import { getEmailSearchStats, getEnrichStats, getIdentityStats, getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
 import { MODE_LABELS, STEP_LABELS, STOP_LABELS, enrichSummary, type EnrichRun } from "@/lib/enrich";
 import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engineTier } from "@/lib/local";
 
@@ -84,6 +84,7 @@ export default async function LocalStats() {
   const quality = await getQualityStats();
   const identity = await getIdentityStats();
   const enrich = await getEnrichStats();
+  const emailSearch = await getEmailSearchStats();
   const hhmm = (d: any) => new Date(d).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const runLine = (r: EnrichRun) => `${hhmm(r.started_at)} (${MODE_LABELS[r.mode] ?? r.mode}, ${Math.max(1, Math.round(r.duration_ms / 60000))} min) : ${enrichSummary(r.steps)}`;
   // sous-passages arrêtés par autre chose que « rien à faire » / « plafond » : ce qui freine l'avancement
@@ -140,6 +141,13 @@ export default async function LocalStats() {
           <div className="mono mb-1">Sans contact fiable : pourquoi (un téléphone suffit : ces fiches n'en ont pas)</div>
           <ul className="flex flex-col gap-0.5">{quality.contactReasons.map((r) => <li key={r.code} className="flex justify-between gap-3 border-b border-line py-1">
             <span className="min-w-0">{r.label}</span><span className="font-mono text-xs">{r.n}</span></li>)}</ul>
+        </div>}
+        {emailSearch.searched > 0 && <div className="mt-4 text-sm">
+          <div className="mono mb-1">Recherche d'e-mail par moteur (7 jours)</div>
+          <p>{emailSearch.searched} fiche(s) cherchée(s) · {emailSearch.found} e-mail(s) trouvé(s) <span className="text-muted">({pct(emailSearch.found, emailSearch.searched)})</span></p>
+          <ul className="mt-1 flex flex-col gap-0.5">{emailSearch.queries.filter((q) => q.tried > 0).map((q) => <li key={q.id} className="flex justify-between gap-3 border-b border-line py-1">
+            <span className="min-w-0">{q.label}</span><span className="font-mono text-xs">{q.hits} trouvé(s) / {q.tried} tentée(s) · {pct(q.hits, q.tried)}</span></li>)}</ul>
+          <p className="mt-1 text-xs text-muted">Chaque requête est comptée quand elle a été lancée ; « trouvé » = celle qui a fourni l'adresse. Garder en tête de snippets.email_query_plan celles qui rendent le plus.</p>
         </div>}
         {quality.closed > 0 && <p className="mt-3 text-sm">Fermées ou en procédure (écartées) : <span className="font-mono text-xs">{quality.closed}</span>
           <span className="text-muted"> — établissement fermé, entreprise cessée, radiée ou en procédure collective (SIRENE, BODACC revérifiés tous les 30 jours) ; hors des fiches à prospecter.</span></p>}

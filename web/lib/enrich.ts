@@ -22,7 +22,7 @@ export const STEP_LABELS: Record<string, [string, string]> = {
   email: ["recherche d'e-mail", "recherches d'e-mail"],
 };
 export const STOP_LABELS: Record<string, string> = {
-  nothing: "rien à faire", limit: "plafond du passage", time: "budget de temps", quota: "quota", engines: "moteurs indisponibles",
+  nothing: "rien à faire", limit: "plafond du passage", time: "budget de temps", quota: "quota", engines: "moteurs indisponibles", budget: "budget du jour réservé",
   lock: "verrou pris (campagne en cours)", error: "erreur", off: "désactivé",
 };
 // ce que compte `found` quand ce n'est pas « trouvé » : sites retirés par la vérification d'identité (worker/local/enrich.py site_identity)

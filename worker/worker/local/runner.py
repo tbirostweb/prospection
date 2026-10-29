@@ -351,7 +351,7 @@ def _now_iso() -> str:
 
 EMAIL_RECHECK_DAYS = int(os.getenv("LOCAL_EMAIL_RECHECK_DAYS") or "30")               # adresse trouvée (ou fiche sans objet) : pas refaite avant
 EMAIL_RECHECK_MISS_DAYS = int(os.getenv("LOCAL_EMAIL_RECHECK_MISS_DAYS") or "10")     # rien trouvé : nouvel essai plus tôt (une page publiée plus tard)
-EMAIL_QUERIES_PER_PROSPECT = max(1, int(os.getenv("LOCAL_EMAIL_QUERIES_PER_PROSPECT") or "3"))   # requêtes par fiche et par essai (4 au plus utiles)
+EMAIL_QUERIES_PER_PROSPECT = max(1, int(os.getenv("LOCAL_EMAIL_QUERIES_PER_PROSPECT") or "2"))   # requêtes par fiche et par essai (2 : budget des moteurs gratuits ; 4 existent, voir snippets.email_query_plan)
 
 
 def email_recently_searched(row: dict | None) -> bool:
@@ -368,25 +368,29 @@ def email_recently_searched(row: dict | None) -> bool:
 
 
 def email_search(conn, pid: int, company: dict, search, row: dict | None = None, deadline: float | None = None) -> dict | None:
-    """Recherche dédiée à l'e-mail : jusqu'à EMAIL_QUERIES_PER_PROSPECT requêtes (« nom ville email », « … contact », « … "@" code postal », annuaires),
+    """Recherche dédiée à l'e-mail : jusqu'à EMAIL_QUERIES_PER_PROSPECT requêtes (« nom ville email », annuaires, « … contact », « … "@" code postal » : identifiants email, annuaires, contact, arobase),
     arrêt dès qu'une adresse attribuable est lue dans les extraits (mêmes garde-fous que snippets.extract). Notée dans la provenance (`email_search` :
     requêtes faites, source retenue) : pas refaite avant EMAIL_RECHECK_MISS_DAYS (rien trouvé) ou EMAIL_RECHECK_DAYS jours. None si rien n'a été
     cherché. SearchUnavailable remonte, comme pour la requête de téléphone : le prospect est repris plus tard, rien n'est conclu."""
-    queries = snippets.email_queries(company, EMAIL_QUERIES_PER_PROSPECT)
-    if not queries or search is None or email_recently_searched(row):
+    plan = snippets.email_query_plan(company, EMAIL_QUERIES_PER_PROSPECT)
+    if not plan or search is None or email_recently_searched(row):
         return None
     done: list[str] = []
+    tried: list[str] = []                               # identifiants stables des requêtes faites (mesure du rendement par requête)
+    hit = None
     found = snippets.extract(company, [])
-    for q in queries:
+    for qid, q in plan:
         if done and deadline is not None and time.monotonic() > deadline:
             break                                       # budget de temps : la fiche est reprise après le délai court
         found = snippets.extract(company, search(q) or [])
         done.append(q)
+        tried.append(qid)
         if found["email"]:
+            hit = qid
             break
     ev = next((e for e in found["evidence"] if e["kind"] == "email"), None)
     store.set_provenance(conn, pid, "email_search", {"checked_at": _now_iso(), "found": bool(found["email"]), "queries": done,
-                                                     "source": (ev or {}).get("url") if ev else None})
+                                                     "tried": tried, "hit": hit, "source": (ev or {}).get("url") if ev else None})
     return found
 
 
