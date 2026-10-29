@@ -1,8 +1,8 @@
 """Enrichissement des fiches existantes :  python -m worker.local.emailsearch [--no-engines]   (voir `enrich.main` : ordre, verrous, budgets, état)
 
 Une fiche n'est vérifiée qu'une fois ; une adresse publiée plus tard (page Facebook, annuaire, mentions légales) ne serait jamais vue. Ici, à
-chaque passage, LOCAL_EMAIL_SEARCH_PER_RUN prospects sans e-mail (jamais contactés, hors « ne plus contacter » et écartés) reçoivent une recherche
-dédiée (`runner.email_search`, 2 requêtes par défaut, arrêt dès une adresse), au plus une fois tous les EMAIL_RECHECK_MISS_DAYS jours (rien trouvé) ou EMAIL_RECHECK_DAYS. Une adresse trouvée complète la fiche (jamais elle ne
+chaque passage, LOCAL_EMAIL_SEARCH_PER_RUN REQUÊTES (pas fiches) vont aux prospects sans e-mail (jamais contactés, hors « ne plus contacter » et écartés) reçoivent une recherche
+dédiée (`runner.email_search`, 2 requêtes au plus, la 2e seulement si la 1re n'a rien donné : la requête économisée passe à la fiche suivante), au plus une fois tous les EMAIL_RECHECK_MISS_DAYS jours (rien trouvé) ou EMAIL_RECHECK_DAYS. Une adresse trouvée complète la fiche (jamais elle ne
 remplace une coordonnée connue) et le score est recalculé : la fiche peut alors passer « À contacter » et partir par l'envoi automatique.
 Ordre : brouillon déjà rédigé, puis site vérifié sans e-mail (son site a été relu par `enrich.site_emails`), puis fiche avec téléphone (complète
 « téléphone » : l'e-mail la rend envoyable), puis les plus prometteuses. Utilise les moteurs : sous le verrou des campagnes (`enrich.main`), même
@@ -18,7 +18,7 @@ from ..config import env
 from . import runner, store
 from .errors import SearchUnavailable
 
-PER_RUN = int(env("LOCAL_EMAIL_SEARCH_PER_RUN", "15") or 15)     # 15 fiches × 2 requêtes × 24 passages ≈ 720 requêtes au plus par jour
+PER_RUN = int(env("LOCAL_EMAIL_SEARCH_PER_RUN", "30") or 30)     # requêtes par passage : 30 × 24 passages ≈ 720 au plus par jour, 15 à 30 fiches selon les trouvailles
 # Part du budget de 24 h des moteurs gratuits réservée aux recherches de site, revérifications et campagnes : la recherche d'e-mail s'arrête
 # (stop « budget ») dès qu'il en reste moins. 0 = pas de réserve.
 MIN_BUDGET_PCT = max(0, min(100, int(env("LOCAL_EMAIL_SEARCH_MIN_BUDGET_PCT", "40") or 0)))
@@ -63,9 +63,19 @@ def run(conn, search, limit: int = PER_RUN, deadline: float | None = None, manua
     stats = {"searched": 0, "found": 0, "manual_rescored": rescore_manual(conn) if manual else 0, "stop": "off"}
     if limit <= 0:
         return stats
-    rows = candidates(conn, limit)
-    stats["stop"] = "limit" if len(rows) >= limit else "nothing"
+    used = 0
+
+    def counted(q):                                            # `limit` compte les requêtes : celle qu'une fiche n'a pas utilisée va à la suivante
+        nonlocal used
+        used += 1
+        return search(q)
+
+    rows = candidates(conn, limit)                             # au plus `limit` fiches (une requête chacune au minimum)
+    stats["stop"] = "nothing"
     for row in rows:
+        if used >= limit:
+            stats["stop"] = "limit"
+            break
         if deadline is not None and time.monotonic() > deadline:
             stats["stop"] = "time"
             break
@@ -75,7 +85,7 @@ def run(conn, search, limit: int = PER_RUN, deadline: float | None = None, manua
             break                                              # le reste du budget du jour est gardé aux sites, revérifications et campagnes
         company = {**runner._company(conn, row), "department": row.get("department")}
         try:
-            found = runner.email_search(conn, row["id"], company, search, row, deadline=deadline)
+            found = runner.email_search(conn, row["id"], company, counted, row, deadline=deadline)
         except SearchUnavailable:
             conn.rollback()
             stats["stop"] = "engines"
@@ -88,6 +98,7 @@ def run(conn, search, limit: int = PER_RUN, deadline: float | None = None, manua
                 stats["found"] += 1
                 _rescore(conn, row["id"])                      # contact trouvé : la fiche peut devenir « À contacter »
         conn.commit()
+    stats["queries"] = used
     return stats
 
 

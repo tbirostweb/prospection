@@ -104,3 +104,25 @@ def test_emailsearch_s_arrete_quand_il_reste_peu_de_budget(monkeypatch):
     pool = lambda q: []                                    # noqa: E731
     pool.budget_share_left = lambda: 0.3                   # moins de 40 % restants
     assert emailsearch.run(None, pool)["stop"] == "budget"
+
+
+def test_emailsearch_compte_les_requetes_et_reporte_l_economie_sur_la_fiche_suivante(monkeypatch):
+    from worker.local import emailsearch
+    monkeypatch.setattr(emailsearch, "rescore_manual", lambda conn: 0)
+    monkeypatch.setattr(emailsearch, "candidates", lambda conn, limit: [{"id": i} for i in range(1, limit + 1)])
+    monkeypatch.setattr(emailsearch.runner, "_company", lambda conn, row: {})
+    monkeypatch.setattr(emailsearch.store, "is_do_not_contact", lambda *a, **k: True)
+    seen = []
+
+    def email_search(conn, pid, company, search, row, deadline=None):
+        search("q1")                                       # fiche 1 : trouvée dès la 1re requête ; les autres : 2 requêtes
+        if pid != 1:
+            search("q2")
+        seen.append(pid)
+        return {"email": "x@y.fr" if pid == 1 else None}
+    monkeypatch.setattr(emailsearch.runner, "email_search", email_search)
+
+    class Conn:
+        def commit(self): pass
+    stats = emailsearch.run(Conn(), lambda q: [], limit=5)
+    assert seen == [1, 2, 3] and stats["queries"] == 5 and stats["stop"] == "limit"   # 1 + 2 + 2 : la requête économisée sert à la fiche 3
