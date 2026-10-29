@@ -73,7 +73,7 @@ SEARCH_MORE_TRIES, SEARCH_MORE_DAYS, SEARCH_MORE_LATER_DAYS = 3, 1, 14
 KEEP_RUNS = 500
 
 FREE_STEPS = ("company_state", "naf", "manual", "stuck", "site_identity", "places_site", "places_backfill", "site_guess", "unreachable", "site_email")
-ENGINE_STEPS = ("recheck", "search_more", "stuck_search", "email")
+ENGINE_STEPS = ("email", "recheck", "search_more", "stuck_search")   # l'e-mail d'abord (priorité), borné à LOCAL_EMAIL_SEARCH_PER_RUN requêtes
 STOP_TEXT = {"budget": "budget du jour des moteurs réservé aux autres tâches", "time": "budget de temps", "quota": "quota", "engines": "moteurs indisponibles", "error": "erreur", "lock": "verrou pris"}
 
 BASE = f"""p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.is_chain = 0 AND (p.category IS NULL OR p.category <> 'IGNORER')

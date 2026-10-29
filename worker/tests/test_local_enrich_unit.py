@@ -50,4 +50,4 @@ def test_le_verrou_libere_pendant_l_attente_est_pris(tmp_path, monkeypatch):
 
 def test_ordre_des_sous_passages():
     assert enrich.FREE_STEPS[:4] == ("company_state", "naf", "manual", "stuck") and "places_site" in enrich.FREE_STEPS   # fermées écartées d'abord
-    assert enrich.ENGINE_STEPS == ("recheck", "search_more", "stuck_search", "email")
+    assert enrich.ENGINE_STEPS == ("email", "recheck", "search_more", "stuck_search")

@@ -91,7 +91,9 @@ def test_moteurs_indisponibles_les_sous_passages_suivants_n_insistent_pas(env, c
         raise SearchUnavailable("tous les moteurs sont en cooldown")
     report = enrich.run(conn, "full", fetch=web, pool_factory=lambda c: down, lock_fn=lambda w: Lock())
     eng = [s for s in report.steps if s["key"] in enrich.ENGINE_STEPS]
-    assert eng[0]["stop"] == "engines" and all(s["stop"] == "engines" for s in eng) and "moteurs indisponibles" in report.stopped()
+    first = next(i for i, s in enumerate(eng) if s["stop"] == "engines")     # l'e-mail passe d'abord ; sans candidat il ne touche pas aux moteurs
+    assert all(s["stop"] == "nothing" for s in eng[:first]) and all(s["stop"] == "engines" for s in eng[first:])
+    assert "moteurs indisponibles" in report.stopped()
 
 
 def test_budget_de_temps_coupe_le_sous_passage(env, conn, monkeypatch):
