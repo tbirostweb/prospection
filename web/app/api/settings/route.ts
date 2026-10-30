@@ -106,8 +106,10 @@ export async function PUT(req: NextRequest) {
   const refused: string[] = [];
   for (const [key, value] of Object.entries(body)) {
     if (!ALLOWED_KEYS.includes(key)) continue;
-    const clean = sanitize(key, value);
+    let clean = sanitize(key, value);
     if (clean === null) { refused.push(key); continue; }
+    // Réenregistrer les réglages d'envoi lève la pause du coupe-circuit (worker/local/outbox.py) : les e-mails revenus avant cet instant ne comptent plus.
+    if (key === "local_auto_send") clean = { ...clean, bounce_ack_at: new Date().toISOString() };
     await query(`INSERT INTO settings (user_id, skey, value_json) VALUES (?,?,?)
       ON DUPLICATE KEY UPDATE value_json=VALUES(value_json)`,
       [user.id, key, JSON.stringify(clean)]);

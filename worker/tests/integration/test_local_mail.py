@@ -171,7 +171,7 @@ def test_sequence_complete_premier_message_relances_abandon(mail, conn):
     p = row(conn, pid)
     assert (p["status"], p["auto_state"], p["followups"]) == ("CONTACTED", "active", 0) and p["contacted_at"] == dt.datetime(2026, 11, 2, 9, 0)
     assert [b for b, _ in mail.imap.appended] == ['"Sent Items"']                # copie dans Envoyés, pour garder le fil complet
-    assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "idle"         # J+0 : rien d'autre à envoyer
+    assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "gap"          # J+0 : moins d'une heure après le dernier envoi
     assert mail.run(T0 + dt.timedelta(days=2))["status"] == "idle"             # mercredi : trop tôt pour relancer
 
     assert mail.run(T0 + dt.timedelta(days=5))["status"] == "hours"            # samedi : rien ne part le week-end
@@ -243,10 +243,21 @@ def test_plafond_heures_et_adresses_ecartees(mail, conn):
     mail.enable(daily_cap=1, personal_emails=False)
     assert mail.run(T0.replace(hour=8))["status"] == "hours"
     assert mail.run(T0)["status"] == "sent" and row(conn, a)["auto_state"] == "active"
-    assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "cap"
+    assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "cap"          # le plafond passe avant l'intervalle
     assert mail.run(T0 + dt.timedelta(days=1))["status"] == "sent"            # mardi : la gmail est écartée, la suivante part
     assert row(conn, gmail)["auto_state"] == "stopped" and row(conn, c)["auto_state"] == "active"
     assert [m["To"] for m in mail.smtp.sent] == ["contact@garage-exemple.fr", "contact@autre-exemple.fr"]
+
+
+def test_un_seul_email_par_heure_premiers_messages_et_relances_confondus(mail, conn):
+    add(conn, "10000000000011", minutes=0)
+    add(conn, "20000000000011", email="contact@autre-exemple.fr", minutes=1)
+    mail.enable(daily_cap=30)
+    assert mail.run(T0)["status"] == "sent"
+    for m in (2, 30, 59):
+        assert mail.run(T0 + dt.timedelta(minutes=m))["status"] == "gap" and len(mail.smtp.sent) == 1   # moins d'une heure : rien ne part
+    assert mail.run(T0 + dt.timedelta(minutes=71))["status"] == "sent"          # 60 + 10 min au plus : le second part (avant la pause de midi)
+    assert len(mail.smtp.sent) == 2
 
 
 def test_dns_incorrect_bloque_et_erreur_smtp_reessayee(mail, conn):
@@ -257,12 +268,12 @@ def test_dns_incorrect_bloque_et_erreur_smtp_reessayee(mail, conn):
     state = db.fetch_one(conn, "SELECT checks FROM local_mail_state WHERE id=1")
     assert "2 enregistrements DMARC" in json.loads(state["checks"])["dns"]["problems"][0]
     mail.smtp.error = smtplib.SMTPAuthenticationError(535, b"authentication failed")
-    assert mail.run(T0 + dt.timedelta(hours=6), dns=DNS_OK)["status"] == "error"   # DNS revérifié (6 h), puis échec d'authentification
+    assert mail.run(T0 + dt.timedelta(days=1), dns=DNS_OK)["status"] == "error"   # DNS revérifié (6 h), puis échec d'authentification
     assert row(conn, pid)["auto_state"] == "queued"                                # rien de perdu : réessayé au passage suivant
     err = db.fetch_one(conn, "SELECT last_error FROM local_mail_state WHERE id=1")["last_error"]
     assert "mot de passe lu : 20 caractères" in err and "mot-de-passe-de-test" not in err   # longueur seulement, jamais la valeur
     mail.smtp.error = None
-    assert mail.run(T0 + dt.timedelta(hours=6, minutes=10))["status"] == "sent"
+    assert mail.run(T0 + dt.timedelta(days=1, minutes=10))["status"] == "sent"
     assert db.fetch_one(conn, "SELECT last_error FROM local_mail_state WHERE id=1")["last_error"] is None   # erreur effacée par l'envoi réussi
 
 
@@ -271,7 +282,7 @@ def test_premier_message_jamais_deux_fois_a_la_meme_adresse(mail, conn):
     dup = add(conn, "10000000000022", minutes=1)                               # deux établissements, même adresse
     mail.enable()
     mail.run(T0)
-    mail.run(T0 + dt.timedelta(minutes=10))
+    mail.run(T0 + dt.timedelta(days=1))
     assert len(mail.smtp.sent) == 1 and row(conn, dup)["auto_state"] == "stopped"
 
 
@@ -393,7 +404,7 @@ def test_etat_officiel_injoignable_rien_ne_part_puis_reprise(mail, conn, monkeyp
     assert row(conn, pid)["auto_state"] == "queued" and row(conn, pid)["excluded_reason"] is None   # rien de conclu
     assert mail.run(T0 + dt.timedelta(minutes=10))["status"] == "idle"           # moins d'une heure : la fiche attend, sans requête
     monkeypatch.setattr(http, "_transport", httpx.MockTransport(official_api()))
-    assert mail.run(T0 + dt.timedelta(hours=2))["status"] == "sent"              # source revenue, entreprise active : le message part
+    assert mail.run(T0 + dt.timedelta(hours=3))["status"] == "sent"              # source revenue, entreprise active : le message part
 
 
 # ── L'e-mail d'abord : le site oriente le message (complete.angle), il ne bloque plus l'envoi ─────────────────────────────────────────
@@ -421,7 +432,7 @@ def test_site_qui_ne_repond_plus_avant_une_refonte_brouillon_rendu_en_neutre(mai
     pid = add(conn, "10000000000011")
     db.execute(conn, "UPDATE local_prospects SET draft_kind='site_ameliorable' WHERE id=%s", (pid,))
     monkeypatch.setattr(outbox, "presend_identity", lambda *a, **k: ("retry", "le site ne répond pas"))
-    mail.enable()
+    mail.enable(start_hour=6, end_hour=22, pause_start=6, pause_end=7)     # plage large : les essais espacés d'une heure restent dans la fenêtre
     t = T0
     for _ in range(outbox.PRESEND_MAX_TRIES):
         assert mail.run(t)["status"] == "deferred" and mail.smtp.sent == []
@@ -436,3 +447,64 @@ def test_brouillon_ecrit_a_la_main_attend_toujours_un_site_tranche(mail, conn):
     db.execute(conn, "UPDATE local_prospects SET website_status='UNCERTAIN' WHERE id=%s", (pid,))
     mail.enable()
     assert mail.run(T0)["status"] == "idle" and mail.smtp.sent == [] and row(conn, pid)["auto_state"] == "queued"
+
+
+def _historique(conn, jours: list[int], statuts: list[str] | None = None):
+    """E-mails déjà partis il y a `jours` jours (UTC naïf), pour tester l'ancienneté et le coupe-circuit."""
+    pid = add(conn, "99000000000011", queued=False)
+    for i, j in enumerate(jours):
+        st = statuts[i] if statuts else "sent"
+        db.execute(conn, "INSERT INTO local_emails (prospect_id, kind, to_email, subject, body, message_id, status, sent_at) VALUES (%s,'first','x@y.fr','o','b',%s,%s,%s)",
+                   (pid, f"<h{i}@t>", st, (T0 - dt.timedelta(days=j)).astimezone(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(minutes=i)))
+
+
+def test_montee_en_charge_trois_par_jour_la_premiere_semaine(mail, conn):
+    for i in range(5):
+        add(conn, f"1{i}000000000011", email=f"contact{i}@autre-exemple{i}.fr", minutes=i)
+    mail.enable(daily_cap=10, min_gap_min=15)
+    got = []
+    for m in range(0, 300, 25):                       # un passage toutes les 25 min : le plafond du jour borne
+        got.append(mail.run(T0 + dt.timedelta(minutes=m))["status"])
+    assert got.count("sent") == 3 and "cap" in got
+
+
+def test_montee_en_charge_selon_l_anciennete_et_desactivable(mail, conn):
+    _historique(conn, [8, 8, 8, 8])                    # premier envoi il y a 8 jours : palier 4
+    for i in range(6):
+        add(conn, f"2{i}000000000011", email=f"contact{i}@autre-exemple{i}.fr", minutes=i)
+    mail.enable(daily_cap=10, min_gap_min=15)
+    got = [mail.run(T0 + dt.timedelta(minutes=m))["status"] for m in range(0, 400, 25)]
+    assert got.count("sent") == 4
+    db.execute(conn, "DELETE FROM local_emails WHERE sent_at >= %s", ((T0.astimezone(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(hours=1)),))
+    for i in range(4):
+        add(conn, f"3{i}000000000011", email=f"autre{i}@troisieme-exemple{i}.fr", minutes=10 + i)
+    mail.enable(daily_cap=10, min_gap_min=15, warmup=False)
+    got = [mail.run(T0 + dt.timedelta(days=1, minutes=m))["status"] for m in range(0, 400, 25)]
+    assert got.count("sent") == 6                       # sans montée en charge : plus de palier
+
+
+def test_apres_deux_semaines_le_plafond_regle_seul(mail, conn):
+    _historique(conn, [20])
+    from worker.local import mailer
+    cfg = mailer.settings({"enabled": True, "daily_cap": 10})
+    first = db.fetch_one(conn, "SELECT MIN(sent_at) AS t FROM local_emails")["t"]
+    assert mailer.effective_cap(cfg, first, T0) == (10, None)
+    assert mailer.effective_cap(cfg, None, T0)[0] == 3
+
+
+def test_coupe_circuit_deux_retours_sur_dix_puis_reprise(mail, conn):
+    _historique(conn, [3, 3, 2, 2, 2, 2, 2, 2, 2, 2], ["sent", "bounced", "sent", "sent", "bounced", "sent", "sent", "sent", "sent", "sent"])
+    add(conn, "10000000000011")
+    mail.enable(daily_cap=10, warmup=False, min_gap_min=15)
+    assert mail.run(T0)["status"] == "bounce_pause" and not mail.smtp.sent
+    assert mail.run(T0 + dt.timedelta(minutes=2))["status"] == "bounce_pause"
+    # réenregistrement des réglages : horodatage de reprise après les retours
+    mail.enable(daily_cap=10, warmup=False, min_gap_min=15, bounce_ack_at=(T0 - dt.timedelta(minutes=30)).astimezone(dt.timezone.utc).isoformat())
+    assert mail.run(T0 + dt.timedelta(minutes=4))["status"] == "sent"
+
+
+def test_un_seul_retour_ne_coupe_pas(mail, conn):
+    _historique(conn, [3, 2, 2], ["sent", "bounced", "sent"])
+    add(conn, "10000000000011")
+    mail.enable(daily_cap=10, warmup=False, min_gap_min=15)
+    assert mail.run(T0)["status"] == "sent"

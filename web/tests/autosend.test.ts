@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { AUTO_DEFAULTS, FREEMAIL, autoIneligible, sanitizeAutoSend } from "../lib/autosend";
+import { AUTO_DEFAULTS, FREEMAIL, autoIneligible, effectiveCap, sanitizeAutoSend } from "../lib/autosend";
 
 // fiche COMPLÈTE (lib/complete.ts) : métier connu, site confirmé, traitement terminé
 const P = { email: "contact@garage-exemple.fr", email_kind: "GENERIC_BUSINESS", do_not_contact: 0, contacted_at: null, draft_message: "Bonjour,…",
@@ -11,7 +11,13 @@ const P = { email: "contact@garage-exemple.fr", email_kind: "GENERIC_BUSINESS", 
 test("envoi automatique désactivé par défaut et réglage borné", () => {
   assert.equal(AUTO_DEFAULTS.enabled, false);
   assert.equal(sanitizeAutoSend({ enabled: "true" })!.enabled, false);          // seul un vrai booléen active
-  assert.deepEqual(sanitizeAutoSend({ enabled: true, daily_cap: 500, start_hour: 9, end_hour: 17 }), { enabled: true, personal_emails: true, daily_cap: 30, start_hour: 9, end_hour: 17 });
+  assert.deepEqual(sanitizeAutoSend({ enabled: true, daily_cap: 500, start_hour: 9, end_hour: 17 }), { enabled: true, personal_emails: true, warmup: true, daily_cap: 30, start_hour: 9, end_hour: 17, pause_start: 12, pause_end: 13, min_gap_min: 60 });
+  assert.deepEqual([AUTO_DEFAULTS.start_hour, AUTO_DEFAULTS.end_hour, AUTO_DEFAULTS.pause_start, AUTO_DEFAULTS.pause_end, AUTO_DEFAULTS.min_gap_min], [10, 16, 12, 13, 60]);
+  assert.equal(sanitizeAutoSend({ min_gap_min: 5 })!.min_gap_min, 15);            // intervalle borné 15-240
+  assert.equal(sanitizeAutoSend({ min_gap_min: 999 })!.min_gap_min, 240);
+  assert.equal(sanitizeAutoSend({ min_gap_min: "x" })!.min_gap_min, 60);
+  const pause = sanitizeAutoSend({ enabled: true, pause_start: 11, pause_end: 14 })!;
+  assert.deepEqual([pause.pause_start, pause.pause_end, pause.start_hour, pause.end_hour], [11, 14, 10, 16]);
   assert.equal(sanitizeAutoSend({ enabled: true, start_hour: 17, end_hour: 9 }), null);
   assert.equal(sanitizeAutoSend(null), null);
 });
@@ -55,4 +61,17 @@ test("fiche incomplète ou adresse invalide : jamais en file d'envoi", () => {
     provenance: JSON.stringify({ site_recheck: { status: "NOT_FOUND" } }) }, true), null);
   assert.match(autoIneligible({ ...P, pipeline_stage: "AUDIT" }, true)!, /traitement pas terminé/);
   assert.match(autoIneligible({ ...P, auto_state: "bounced" }, true)!, /adresse invalide/);
+});
+
+test("montée en charge : palier selon l'ancienneté, désactivable", () => {
+  const now = new Date("2026-11-10T10:00:00Z"), ago = (d: number) => new Date(now.getTime() - d * 86400000);
+  assert.equal(effectiveCap({ daily_cap: 10 }, null, now).cap, 3);
+  assert.equal(effectiveCap({ daily_cap: 10 }, ago(6), now).cap, 3);
+  assert.equal(effectiveCap({ daily_cap: 10 }, ago(7), now).cap, 4);
+  assert.equal(effectiveCap({ daily_cap: 2 }, ago(7), now).cap, 2);
+  assert.deepEqual(effectiveCap({ daily_cap: 10 }, ago(14), now), { cap: 10, until: null });
+  assert.equal(effectiveCap({ daily_cap: 10, warmup: false }, null, now).cap, 10);
+  assert.equal(sanitizeAutoSend({ enabled: true })!.warmup, true);
+  assert.equal(sanitizeAutoSend({ enabled: true, warmup: false })!.warmup, false);
+  assert.equal("bounce_ack_at" in sanitizeAutoSend({ enabled: true, bounce_ack_at: "x" })!, false);   // posé uniquement par la route
 });

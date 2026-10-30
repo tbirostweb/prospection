@@ -23,13 +23,22 @@ def test_reglage_absent_ou_illisible_desactive_l_envoi():
     assert mailer.settings(None)["enabled"] is False
     assert mailer.settings({"enabled": "true"})["enabled"] is False          # seul un vrai booléen active
     cfg = mailer.settings({"enabled": True, "daily_cap": 500, "start_hour": 18, "end_hour": 9})
-    assert cfg["enabled"] and cfg["daily_cap"] == 30 and (cfg["start_hour"], cfg["end_hour"]) == (9, 17)
+    assert cfg["enabled"] and cfg["daily_cap"] == 30 and (cfg["start_hour"], cfg["end_hour"]) == (10, 16)
+    assert (cfg["pause_start"], cfg["pause_end"], cfg["min_gap_min"]) == (12, 13, 60)               # défauts : pause 12 h-13 h, 1 e-mail par heure
+    assert mailer.settings({"min_gap_min": 5})["min_gap_min"] == 15 and mailer.settings({"min_gap_min": 999})["min_gap_min"] == 240
+    assert mailer.settings({"min_gap_min": "x"})["min_gap_min"] == 60
+    assert mailer.settings({"pause_start": 11, "pause_end": 14})["pause_end"] == 14
 
 
 @pytest.mark.parametrize("when,expected", [
-    (dt.datetime(2026, 10, 26, 9, 30, tzinfo=mailer.PARIS), True),          # lundi
-    (dt.datetime(2026, 10, 26, 8, 59, tzinfo=mailer.PARIS), False),
-    (dt.datetime(2026, 10, 26, 17, 0, tzinfo=mailer.PARIS), False),
+    (dt.datetime(2026, 10, 26, 10, 30, tzinfo=mailer.PARIS), True),         # lundi
+    (dt.datetime(2026, 10, 26, 9, 59, tzinfo=mailer.PARIS), False),
+    (dt.datetime(2026, 10, 26, 11, 59, tzinfo=mailer.PARIS), True),
+    (dt.datetime(2026, 10, 26, 12, 0, tzinfo=mailer.PARIS), False),         # pause déjeuner 12 h-13 h
+    (dt.datetime(2026, 10, 26, 12, 59, tzinfo=mailer.PARIS), False),
+    (dt.datetime(2026, 10, 26, 13, 0, tzinfo=mailer.PARIS), True),
+    (dt.datetime(2026, 10, 26, 15, 59, tzinfo=mailer.PARIS), True),
+    (dt.datetime(2026, 10, 26, 16, 0, tzinfo=mailer.PARIS), False),
     (dt.datetime(2026, 10, 25, 10, 0, tzinfo=mailer.PARIS), False),         # dimanche
     (dt.datetime(2026, 11, 11, 10, 0, tzinfo=mailer.PARIS), False),         # 11 novembre
     (dt.datetime(2026, 4, 6, 10, 0, tzinfo=mailer.PARIS), False),           # lundi de Pâques 2026
@@ -37,6 +46,33 @@ def test_reglage_absent_ou_illisible_desactive_l_envoi():
 ])
 def test_fenetre_d_envoi(when, expected):
     assert mailer.in_window(when, mailer.settings({"enabled": True})) is expected
+
+
+def test_pause_incoherente_ignoree():
+    h = lambda hour: dt.datetime(2026, 10, 26, hour, 0, tzinfo=mailer.PARIS)
+    cfg = mailer.settings({"enabled": True, "start_hour": 13, "end_hour": 18})            # pause 12 h-13 h avant le début : ignorée
+    assert mailer.in_window(h(13), cfg) and mailer.in_window(h(17), cfg)
+    cfg = mailer.settings({"enabled": True, "pause_start": 14, "pause_end": 13})          # pause vide : ignorée
+    assert mailer.in_window(h(14), cfg) and mailer.in_window(h(12), cfg)
+    cfg = mailer.settings({"enabled": True, "pause_start": 15, "pause_end": 20})          # déborde de la plage : ignorée
+    assert mailer.in_window(h(15), cfg)
+    cfg = mailer.settings({"enabled": True, "pause_start": 14, "pause_end": 15})
+    assert not mailer.in_window(h(14), cfg) and mailer.in_window(h(12), cfg)
+
+
+def test_intervalle_minimum_entre_deux_envois():
+    cfg, now = mailer.settings({"enabled": True}), dt.datetime(2026, 10, 26, 10, 0, tzinfo=mailer.PARIS)
+    utc = now.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    assert mailer.gap_wait(None, None, now, cfg) is False                                  # aucun envoi encore
+    jitter = (5 * 7919) % 11                                                               # décalage dérivé de l'id 5, entre 0 et 10 min
+    assert 0 <= jitter <= 10
+    limit = dt.timedelta(minutes=60 + jitter)
+    assert mailer.gap_wait(utc - limit + dt.timedelta(seconds=1), 5, now, cfg) is True     # un peu trop tôt
+    assert mailer.gap_wait(utc - limit, 5, now, cfg) is False                              # intervalle atteint
+    assert mailer.gap_wait(utc - dt.timedelta(minutes=20), 5, now, cfg) is True
+    assert mailer.gap_wait(utc - dt.timedelta(minutes=71), 5, now, cfg) is False           # 60 + 10 au plus
+    assert mailer.gap_wait(utc - dt.timedelta(minutes=26), 5, now, mailer.settings({"min_gap_min": 15})) is False
+    assert {(i * 7919) % 11 for i in range(1, 40)} == set(range(11))                        # tous les décalages de 0 à 10 min se rencontrent
 
 
 def test_minuit_de_paris_en_utc():

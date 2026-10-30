@@ -198,14 +198,29 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
   return { subject, body, core, facts, kind: event ? `${event.code}_${kind}` : kind };  // type mesuré par l'apprentissage (quel message obtient des réponses)
 }
 
+/** Objet d'un e-mail (délivrabilité) : court, sans « ! », emoji, mot en capitales ni mot de spam. `company` : nom de l'entreprise, dont les
+ *  sigles en capitales sont tolérés. [] = accepté. */
+export function checkSubject(subject: string, company = ""): string[] {
+  const s = subject.trim(), problems: string[] = [];
+  if (!s) return ["objet vide"];
+  if (s.length > 60) problems.push("objet trop long (60 caractères au plus)");
+  if (/!/.test(s)) problems.push("objet : pas de point d'exclamation");
+  if (/\p{Extended_Pictographic}/u.test(s)) problems.push("objet : pas d'emoji");
+  const caps = (s.match(/[A-ZÀ-ÝŒ]{5,}/g) ?? []).filter((w) => !company.includes(w));
+  if (caps.length) problems.push(`objet : pas de mot tout en majuscules (${caps.join(", ")})`);
+  const spam = s.match(/gratuit\w*|\boffres?\b|promo\w*|urgent\w*|exclusi\w*|€|%/gi);
+  if (spam) problems.push(`objet : mot de spam à éviter (${[...new Set(spam.map((x) => x.toLowerCase()))].join(", ")})`);
+  return problems;
+}
+
 /** Garde-fous d'un cœur de message rédigé HORS de l'application (/rediger) : on ne fait confiance qu'aux faits du brouillon de référence.
  *  Tout nombre ou lien absent de la référence est refusé (un chiffre inventé est la pire erreur d'un message de prospection). [] = accepté. */
-export function checkWrittenCore(core: string, subject: string, ref: Draft): string[] {
+export function checkWrittenCore(core: string, subject: string, ref: Draft, company = ""): string[] {
   const problems: string[] = [];
   const text = `${core}\n${subject}`;
   if (core.trim().length < 150) problems.push("message trop court (150 caractères au moins)");
   if (core.length > 2500) problems.push("message trop long (2 500 caractères au plus)");
-  if (!subject.trim() || subject.length > 120) problems.push("objet vide ou trop long (120 caractères au plus)");
+  problems.push(...checkSubject(subject, company));
   const known = `${ref.core}\n${ref.subject}\n${ref.facts.join("\n")}`;
   const allowedNumbers = new Set(known.match(/\d+(?:[ ,.]\d+)*/g) ?? []);
   const numbers = [...new Set(text.match(/\d+(?:[ ,.]\d+)*/g) ?? [])].filter((n) => !allowedNumbers.has(n));

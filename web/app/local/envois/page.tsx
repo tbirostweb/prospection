@@ -4,7 +4,7 @@ import AutoSendButton from "@/components/AutoSendButton";
 import BulkQueueButton from "@/components/BulkQueueButton";
 import EmailInput from "@/components/EmailInput";
 import { getAutoSend, getSetting, safeRows } from "@/lib/localdb";
-import { AUTO_STATES, EMAIL_KINDS, autoIneligible } from "@/lib/autosend";
+import { AUTO_STATES, EMAIL_KINDS, autoIneligible, effectiveCap } from "@/lib/autosend";
 import { ficheReason } from "@/lib/complete";
 import { formatPhone, verifiedSocials } from "@/lib/local";
 import type { Sender } from "@/lib/draft";
@@ -94,9 +94,16 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
     JOIN local_prospects p ON p.id = e.prospect_id ORDER BY e.sent_at DESC LIMIT 60`);
   const [today] = await safeRows<any>("SELECT COUNT(*) AS n FROM local_emails WHERE status IN ('sent','bounced') AND sent_at >= ?", [parisMidnightUtc()]);
   const sentToday = Number(today?.n ?? 0);
+  // Montée en charge (même calcul que le worker) et coupe-circuit : 2 retours ou plus parmi les 10 derniers envois depuis la dernière reprise.
+  const [firstSent] = await safeRows<any>("SELECT MIN(sent_at) AS t FROM local_emails WHERE status IN ('sent','bounced')");
+  const { cap, until } = effectiveCap(auto, firstSent?.t ? new Date(firstSent.t) : null);
+  const ack = auto.bounce_ack_at ? new Date(auto.bounce_ack_at) : null;
+  const last10 = await safeRows<any>("SELECT status FROM local_emails WHERE status IN ('sent','bounced') AND (? IS NULL OR sent_at > ?) ORDER BY sent_at DESC, id DESC LIMIT 10", [ack, ack]);
+  const bouncePause = last10.filter((e) => e.status === "bounced").length >= 2;
   const replied = ended.filter((p) => p.auto_state === "replied").length;
 
   const blockers: string[] = [];
+  if (bouncePause) blockers.push("Envoi en pause : au moins 2 e-mails revenus parmi les 10 derniers. Vérifie les adresses, puis réenregistre les réglages d'envoi (Réglages > Enregistrer) pour reprendre.");
   if (!auto.enabled) blockers.push("L'envoi automatique est désactivé (Réglages > Envoi automatique).");
   for (const k of checks.config_missing ?? []) blockers.push(`Variable ${k} à renseigner dans Dokploy (service worker).`);
   for (const pb of checks.dns?.problems ?? []) blockers.push(`DNS : ${pb}.`);
@@ -113,7 +120,7 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
       </PageHeader>
 
       <div className="stat-grid mb-8 grid-cols-2 !gap-2 sm:grid-cols-4 sm:!gap-4">
-        <StatCard featured label="Envoyés aujourd'hui" value={`${sentToday} / ${auto.daily_cap}`} hint={auto.enabled ? `de ${auto.start_hour} h à ${auto.end_hour} h, jours ouvrés` : "envoi désactivé"} />
+        <StatCard featured label="Envoyés aujourd'hui" value={`${sentToday} / ${cap}`} hint={auto.enabled ? `${until ? `montée en charge : ${cap}/jour jusqu'au ${until.toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })} · ` : ""}de ${auto.start_hour} h à ${auto.end_hour} h (pause ${auto.pause_start} h-${auto.pause_end} h), 1 par ${auto.min_gap_min} min` : "envoi désactivé"} />
         <StatCard label="En file" value={queued.length} hint="premiers messages à envoyer" />
         <StatCard label="En cours" value={active.length} hint="relances J+3 / J+7 prévues" />
         <StatCard label="Réponses" value={replied} hint="relances arrêtées" />

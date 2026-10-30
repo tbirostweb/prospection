@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let subject = d.subject, body = d.body, kind = d.kind;
   if (b.source === "rediger") {
     const core = String(b.core ?? ""), subj = String(b.subject ?? "").trim();
-    const problems = checkWrittenCore(core, subj, d);
+    const problems = checkWrittenCore(core, subj, d, `${p.trade_name ?? ""} ${p.company_name ?? ""}`);
     if (problems.length) return NextResponse.json({ error: "brouillon refusé", problems }, { status: 422 });
     subject = subj;
     body = wrapDraft(p, sender, core);

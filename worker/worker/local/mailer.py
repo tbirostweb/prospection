@@ -18,7 +18,13 @@ from .contacts import FREEMAIL
 
 PARIS = ZoneInfo("Europe/Paris")
 # personal_emails : envoyer aussi aux adresses Gmail, Orange… publiées comme contact de l'entreprise (choix de Théo, désactivable dans Réglages).
-DEFAULTS = {"enabled": False, "daily_cap": 10, "start_hour": 9, "end_hour": 17, "personal_emails": True}
+# Envoi étalé pour ne pas faire classer la boîte en spam : 10 h-16 h, pause déjeuner 12 h-13 h, au plus un e-mail par `min_gap_min` minutes
+# (premiers messages et relances confondus).
+DEFAULTS = {"enabled": False, "daily_cap": 10, "start_hour": 10, "end_hour": 16, "pause_start": 12, "pause_end": 13, "min_gap_min": 60,
+            "personal_emails": True, "warmup": True, "bounce_ack_at": None}
+WARMUP_STEPS = ((7, 3), (14, 4))   # montée en charge : (jusqu'au jour N exclu, plafond) — jours 0-6 : 3 par jour, jours 7-13 : 4, ensuite le plafond réglé
+BOUNCE_WINDOW, BOUNCE_MAX = 10, 2  # coupe-circuit : au moins 2 retours parmi les 10 derniers envois (soit 20 %)
+GAP_JITTER_MAX = 10             # minutes ajoutées au-delà de l'intervalle minimum (0 à 10), pour que les envois ne tombent pas toujours à la même minute
 FOLLOWUP_DAYS = (3, 7)          # relances : J+3 puis J+7 (comme le suivi manuel)
 NO_REPLY_DAYS = 14              # sans réponse à J+14 : abandon, plus aucun contact
 AUTO_EMAIL_KINDS = ("GENERIC_BUSINESS", "PERSONAL_BUSINESS")
@@ -43,7 +49,10 @@ def settings(raw: dict | None) -> dict:
     if isinstance(raw, dict):
         out["enabled"] = raw.get("enabled") is True
         out["personal_emails"] = raw.get("personal_emails") is not False
-        for k, lo, hi in (("daily_cap", 1, 30), ("start_hour", 6, 21), ("end_hour", 7, 22)):
+        out["warmup"] = raw.get("warmup") is not False
+        out["bounce_ack_at"] = _naive_utc(raw.get("bounce_ack_at"))   # posé par la route des réglages à chaque enregistrement
+        for k, lo, hi in (("daily_cap", 1, 30), ("start_hour", 6, 21), ("end_hour", 7, 22), ("pause_start", 6, 21), ("pause_end", 7, 22),
+                       ("min_gap_min", 15, 240)):
             try:
                 out[k] = min(hi, max(lo, int(raw.get(k, out[k]))))
             except (TypeError, ValueError):
@@ -51,6 +60,42 @@ def settings(raw: dict | None) -> dict:
     if out["end_hour"] <= out["start_hour"]:
         out["start_hour"], out["end_hour"] = DEFAULTS["start_hour"], DEFAULTS["end_hour"]
     return out
+
+
+def _naive_utc(v) -> dt.datetime | None:
+    """Horodatage ISO (avec ou sans fuseau) en UTC naïf, comme la base ; illisible = None."""
+    try:
+        d = dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return d.astimezone(dt.timezone.utc).replace(tzinfo=None) if d.tzinfo else d
+
+
+def effective_cap(cfg: dict, first_sent: dt.datetime | None, now: dt.datetime) -> tuple[int, dt.datetime | None]:
+    """Plafond du jour : min(daily_cap, palier d'ancienneté). `first_sent` = plus ancien envoi (UTC naïf) ; aucun envoi = jour 0.
+    Retourne aussi la fin du palier en cours (None si plus de palier ou montée en charge désactivée)."""
+    if not cfg.get("warmup", True):
+        return cfg["daily_cap"], None
+    t = now.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    days = max(0, (t - first_sent).days) if first_sent else 0
+    for limit, cap in WARMUP_STEPS:
+        if days < limit:
+            return min(cfg["daily_cap"], cap), (first_sent or t) + dt.timedelta(days=limit)
+    return cfg["daily_cap"], None
+
+
+def bounce_paused(statuses: list[str]) -> bool:
+    """Coupe-circuit : `statuses` = statuts des derniers envois (les plus récents d'abord, après la dernière reprise)."""
+    recent = statuses[:BOUNCE_WINDOW]
+    return sum(1 for x in recent if x == "bounced") >= BOUNCE_MAX
+
+
+def _pause(cfg: dict) -> tuple[int, int] | None:
+    """Pause (début, fin) si elle est cohérente : non vide et à l'intérieur de la plage d'envoi ; sinon ignorée."""
+    a, b = cfg.get("pause_start"), cfg.get("pause_end")
+    if isinstance(a, int) and isinstance(b, int) and a < b and cfg["start_hour"] <= a and b <= cfg["end_hour"]:
+        return a, b
+    return None
 
 
 def _easter(year: int) -> dt.date:
@@ -74,9 +119,22 @@ def holiday(day: dt.date) -> bool:
 
 
 def in_window(now: dt.datetime, cfg: dict) -> bool:
-    """Jours ouvrés, hors fériés, entre start_hour et end_hour (heure de Paris)."""
+    """Jours ouvrés, hors fériés, entre start_hour et end_hour (heure de Paris), hors pause déjeuner (pause_start à pause_end)."""
     local = now.astimezone(PARIS)
-    return local.weekday() < 5 and not holiday(local.date()) and cfg["start_hour"] <= local.hour < cfg["end_hour"]
+    if local.weekday() >= 5 or holiday(local.date()) or not cfg["start_hour"] <= local.hour < cfg["end_hour"]:
+        return False
+    pause = _pause(cfg)
+    return not (pause and pause[0] <= local.hour < pause[1])
+
+
+def gap_wait(last_sent: dt.datetime | None, last_id: int | None, now: dt.datetime, cfg: dict) -> bool:
+    """Vrai si le dernier e-mail envoyé (`last_sent`, UTC naïf comme la base) est trop récent : min_gap_min minutes plus un décalage de 0 à 10 min
+    dérivé de l'id de ce dernier e-mail (stable d'un passage à l'autre, différent d'un envoi à l'autre)."""
+    if last_sent is None:
+        return False
+    jitter = ((last_id or 0) * 7919) % (GAP_JITTER_MAX + 1)
+    t = now.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    return t - last_sent < dt.timedelta(minutes=cfg["min_gap_min"] + jitter)
 
 
 def paris_midnight_utc(now: dt.datetime) -> dt.datetime:

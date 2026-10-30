@@ -2,8 +2,10 @@
 import { FicheFields, ficheReason } from "./complete";
 
 /** personal_emails : envoyer aussi aux adresses Gmail, Orange… publiées comme contact de l'entreprise (activé par défaut, désactivable). */
-export type AutoSend = { enabled: boolean; daily_cap: number; start_hour: number; end_hour: number; personal_emails: boolean };
-export const AUTO_DEFAULTS: AutoSend = { enabled: false, daily_cap: 10, start_hour: 9, end_hour: 17, personal_emails: true };
+export type AutoSend = { enabled: boolean; daily_cap: number; start_hour: number; end_hour: number; pause_start: number; pause_end: number; min_gap_min: number; personal_emails: boolean;
+  /** warmup : montée en charge (3/jour la 1re semaine, 4 la 2e). bounce_ack_at : posé par la route des réglages à chaque enregistrement ; les e-mails revenus avant ne comptent plus pour le coupe-circuit. */
+  warmup: boolean; bounce_ack_at?: string | null };
+export const AUTO_DEFAULTS: AutoSend = { enabled: false, daily_cap: 10, start_hour: 10, end_hour: 16, pause_start: 12, pause_end: 13, min_gap_min: 60, personal_emails: true, warmup: true, bounce_ack_at: null };
 
 /** Mêmes messageries gratuites que worker/local/contacts.py (FREEMAIL) : envoi automatique vers elles seulement avec personal_emails. */
 export const FREEMAIL = new Set(["gmail.com", "hotmail.com", "hotmail.fr", "outlook.com", "outlook.fr", "yahoo.fr", "yahoo.com", "orange.fr", "wanadoo.fr", "free.fr",
@@ -39,6 +41,19 @@ export function autoIneligible(p: FicheFields & { contacted_at?: any; draft_mess
 export function sanitizeAutoSend(v: any): AutoSend | null {
   if (!v || typeof v !== "object") return null;
   const n = (x: any, lo: number, hi: number, d: number) => { const k = Math.round(Number(x)); return Number.isFinite(k) ? Math.min(hi, Math.max(lo, k)) : d; };
-  const out = { enabled: v.enabled === true, personal_emails: v.personal_emails !== false, daily_cap: n(v.daily_cap, 1, 30, 10), start_hour: n(v.start_hour, 6, 21, 9), end_hour: n(v.end_hour, 7, 22, 17) };
+  const out = { enabled: v.enabled === true, personal_emails: v.personal_emails !== false, warmup: v.warmup !== false, daily_cap: n(v.daily_cap, 1, 30, 10), start_hour: n(v.start_hour, 6, 21, 10), end_hour: n(v.end_hour, 7, 22, 16),
+    // pause déjeuner : le worker l'ignore si elle sort de la plage d'envoi ou si elle est vide (worker/local/mailer.py, _pause)
+    pause_start: n(v.pause_start, 6, 21, 12), pause_end: n(v.pause_end, 7, 22, 13), min_gap_min: n(v.min_gap_min, 15, 240, 60) };
   return out.end_hour > out.start_hour ? out : null;
+}
+
+/** Mêmes paliers que worker/local/mailer.py (WARMUP_STEPS, effective_cap) : plafond du jour et fin du palier (null = plus de palier).
+ *  `first` = date du plus ancien e-mail envoyé (aucun = jour 0). */
+export function effectiveCap(cfg: { daily_cap: number; warmup?: boolean }, first: Date | null, now: Date = new Date()): { cap: number; until: Date | null } {
+  if (cfg.warmup === false) return { cap: cfg.daily_cap, until: null };
+  const days = first ? Math.max(0, Math.floor((now.getTime() - first.getTime()) / 86400000)) : 0;
+  for (const [limit, cap] of [[7, 3], [14, 4]]) {
+    if (days < limit) return { cap: Math.min(cfg.daily_cap, cap), until: new Date((first ?? now).getTime() + limit * 86400000) };
+  }
+  return { cap: cfg.daily_cap, until: null };
 }

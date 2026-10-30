@@ -680,10 +680,24 @@ def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect
         return {**out, "status": "inbox"}            # sans lecture de la boîte, on ne risque pas une relance à quelqu'un qui a répondu
     if not mailer.in_window(now, auto):
         return {**out, "status": "hours"}
+    # Coupe-circuit réputation : trop de retours parmi les derniers envois = on s'arrête jusqu'à ce que Théo réenregistre les réglages d'envoi
+    # (la route des réglages date `bounce_ack_at` ; les envois antérieurs ne comptent plus).
+    ack = auto["bounce_ack_at"]
+    recent = db.fetch_all(conn, "SELECT status FROM local_emails WHERE status IN ('sent','bounced') AND (%s IS NULL OR sent_at > %s) "
+                                "ORDER BY sent_at DESC, id DESC LIMIT %s", (ack, ack, mailer.BOUNCE_WINDOW))
+    if mailer.bounce_paused([r["status"] for r in recent]):
+        alerts.alert("local_mail_bounce_pause", "Envoi automatique en pause : au moins 2 e-mails revenus parmi les 10 derniers. Vérifie les adresses "
+                     "(page Envois), puis réenregistre les réglages d'envoi (Réglages > Enregistrer) pour reprendre.")
+        return {**out, "status": "bounce_pause"}
+    first = db.fetch_one(conn, "SELECT MIN(sent_at) AS t FROM local_emails WHERE status IN ('sent','bounced')")
+    cap, _ = mailer.effective_cap(auto, first and first["t"], now)
     sent_today = db.fetch_one(conn, "SELECT COUNT(*) AS n FROM local_emails WHERE status IN ('sent','bounced') AND sent_at >= %s",
                               (mailer.paris_midnight_utc(now),))["n"]
-    if sent_today >= auto["daily_cap"]:
+    if sent_today >= cap:
         return {**out, "status": "cap"}
+    last = db.fetch_one(conn, "SELECT id, sent_at FROM local_emails WHERE status IN ('sent','bounced') ORDER BY sent_at DESC, id DESC LIMIT 1")
+    if last and mailer.gap_wait(last["sent_at"], last["id"], now, auto):     # au plus un e-mail par min_gap_min (+ décalage aléatoire de 0 à 10 min)
+        return {**out, "status": "gap"}
     sender = _setting(conn, "local_sender")
     for _ in range(5):                  # quelques prospects retirés (opposition, adresse perso…) ne gâchent pas le passage
         task = next_task(conn, now, auto["personal_emails"])
@@ -723,7 +737,7 @@ def main() -> int:
             result = run(conn)
     finally:
         lock.close()
-    if result.get("status") not in ("disabled", "idle", "hours", "cap"):
+    if result.get("status") not in ("disabled", "idle", "hours", "cap", "bounce_pause"):
         log.info("[mail] passage : %s", result)
     return 1 if result.get("status") == "error" else 0
 

@@ -85,15 +85,25 @@ export default function SettingsPage() {
           <input type="checkbox" checked={auto.personal_emails !== false} onChange={(e) => setAuto("personal_emails", e.target.checked)} />
           <span>Envoyer aussi aux adresses Gmail, Orange, iCloud… publiées comme contact de l'entreprise (beaucoup d'artisans n'ont que celle-là).</span>
         </label>
+        <label className="flex min-h-[44px] items-center gap-3 text-sm">
+          <input type="checkbox" checked={auto.warmup !== false} onChange={(e) => setAuto("warmup", e.target.checked)} />
+          <span><b>Montée en charge</b> : 3 e-mails par jour la première semaine, 4 la deuxième, puis le maximum réglé ci-dessous. Protège la réputation d'une adresse neuve.</span>
+        </label>
         <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
           <label className="flex flex-col gap-1"><span className="mono">E-mails par jour (max)</span>
             <input type="number" min={1} max={30} value={auto.daily_cap} onChange={(e) => setAuto("daily_cap", Number(e.target.value) || 1)} className="field" /></label>
           <label className="flex flex-col gap-1"><span className="mono">À partir de (heure)</span>
-            <input type="number" min={6} max={21} value={auto.start_hour} onChange={(e) => setAuto("start_hour", Number(e.target.value) || 9)} className="field" /></label>
+            <input type="number" min={6} max={21} value={auto.start_hour} onChange={(e) => setAuto("start_hour", Number(e.target.value) || 10)} className="field" /></label>
           <label className="flex flex-col gap-1"><span className="mono">Jusqu'à (heure)</span>
-            <input type="number" min={7} max={22} value={auto.end_hour} onChange={(e) => setAuto("end_hour", Number(e.target.value) || 17)} className="field" /></label>
+            <input type="number" min={7} max={22} value={auto.end_hour} onChange={(e) => setAuto("end_hour", Number(e.target.value) || 16)} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Pause : début (heure)</span>
+            <input type="number" min={6} max={21} value={auto.pause_start} onChange={(e) => setAuto("pause_start", Number(e.target.value) || 12)} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Pause : fin (heure)</span>
+            <input type="number" min={7} max={22} value={auto.pause_end} onChange={(e) => setAuto("pause_end", Number(e.target.value) || 13)} className="field" /></label>
+          <label className="flex flex-col gap-1"><span className="mono">Minutes entre deux e-mails (min)</span>
+            <input type="number" min={15} max={240} value={auto.min_gap_min} onChange={(e) => setAuto("min_gap_min", Number(e.target.value) || 60)} className="field" /></label>
         </div>
-        <p className="mt-2 text-xs text-muted">Jours ouvrés seulement, hors jours fériés, un e-mail toutes les 2 minutes au plus. Jamais par formulaire ni Facebook. Une réponse arrête aussitôt les relances (alerte Telegram) ; un refus ajoute l'entreprise à « ne plus contacter ».
+        <p className="mt-2 text-xs text-muted">Jours ouvrés seulement, hors jours fériés, un seul e-mail à la fois, espacé d'au moins l'intervalle ci-dessus (+ 0 à 10 min au hasard), relances comprises. Par défaut 10 h-16 h, pause 12 h-13 h, 1 e-mail par heure : 5 par jour au plus. La pause est ignorée si elle sort de la plage d'envoi. Jamais par formulaire ni Facebook. Une réponse arrête aussitôt les relances (alerte Telegram) ; un refus ajoute l'entreprise à « ne plus contacter ».
           Rien ne part tant que la boîte d'envoi et le DNS ne sont pas prêts : voir <Link href="/local/envois" className="underline">Envois</Link>.</p>
       </section>
 

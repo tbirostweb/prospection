@@ -56,7 +56,7 @@ def test_rien_trouve_le_message_part(mail, conn, monkeypatch):
 
 def test_doute_ou_delai_depasse_pas_d_envoi_puis_sortie_de_file(mail, conn, monkeypatch):
     pid, web = _queue_dupont(conn, monkeypatch)
-    mail.enable()
+    mail.enable(start_hour=6, end_hour=22, pause_start=6, pause_end=7)     # plage large : les essais espacés d'une heure restent dans la fenêtre
     monkeypatch.setattr(outbox, "_resolve_bounded", lambda *a, **k: None)              # délai dépassé / erreur réseau
     t = T0
     for i in range(outbox.PRESEND_MAX_TRIES):
