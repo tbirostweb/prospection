@@ -9,6 +9,11 @@ test("réponse et intérêt : worker, statut ou réponse notée à la main", () 
   assert.equal(hasReplied({ status: "CONTACTED" }), false);
   assert.equal(hasReplied({ status: "LOST", response_status: "NO_ANSWER" }), false);
   assert.equal(hasReplied({ status: "LOST", response_status: "NOT_INTERESTED" }), true);   // « pas intéressé » est une réponse
+  assert.equal(hasReplied({ status: "LOST", deal_stage: "LOST" }), false);
+  assert.equal(hasReplied({ reply_kind: "bounce" }), false);
+  assert.equal(hasReplied({ deal_stage: "MEETING" }), true);
+  assert.equal(isInterested({ deal_stage: "WON" }), true);
+  assert.equal(isInterested({ deal_stage: "QUOTE" }), true);
   assert.equal(hasReplied({ status: "CONTACTED", reply_kind: "later" }), true);
   assert.equal(isInterested({ reply_kind: "interested" }), true);
   assert.equal(isInterested({ status: "WON" }), true);
