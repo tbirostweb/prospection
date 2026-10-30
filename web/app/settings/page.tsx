@@ -63,7 +63,8 @@ export default function SettingsPage() {
           {([["name", "Prénom et nom", "Théo …"], ["company", "Entreprise / marque", "…"], ["role", "Activité", "développeur web indépendant"],
              ["phone", "Téléphone", "06 …"], ["email", "E-mail", "contact@…"], ["website", "Site / portfolio", "https://…"],
              ["privacy_url", "Lien de ta notice d'information (données personnelles)", "https://…/confidentialite"],
-             ["logo_url", "Logo de la signature (image carrée, https)", "https://…/favicon.png"]] as const).map(([k, label, ph]) => (
+             ["logo_url", "Logo de la signature (image carrée, https)", "https://…/favicon.png"],
+             ["logo_text", "Logo en texte (prioritaire sur l'image, 4 caractères au plus)", "BW."]] as const).map(([k, label, ph]) => (
             <label key={k} className="flex flex-col gap-1"><span className="mono">{label}</span>
               <input value={sender[k] ?? ""} placeholder={ph} onChange={(e) => setSender(k, e.target.value)} className="field" /></label>
           ))}
@@ -71,7 +72,7 @@ export default function SettingsPage() {
             <textarea value={sender.pitch ?? ""} rows={2} onChange={(e) => setSender("pitch", e.target.value)} className="field"
               placeholder="Laisse vide pour une phrase adaptée automatiquement à la situation (sans site, site à moderniser…)" /></label>
         </div>
-        <p className="mt-2 text-xs text-muted">Signe les brouillons et, si tu l'actives plus bas, les e-mails envoyés automatiquement (logo affiché en petit à gauche de la signature).
+        <p className="mt-2 text-xs text-muted">Signe les brouillons et, si tu l'actives plus bas, les e-mails envoyés automatiquement (logo affiché en petit à gauche de la signature ; le logo en texte évite la pénalité anti-spam liée aux images).
           La notice d'information (source des données, finalité, droits, opposition) est citée dans chaque brouillon : sans elle, le bouton « Ouvrir dans ma messagerie » reste désactivé.</p>
       </section>
 

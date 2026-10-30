@@ -47,13 +47,17 @@ async function inlineLogo(url?: string): Promise<string | null> {
 }
 
 /** Même rendu que la signature HTML du worker (worker/local/mailer.py, signature_html) : à garder identiques. */
-function SignaturePreview({ s, logo }: { s: Sender & { logo_url?: string }; logo: string | null }) {
+function SignaturePreview({ s, logo }: { s: Sender & { logo_url?: string; logo_text?: string }; logo: string | null }) {
+  const mark = String(s.logo_text ?? "").trim();
   const site = String(s.website ?? "").trim();
   const role = [s.role, s.company].filter(Boolean).join(" · ");
   return (
     <table cellPadding={0} cellSpacing={0} style={{ fontFamily: "Arial,Helvetica,sans-serif", fontSize: 13, lineHeight: 1.45, color: "#231F20" }}>
       <tbody><tr>
-        {logo && <td style={{ padding: "0 12px 0 0", verticalAlign: "middle" }}>
+        {mark ? <td style={{ padding: "0 12px 0 0", verticalAlign: "middle" }}>
+          <div style={{ width: 48, height: 48, lineHeight: "48px", textAlign: "center", background: "#EFEBE4", borderRadius: 8, fontSize: 17, fontWeight: "bold" }}>
+            {mark.endsWith(".") ? <>{mark.slice(0, -1)}<span style={{ color: "#F0451E" }}>.</span></> : mark}</div></td>
+        : logo && <td style={{ padding: "0 12px 0 0", verticalAlign: "middle" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logo} width={48} height={48} alt={s.company || s.name || ""} style={{ display: "block", width: 48, height: 48, borderRadius: 8 }} /></td>}
         <td style={{ borderLeft: "2px solid #F0451E", padding: "0 0 0 12px", verticalAlign: "middle" }}>
@@ -72,7 +76,7 @@ function SignaturePreview({ s, logo }: { s: Sender & { logo_url?: string }; logo
 export default async function Envois({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const tab = (await searchParams).tab === "envoyes" ? "envoyes" : "prets";
   const auto = await getAutoSend();
-  const sender = await getSetting<Sender & { logo_url?: string }>("local_sender", {});
+  const sender = await getSetting<Sender & { logo_url?: string; logo_text?: string }>("local_sender", {});
   const [state] = await safeRows<any>("SELECT * FROM local_mail_state WHERE id=1");
   const checks = j(state?.checks) ?? {};
   // Brouillons pas encore partis : jamais contactés, ni écartés ni « ne plus contacter », hors séquence en cours ou terminée.

@@ -32,6 +32,7 @@ CLOSING = "Bien cordialement,"
 NOTICE_SEP = "\n--\n"
 PLACEHOLDERS = ("[Votre prénom et nom]", "[LIEN VERS VOTRE NOTICE")
 INK, ACCENT, MUTED = "#231F20", "#F0451E", "#8A8580"
+LOGO_BG = "#EFEBE4"                   # fond du logo en texte (même carré beige que le logo image)
 
 DAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre")
@@ -229,7 +230,7 @@ def _paragraphs(text: str) -> str:
 
 
 def signature_html(sender: dict) -> str:
-    """Signature : petit logo à gauche, nom en gras, fonction, téléphone cliquable et site à droite. Sans bannière."""
+    """Signature : petit logo à gauche (en texte si `logo_text`, sinon image `logo_url`), nom en gras, fonction, téléphone cliquable et site à droite. Sans bannière."""
     e = html.escape
     name = e(sender.get("name") or "")
     role = " · ".join(e(x) for x in (sender.get("role"), sender.get("company")) if x)
@@ -244,8 +245,19 @@ def signature_html(sender: dict) -> str:
         label = re.sub(r"^https?://(www\.)?", "", site).rstrip("/")
         lines.append(f'<a href="{e(href)}" style="color:{ACCENT};text-decoration:none">{e(label)}</a>')
     logo = (sender.get("logo_url") or "").strip()
-    logo_cell = (f'<td style="padding:0 12px 0 0;vertical-align:middle"><img src="{e(logo)}" width="48" height="48" alt="{e(sender.get("company") or name)}" '
-                 f'style="display:block;width:48px;height:48px;border:0;border-radius:8px"></td>') if logo.startswith("https://") and not re.search(r"\.(svg|ico|webp|avif)(\?|#|$)", logo, re.I) else ""
+    mark = (sender.get("logo_text") or "").strip()
+    # Logo en texte (prioritaire) : même carré, dessiné en HTML. Sans image, le message évite la pénalité anti-spam HTML_IMAGE_ONLY
+    # (mail-tester : 8,9 → 10/10) et le logo s'affiche même quand la messagerie bloque les images. Un point final prend la couleur d'accent.
+    if mark:
+        dot = mark.endswith(".")
+        label = e(mark[:-1] if dot else mark) + (f'<span style="color:{ACCENT}">.</span>' if dot else "")
+        logo_cell = (f'<td style="padding:0 12px 0 0;vertical-align:middle"><table cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>'
+                     f'<td width="48" height="48" align="center" valign="middle" bgcolor="{LOGO_BG}" style="width:48px;height:48px;background:{LOGO_BG};'
+                     f'border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:bold;line-height:48px;color:{INK}">{label}</td>'
+                     f'</tr></table></td>')
+    else:
+        logo_cell = (f'<td style="padding:0 12px 0 0;vertical-align:middle"><img src="{e(logo)}" width="48" height="48" alt="{e(sender.get("company") or name)}" '
+                     f'style="display:block;width:48px;height:48px;border:0;border-radius:8px"></td>') if logo.startswith("https://") and not re.search(r"\.(svg|ico|webp|avif)(\?|#|$)", logo, re.I) else ""
     return (f'<table cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin:4px 0 0;font-family:Arial,Helvetica,sans-serif;'
             f'font-size:13px;line-height:1.45;color:{INK}"><tr>{logo_cell}<td style="border-left:2px solid {ACCENT};padding:0 0 0 12px;'
             f'vertical-align:middle">{"<br>".join(lines)}</td></tr></table>')

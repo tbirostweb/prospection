@@ -137,6 +137,11 @@ def test_logo_svg_ico_ignores():
     assert "<img" in mailer.signature_html({**SENDER, "logo_url": "https://exemple-web.fr/favicon.png"})
 
 
+def test_logo_en_texte_sans_image():
+    page = mailer.signature_html({**SENDER, "logo_text": "BW."})
+    assert "<img" not in page and f'BW<span style="color:{mailer.ACCENT}">.</span>' in page and 'bgcolor="#EFEBE4"' in page
+
+
 def test_logo_seulement_en_https():
     assert "<img" not in mailer.signature_html({**SENDER, "logo_url": "http://exemple-web.fr/logo.png"})
 

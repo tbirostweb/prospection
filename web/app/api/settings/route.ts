@@ -76,7 +76,7 @@ function sanitize(key: string, value: any): any | null {
       const logo = f("logo_url", 300);
       if (logo && !/^https:\/\/[^\s"<>]+\.[^\s"<>]+$/i.test(logo)) return null;
       if (/\.(svg|ico|webp|avif)(\?|#|$)/i.test(logo)) return null;   // SVG/ICO/WebP : non affichés par Gmail, Outlook et d'autres clients → PNG ou JPEG seulement
-      return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400), privacy_url: privacy, logo_url: logo };
+      return { name: f("name", 80), company: f("company", 120), role: f("role", 80), phone: f("phone", 30), email: f("email", 120), website: f("website", 200), pitch: f("pitch", 400), privacy_url: privacy, logo_url: logo, logo_text: f("logo_text", 4) };
     }
     case "local_offer": return sanitizeOffer(value);   // « Mon offre » : le texte est fixe (lib/draft.ts), seuls les chiffres et ta zone sont réglables
     case "local_banned_brands": {
