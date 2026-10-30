@@ -169,3 +169,10 @@ def _no_real_osm(monkeypatch):
     """Aucun test ne doit joindre le vrai Overpass : OSM est désactivé sauf dans les tests qui l'injectent explicitement."""
     from worker.local import osm
     monkeypatch.setattr(osm, "ENABLED", False)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_smtp_verify(monkeypatch):
+    """Aucun test ne doit ouvrir de connexion SMTP réelle vers un destinataire : la vérification de boîte est désactivée sauf dans les tests
+    qui l'activent (LOCAL_SMTP_VERIFY=1) avec un faux `verify`."""
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "0")

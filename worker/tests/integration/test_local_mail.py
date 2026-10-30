@@ -508,3 +508,119 @@ def test_un_seul_retour_ne_coupe_pas(mail, conn):
     add(conn, "10000000000011")
     mail.enable(daily_cap=10, warmup=False, min_gap_min=15)
     assert mail.run(T0)["status"] == "sent"
+
+
+# --- Vérification SMTP de la boîte avant le premier message ------------------------------------------------------------------------------
+
+def fake_verify(result, code=None, detail="", connected=True, calls=None):
+    def verify(address, hosts, helo, mail_from, timeout=10.0):
+        if calls is not None:
+            calls.append((address, hosts, helo, mail_from))
+        return {"result": result, "code": code, "detail": detail, "connected": connected}
+    return verify
+
+
+def run_verify(mail, conn, verify, now=T0):
+    return outbox.run(conn, now=now.astimezone(dt.timezone.utc), send=mail.smtp, imap=mail.imap, dns=lambda n: DNS_OK.get(n, []), mx_query=fake_mx,
+                      site_fetch=GARAGE_WEB, verify=verify)
+
+
+def test_boite_inexistante_pas_d_envoi_adresse_marquee(mail, conn, monkeypatch):
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "1")
+    pid = add(conn, "10000000000011")
+    mail.enable()
+    calls: list = []
+    r = run_verify(mail, conn, fake_verify("invalid", 550, "5.1.1 User unknown", calls=calls))
+    assert r["status"] == "idle" and mail.smtp.sent == []
+    p = row(conn, pid)
+    assert p["auto_state"] == "bounced" and "boîte inexistante selon le serveur" in p["provenance"] and '"email_invalid"' in p["provenance"]
+    chk = json.loads(p["provenance"])["smtp_check"]
+    assert chk["result"] == "invalid" and chk["code"] == 550
+    assert calls == [("contact@garage-exemple.fr", ["mx.exemple.net"], "exemple-web.fr", "contact@exemple-web.fr")]
+    assert mail.tg.texts == []
+
+
+@pytest.mark.parametrize("result", ["unknown", "valid", "catch_all"])
+def test_boite_pas_invalide_l_envoi_continue(mail, conn, monkeypatch, result):
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "1")
+    pid = add(conn, "10000000000011")
+    mail.enable()
+    assert run_verify(mail, conn, fake_verify(result, 450, "greylisted"))["status"] == "sent"
+    assert len(mail.smtp.sent) == 1 and row(conn, pid)["auto_state"] == "active"
+    assert json.loads(row(conn, pid)["provenance"])["smtp_check"]["result"] == result
+
+
+def test_resultat_reutilise_30_jours_unknown_6_heures(mail, conn, monkeypatch):
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "1")
+    pid = add(conn, "10000000000011")
+    mail.enable()
+    calls: list = []
+    p = row(conn, pid)
+    cfg = outbox.mail_config()
+    now = T0.astimezone(dt.timezone.utc)
+    assert outbox.presend_mailbox(conn, p, "contact@garage-exemple.fr", cfg, now, mx_query=fake_mx, verify=fake_verify("valid", 250, calls=calls))["result"] == "valid"
+    p = row(conn, pid)
+    outbox.presend_mailbox(conn, p, "contact@garage-exemple.fr", cfg, now + dt.timedelta(days=29), mx_query=fake_mx, verify=fake_verify("valid", calls=calls))
+    assert len(calls) == 1                                                     # réutilisé
+    outbox.presend_mailbox(conn, p, "contact@garage-exemple.fr", cfg, now + dt.timedelta(days=31), mx_query=fake_mx, verify=fake_verify("valid", calls=calls))
+    assert len(calls) == 2
+    db.execute(conn, "UPDATE local_prospects SET provenance=NULL WHERE id=%s", (pid,))
+    later = now + dt.timedelta(days=40)
+    outbox.presend_mailbox(conn, row(conn, pid), "contact@garage-exemple.fr", cfg, later, mx_query=fake_mx, verify=fake_verify("unknown", 450, calls=calls))
+    outbox.presend_mailbox(conn, row(conn, pid), "contact@garage-exemple.fr", cfg, later + dt.timedelta(hours=1), mx_query=fake_mx, verify=fake_verify("unknown", calls=calls))
+    assert len(calls) == 3
+    outbox.presend_mailbox(conn, row(conn, pid), "contact@garage-exemple.fr", cfg, later + dt.timedelta(hours=7), mx_query=fake_mx, verify=fake_verify("unknown", calls=calls))
+    assert len(calls) == 4
+
+
+def test_pas_de_verification_pour_une_relance_ni_si_desactive(mail, conn, monkeypatch):
+    pid = add(conn, "10000000000011")
+    mail.enable()
+    calls: list = []
+    assert run_verify(mail, conn, fake_verify("invalid", 550, calls=calls))["status"] == "sent"       # LOCAL_SMTP_VERIFY=0 (conftest)
+    assert calls == [] and row(conn, pid)["auto_state"] == "active"
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "1")
+    assert run_verify(mail, conn, fake_verify("invalid", 550, calls=calls), T0 + dt.timedelta(days=3))["kind"] == "followup1"
+    assert calls == [] and len(mail.smtp.sent) == 2
+
+
+def test_port_25_bloque_note_une_fois_et_suspend_24_h(mail, conn, monkeypatch):
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "1")
+    mail.enable()
+    cfg = outbox.mail_config()
+    now = T0.astimezone(dt.timezone.utc)
+    calls: list = []
+    ids = [add(conn, f"{i}0000000000011", email=f"c{i}@garage-exemple.fr", minutes=i) for i in range(1, 6)]
+    down = fake_verify("unknown", None, "connexion impossible", connected=False, calls=calls)
+    for pid in ids[:3]:
+        assert outbox.presend_mailbox(conn, row(conn, pid), row(conn, pid)["email"], cfg, now, mx_query=fake_mx, verify=down)["result"] == "unknown"
+    assert len(calls) == 3 and outbox.verify_blocked(conn, now)
+    checks = json.loads(db.fetch_one(conn, "SELECT checks FROM local_mail_state WHERE id=1")["checks"])
+    assert checks["smtp_verify"]["blocked_until"]
+    # suspendu : plus de tentative, l'envoi n'est pas gêné
+    assert outbox.presend_mailbox(conn, row(conn, ids[3]), row(conn, ids[3])["email"], cfg, now + dt.timedelta(hours=1), mx_query=fake_mx, verify=down) is None
+    assert len(calls) == 3
+    # 24 h plus tard : nouvel essai
+    assert not outbox.verify_blocked(conn, now + dt.timedelta(hours=25))
+    outbox.presend_mailbox(conn, row(conn, ids[4]), row(conn, ids[4])["email"], cfg, now + dt.timedelta(hours=25), mx_query=fake_mx, verify=down)
+    assert len(calls) == 4
+
+
+def test_un_succes_remet_le_compteur_de_connexion_a_zero(mail, conn, monkeypatch):
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "1")
+    cfg, now = outbox.mail_config(), T0.astimezone(dt.timezone.utc)
+    ids = [add(conn, f"{i}0000000000011", email=f"c{i}@garage-exemple.fr", minutes=i) for i in range(1, 6)]
+    down, up = fake_verify("unknown", None, "x", connected=False), fake_verify("unknown", 450, "grey")
+    for pid, v in zip(ids, [down, down, up, down, down]):
+        outbox.presend_mailbox(conn, row(conn, pid), row(conn, pid)["email"], cfg, now, mx_query=fake_mx, verify=v)
+    assert not outbox.verify_blocked(conn, now)
+
+
+def test_verification_trop_longue_ne_bloque_pas_l_envoi(mail, conn, monkeypatch):
+    import time
+    monkeypatch.setenv("LOCAL_SMTP_VERIFY", "1")
+    monkeypatch.setattr(outbox, "VERIFY_TIMEOUT", 0.2)
+    pid = add(conn, "10000000000011")
+    mail.enable()
+    r = run_verify(mail, conn, lambda *a, **k: time.sleep(1) or {"result": "invalid", "connected": True})
+    assert r["status"] == "sent" and row(conn, pid)["auto_state"] == "active"

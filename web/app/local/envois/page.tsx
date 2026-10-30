@@ -110,6 +110,8 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
   if (!sender.name) blockers.push("Ton nom manque dans Réglages > Mon identité.");
   if (!sender.privacy_url) blockers.push("Le lien de ta notice d'information manque dans Réglages > Mon identité.");
   const warnings: string[] = [...(checks.dns?.warnings ?? [])];
+  if (checks.smtp_verify?.blocked_until && new Date(checks.smtp_verify.blocked_until) > new Date())
+    warnings.push("Vérification des adresses indisponible (port 25 bloqué par l'hébergeur) : les e-mails partent sans ce contrôle");
   if (!sender.logo_url) warnings.push("Pas de logo dans la signature (Réglages > Mon identité).");
   if (!sender.phone) warnings.push("Pas de téléphone dans la signature (Réglages > Mon identité).");
 

@@ -16,6 +16,11 @@ Premier message ET chaque relance : entreprise fermée, cessée, radiée ou en p
 une heure plus tard). Juste avant, sans rien demander au propriétaire :
   * le domaine de l'adresse doit recevoir du courrier (MX, ou A / AAAA ; DoH, résultat positif gardé MX_TTL) : sinon l'adresse est marquée
     invalide (auto_state 'bounced', comme un e-mail revenu) et la fiche passe au téléphone / à la visite ;
+  * PREMIER message seulement : la boîte existe-t-elle ? (`presend_mailbox` : dialogue SMTP avec le MX du destinataire, sans jamais envoyer de message,
+    voir `mailverify`, désactivable par LOCAL_SMTP_VERIFY=0). Réponse « boîte inexistante » : même traitement qu'un domaine sans MX. Tout le reste
+    (greylisting, blocage, délai, catch-all) : l'envoi continue. Résultat gardé 30 jours dans la provenance (`smtp_check`). Port 25 sortant fermé
+    (VPS) : constaté après VERIFY_BLOCK_AFTER échecs de connexion d'affilée, la vérification est suspendue VERIFY_BLOCK_FOR (état `checks.smtp_verify`,
+    affiché sur la page Envois), les e-mails partent sans ce contrôle.
   * message « sans site » : dernière vérification du site, sans moteur de recherche (domaine de l'adresse, domaines devinés d'après le nom, site
     de la fiche Google s'il n'a jamais été vérifié), bornée à PRESEND_TIMEOUT. Site sûr : enregistré comme par `siterecheck` (contacts ajoutés,
     score), brouillon « sans site » effacé, fiche sortie de la file — elle reviendra seule dans la file de rédaction, en refonte. Doute ou réseau
@@ -44,7 +49,7 @@ import threading
 
 from .. import alerts, db
 from ..config import env, log
-from . import companystate, complete, inbox, maildns, mailer, store
+from . import companystate, complete, inbox, maildns, mailer, mailverify, store
 from .contacts import FREEMAIL
 from .store import is_do_not_contact
 
@@ -52,6 +57,11 @@ DNS_TTL = dt.timedelta(hours=6)
 INBOX_EVERY = dt.timedelta(minutes=9)
 MAX_FAILURES = 3
 MX_TTL = dt.timedelta(days=7)            # domaine du destinataire qui reçoit du courrier : pas redemandé avant 7 jours
+VERIFY_TTL = dt.timedelta(days=30)       # boîte vérifiée (valide, inexistante, catch-all) : pas redemandée avant 30 jours
+VERIFY_TTL_UNKNOWN = dt.timedelta(hours=6)   # 'unknown' (greylisting, délai…) : gardé 6 h seulement, pour ne pas refaire le dialogue à chaque passage
+VERIFY_TIMEOUT = 25.0                    # secondes : plafond du fil de vérification (2 serveurs MX x 10 s au plus), sous PRESEND_TIMEOUT
+VERIFY_BLOCK_AFTER = 3                   # échecs de CONNEXION d'affilée => port 25 sortant considéré fermé par l'hébergeur
+VERIFY_BLOCK_FOR = dt.timedelta(hours=24)    # puis plus aucune tentative pendant 24 h
 PRESEND_TIMEOUT = 45.0                   # secondes : dernière vérification du site avant un message « sans site » (passage toutes les 2 min)
 PRESEND_RETRY = dt.timedelta(hours=1)    # doute ou réseau en échec : nouvel essai une heure plus tard
 PRESEND_MAX_TRIES = 3
@@ -214,6 +224,81 @@ def mail_domain_ok(conn, email: str, now: dt.datetime, query=maildns.doh) -> boo
         checks["mx"] = {**fresh, dom: now.isoformat()}
         _save_checks(conn, checks)
     return ok
+
+
+def verify_enabled() -> bool:
+    return (env("LOCAL_SMTP_VERIFY", "1") or "1").strip() not in ("0", "false", "non", "off")
+
+
+def verify_blocked(conn, now: dt.datetime) -> bool:
+    """Le port 25 sortant a-t-il été constaté fermé il y a moins de VERIFY_BLOCK_FOR ? (état `checks.smtp_verify`, lu par la page Envois)."""
+    st = _state(conn)["checks"].get("smtp_verify")
+    try:
+        return isinstance(st, dict) and bool(st.get("blocked_until")) and now < dt.datetime.fromisoformat(st["blocked_until"])
+    except (TypeError, ValueError):
+        return False
+
+
+def _note_connection(conn, ok: bool, now: dt.datetime) -> None:
+    """Compte les échecs de connexion d'affilée ; au VERIFY_BLOCK_AFTER-ième, la vérification est suspendue VERIFY_BLOCK_FOR (noté une fois)."""
+    checks = _state(conn)["checks"]
+    st = dict(checks.get("smtp_verify")) if isinstance(checks.get("smtp_verify"), dict) else {}
+    if ok:
+        if not st.get("fails") and not st.get("blocked_until"):
+            return
+        checks["smtp_verify"] = {"fails": 0, "last_ok": now.isoformat()}
+    else:
+        st["fails"] = int(st.get("fails") or 0) + 1
+        if st["fails"] >= VERIFY_BLOCK_AFTER:
+            st["blocked_until"] = (now + VERIFY_BLOCK_FOR).isoformat()
+            st["fails"] = 0
+            log.warning("[mail] vérification des adresses indisponible : %d connexions SMTP (port 25) d'affilée en échec, suspendue %d h "
+                        "(port 25 sortant probablement bloqué par l'hébergeur) ; les e-mails partent sans ce contrôle",
+                        VERIFY_BLOCK_AFTER, int(VERIFY_BLOCK_FOR.total_seconds() // 3600))
+        checks["smtp_verify"] = st
+    _save_checks(conn, checks)
+    conn.commit()
+
+
+def presend_mailbox(conn, p: dict, email: str, cfg: dict, now: dt.datetime, mx_query=maildns.doh, verify=mailverify.check) -> dict | None:
+    """La boîte du destinataire existe-t-elle ? Renvoie {'result', 'code', 'detail', 'at'} ('valid' | 'invalid' | 'catch_all' | 'unknown'), ou None
+    si rien n'a été vérifié (réglage désactivé, port 25 constaté fermé, MX introuvables). Résultat gardé dans la provenance (`smtp_check`) :
+    VERIFY_TTL, ou VERIFY_TTL_UNKNOWN pour 'unknown'. Dialogue dans un fil borné à VERIFY_TIMEOUT ; ne bloque jamais l'envoi."""
+    prev = complete._json(p.get("provenance")).get("smtp_check")
+    if isinstance(prev, dict) and prev.get("result") in ("valid", "invalid", "catch_all", "unknown"):
+        try:
+            ttl = VERIFY_TTL_UNKNOWN if prev["result"] == "unknown" else VERIFY_TTL
+            if dt.timedelta(0) <= now - dt.datetime.fromisoformat(prev["at"].replace("Z", "+00:00")) < ttl:
+                return prev
+        except (KeyError, TypeError, ValueError, AttributeError):
+            pass
+    if not verify_enabled() or verify_blocked(conn, now):
+        return None
+    dom = mailer.email_domain(email)
+    try:
+        mx = sorted(((int(r.split()[0]), r.split()[-1].strip(".")) for r in mx_query(dom, "MX") if len(r.split()) >= 2 and r.split()[0].isdigit()))
+    except RuntimeError:
+        return None
+    hosts = [h for _, h in mx if h] or [dom]           # sans MX : le domaine lui-même (A / AAAA, RFC 5321)
+    out: list = []
+
+    def work():
+        try:
+            out.append(verify(email, hosts, mailer.email_domain(cfg["from"]), cfg["from"], mailverify.TIMEOUT))
+        except Exception as exc:  # noqa: BLE001 — une erreur de vérification ne conclut rien
+            log.warning("[mail] vérification de la boîte %s en échec : %s", email, exc)
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(VERIFY_TIMEOUT)
+    if not out:
+        return None
+    res = out[0]
+    _note_connection(conn, bool(res.get("connected", True)), now)
+    saved = {"at": _iso(now), "result": res["result"], "code": res.get("code"), "detail": (res.get("detail") or "")[:160]}
+    store.set_provenance(conn, p["id"], "smtp_check", saved)
+    conn.commit()
+    log.info("[mail] prospect %s : boîte %s -> %s (%s %s)", p["id"], email, saved["result"], saved["code"] or "-", saved["detail"])
+    return saved
 
 
 def _mark_invalid(conn, p: dict, email: str, why: str, now: dt.datetime) -> None:
@@ -496,7 +581,7 @@ def presend_identity(conn, p: dict, now: dt.datetime, fetch=None, timeout: float
 
 
 def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime, send=smtp_send, sent_copy=None, personal: bool = False,
-             mx_query=maildns.doh, site_fetch=None) -> str:
+             mx_query=maildns.doh, site_fetch=None, verify=mailverify.check) -> str:
     """Envoie UN e-mail. Renvoie 'sent', 'error' (problème du serveur : on réessaiera) ou, sans envoi : 'skipped' (prospect retiré),
     'found_site' (site trouvé juste avant), 'waiting' (fiche incomplète, reste en file) ou 'deferred' (vérification à reprendre plus tard)."""
     from_name = cfg["from_name"] or sender.get("name") or ""
@@ -536,6 +621,10 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
         if ok is None:
             _defer(conn, p, now, "DNS du destinataire injoignable")
             return "deferred"
+        box = presend_mailbox(conn, p, email, cfg, now, mx_query=mx_query, verify=verify)
+        if box and box["result"] == "invalid":              # le serveur dit que la boîte n'existe pas : comme un domaine sans MX, jamais envoyé
+            _mark_invalid(conn, p, email, f"boîte inexistante selon le serveur ({box.get('code') or '?'} {box.get('detail') or ''})".strip()[:200], now)
+            return "skipped"
         if _sans_site(p):
             verdict, detail = presend_email_domain(conn, p, now, fetch=site_fetch)
             if verdict in ("found", "uncertain"):
@@ -635,7 +724,7 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
     return "sent"
 
 
-def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect, dns=maildns.doh_txt, mx_query=maildns.doh, site_fetch=None) -> dict:
+def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect, dns=maildns.doh_txt, mx_query=maildns.doh, site_fetch=None, verify=mailverify.check) -> dict:
     """Un passage. `dns` (TXT du domaine d'envoi), `mx_query` (DNS du destinataire) et `site_fetch` (lecture des sites) : remplaçables en test."""
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg, out = mail_config(), {}
@@ -705,7 +794,7 @@ def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect
             return {**out, "status": "idle"}
         result = send_one(conn, task[0], task[1], cfg, sender, now, send=send,
                           sent_copy=lambda m: inbox.append_sent(cfg, m.as_bytes(), factory=imap), personal=auto["personal_emails"],
-                          mx_query=mx_query, site_fetch=site_fetch)
+                          mx_query=mx_query, site_fetch=site_fetch, verify=verify)
         if result not in ("skipped", "waiting"):     # 'found_site' / 'deferred' : une vérification a déjà pris du temps, la suite au passage suivant
             return {**out, "status": result, "kind": task[0]}
     return {**out, "status": "idle"}
