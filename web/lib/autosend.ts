@@ -22,7 +22,7 @@ export const EMAIL_KINDS: Record<string, string> = { first: "Premier message", f
  *  `personal` (réglage personal_emails) : adresses Gmail, Orange… et adresses incertaines acceptées.
  *  E-mail d'abord (lib/complete.ts ficheReason) : métier connu, entreprise active et indépendante, adresse acceptée, QUEL QUE SOIT LE SITE ; le site
  *  oriente seulement le message (ficheAngle). Un brouillon dont l'angle ne correspond plus au site est effacé avant l'envoi par le worker. */
-export function autoIneligible(p: FicheFields & { contacted_at?: any; draft_message?: string | null }, personal: boolean): string | null {
+export function autoIneligible(p: FicheFields & { contacted_at?: any; draft_message?: string | null; draft_kind?: string | null }, personal: boolean): string | null {
   const email = String(p.email ?? "").trim().toLowerCase();
   if (p.do_not_contact) return "entreprise en liste « ne plus contacter »";
   if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return "pas d'adresse e-mail";
@@ -35,6 +35,9 @@ export function autoIneligible(p: FicheFields & { contacted_at?: any; draft_mess
   if (incomplete) return incomplete;
   if (p.contacted_at) return "déjà contacté";
   if (!p.draft_message) return "pas de brouillon";
+  // Brouillon de référence construit par le code (« Créer un brouillon ») : pas au style validé, jamais envoyé tel quel. Seul un message
+  // rédigé avec /rediger (type « ai_… », modifiable ensuite à la main) part automatiquement.
+  if (p.draft_kind && !String(p.draft_kind).startsWith("ai_")) return "brouillon de référence : à rédiger avec /rediger avant l'envoi automatique";
   return null;
 }
 

@@ -69,6 +69,8 @@ test("garde-fous /rediger : chiffres et liens limités à la référence, mentio
     + "Le site est en ligne en deux à quatre semaines, et vous n'avez qu'à relire. "
     + "Est-ce que ce serait un projet qui vous intéresserait ? Je vous partage mon site pour plus d'informations.";
   assert.deepEqual(checkWrittenCore(ok, "Plomberie Durand : votre site", ref), []);
+  for (const stale of ["Cela vous parle-t-il ?", "Je n'ai pas relevé de défaut, c'est juste un regard neuf.", "Le détail de mes offres est sur mon site."])
+    assert.ok(checkWrittenCore(ok + " " + stale, "Objet", ref).some((x) => x.includes("tournure abandonnée")), stale);
   assert.ok(checkWrittenCore(ok + " Le site est à 690 € au lieu de 990 €.", "x", ref).some((x) => x.includes("aucun prix")), "prix refusé, même en création");
   const bad = checkWrittenCore(ok + " 87 % de vos clients vous cherchent sur https://stats.test, résultat garanti.", "Objet", ref);
   assert.ok(bad.some((x) => x.includes("87")), "chiffre inventé refusé");

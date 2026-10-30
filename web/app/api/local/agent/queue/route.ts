@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const auto = await getAutoSend();
   const rows = (await safeRows<any>(`SELECT ${LIST_COLUMNS}, p.website_evidence, p.contact_source_url, p.draft_message, p.provenance, p.auto_state ${formOnly ? FORM_QUEUE_SQL : emailOnly ? EMAIL_QUEUE_SQL : CONTACT_QUEUE_SQL}`))
     .filter((p) => withDrafts || !p.draft_message)
-    .filter((p) => !emailOnly || autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null);
+    .filter((p) => !emailOnly || autoIneligible({ ...p, draft_message: "-", draft_kind: null }, auto.personal_emails) === null);
   const { triggered, others } = splitByTrigger(rows);
   const hasSite = isRedesignKind;
   const allDrafted = (formOnly ? rows : [...triggered, ...others]).map((p) => ({ p, d: buildDraft(p, sender, offer) }))
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     .map((x, i) => ({ ...x, i }));
   // Ceux qui peuvent partir par e-mail d'abord ; puis on ENTRELACE « avec site » (refonte) et « sans site » pour que les deux soient rédigés,
   // au lieu que l'un écrase l'autre (chaque groupe garde son ordre : déclencheurs forts, score).
-  const canMail = (p: any) => autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null;
+  const canMail = (p: any) => autoIneligible({ ...p, draft_message: "-", draft_kind: null }, auto.personal_emails) === null;
   const order = (list: typeof allDrafted) => {
     const w = list.filter((x) => hasSite(x.d.kind)), n = list.filter((x) => !hasSite(x.d.kind)), out: typeof allDrafted = [];
     for (let k = 0; k < Math.max(w.length, n.length); k++) { if (k < w.length) out.push(w[k]); if (k < n.length) out.push(n[k]); }
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       photos_en_option: photosOffered(p, offer), canal: formOnly ? "formulaire" : p.email && p.auto_state !== "bounced" ? "e-mail" : p.contact_form ? "formulaire" : "téléphone ou visite",
       page_contact: formOnly ? safeHref(p.contact_page) : undefined,
       // envoi automatique possible (fiche complète avec e-mail, jamais contactée) ; sinon Théo contacte lui-même (jamais sans métier connu)
-      envoi_auto: !formOnly && autoIneligible({ ...p, draft_message: "-" }, auto.personal_emails) === null,
+      envoi_auto: !formOnly && autoIneligible({ ...p, draft_message: "-", draft_kind: null }, auto.personal_emails) === null,
       reference: { objet: d.subject, coeur: d.core }, fiche: `/local/${p.id}`,
     });
   }

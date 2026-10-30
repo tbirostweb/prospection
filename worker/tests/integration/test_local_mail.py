@@ -507,6 +507,26 @@ def test_site_qui_ne_repond_plus_avant_une_refonte_brouillon_rendu_en_neutre(mai
     assert json.loads(p["provenance"])["presend_identity"]["doubt"] is True and complete.angle(p) == "neutre"
 
 
+@pytest.mark.parametrize("message", [
+    "Bonjour Didier Chapot (Chapot),\n\nJe m'appelle Théo, je suis développeur web.\n\n" + BODY.split("\n\n", 3)[3],
+    "Bonjour,\n\nLe détail de mes offres se trouve sur https://birostweb.fr/#offres.\n\nCela vous parle-t-il ?\n\n" + BODY.split("\n\n", 3)[3],
+])
+def test_brouillon_a_l_ancien_style_jamais_envoye(mail, conn, message):
+    pid = add(conn, "10000000000011")
+    db.execute(conn, "UPDATE local_prospects SET website_status='UNCERTAIN', draft_kind='ai_neutre', draft_message=%s WHERE id=%s", (message, pid))
+    ok = add(conn, "10000000000012")                    # brouillon au style validé : part au même passage
+    mail.enable()
+    out = mail.run(T0)
+    assert out["restyled"] == 1 and out["status"] == "sent" and row(conn, ok)["contacted_at"] is not None
+    p = row(conn, pid)
+    assert p["draft_message"] is None and p["auto_state"] is None and p["contacted_at"] is None      # rendu à la rédaction
+
+
+def test_style_valide_reconnu():
+    ok = "Bonjour Madame,\n\nJe m'appelle Théo.\n\nJe vous partage mon site pour plus d'informations.\n\nBien cordialement,\nThéo\nhttps://birostweb.fr/"
+    assert outbox.outdated_draft(ok) is None and outbox.outdated_draft(BODY) is None
+
+
 def test_brouillon_ecrit_a_la_main_attend_toujours_un_site_tranche(mail, conn):
     pid = add(conn, "10000000000011")                                             # draft_kind NULL : on ne sait pas s'il parle d'un site
     db.execute(conn, "UPDATE local_prospects SET website_status='UNCERTAIN' WHERE id=%s", (pid,))

@@ -42,6 +42,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import re
 import smtplib
 import ssl
 import sys
@@ -160,6 +161,34 @@ def next_task(conn, now: dt.datetime, personal: bool = True) -> tuple[str, dict]
 
 def _iso(now: dt.datetime) -> str:
     return now.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# Brouillon écrit avant le style validé par Théo (skill message-prospection, 28/10/2026) : jamais envoyé. Formule d'appel avec un nom
+# (« Bonjour Didier Chapot (Chapot), »), lien dans le corps (page des offres), tournures abandonnées (« Cela vous parle-t-il ? »…).
+OLD_STYLE = re.compile(r"https?://|www\.|cela vous parle|regard neuf|(?:relevé|repéré) (?:de|aucun) défaut|rien de précis à (?:lui )?reprocher", re.I)
+
+
+def outdated_draft(text: str | None) -> str | None:
+    """Raison pour laquelle un brouillon de l'application n'a plus le style validé, None s'il l'a. La signature et la notice ne comptent pas."""
+    body = re.split(r"\n\s*Bien cordialement", text or "", maxsplit=1)[0].strip()
+    first = body.split("\n")[0].strip()
+    if not re.fullmatch(r"Bonjour(?: Monsieur| Madame)?\s*,", first):
+        return f"formule d'appel « {first[:60]} »"
+    if m := OLD_STYLE.search(body):
+        return f"ancien style « {m.group(0)} »"
+    return None
+
+
+def restyle_queue(conn) -> int:
+    """Toute la file d'envoi d'un coup : chaque brouillon de l'application à l'ancien style est effacé et rendu à /rediger."""
+    n = 0
+    for p in db.fetch_all(conn, "SELECT * FROM local_prospects WHERE auto_state='queued' AND draft_message IS NOT NULL"):
+        if complete.draft_angle(p.get("draft_kind")) and (why := outdated_draft(p["draft_message"])):
+            _redraft(conn, p, why)
+            n += 1
+    if n:
+        conn.commit()
+    return n
 
 
 def _sans_site(p: dict) -> bool:
@@ -614,6 +643,10 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
             _redraft(conn, p, f"brouillon {d_angle}, site désormais « {complete.angle(p)} »")
             conn.commit()
             return "skipped"
+        if d_angle and (why := outdated_draft(p.get("draft_message"))):
+            _redraft(conn, p, why)                    # rendu à /rediger, qui le réécrit au style validé
+            conn.commit()
+            return "skipped"
         ok = mail_domain_ok(conn, email, now, query=mx_query)
         if ok is False:
             _mark_invalid(conn, p, email, f"aucun serveur de messagerie pour {mailer.email_domain(email)}", now)
@@ -742,6 +775,7 @@ def run(conn, now: dt.datetime | None = None, send=smtp_send, imap=inbox.connect
             _error(conn, f"lecture de la boîte impossible ({type(exc).__name__}) : {exc}")
             out["inbox_error"] = True
     out["abandoned"] = abandon(conn, now)
+    out["restyled"] = restyle_queue(conn)
     auto = mailer.settings(_setting(conn, "local_auto_send"))
     checks = _state(conn)["checks"]
     checks["config_missing"] = missing

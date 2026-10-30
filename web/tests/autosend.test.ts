@@ -30,6 +30,8 @@ test("seules les adresses professionnelles jamais contactées sont mises en file
   assert.match(autoIneligible({ ...P, do_not_contact: 1 }, false)!, /ne plus contacter/);
   assert.equal(autoIneligible({ ...P, contacted_at: "2026-10-01" }, false), "déjà contacté");
   assert.equal(autoIneligible({ ...P, draft_message: null }, false), "pas de brouillon");
+  assert.match(autoIneligible({ ...P, draft_kind: "site_refonte" }, false)!, /\/rediger/);             // brouillon du code : jamais envoyé tel quel
+  assert.equal(autoIneligible({ ...P, draft_kind: "ai_site_refonte" }, false), null);
   assert.equal(autoIneligible({ ...P, email: null }, false), "pas d'adresse e-mail");
 });
 

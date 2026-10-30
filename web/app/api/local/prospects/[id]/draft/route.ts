@@ -40,7 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let queued = false, notQueued: string | null = null;
   if (b.auto === true && b.canal === "formulaire") notQueued = "message pour le formulaire de contact : à copier dans le formulaire, jamais envoyé automatiquement";
   else if (b.auto === true) {
-    notQueued = autoIneligible({ ...p, draft_message: body }, auto.personal_emails) ?? (p.auto_state && p.auto_state !== "queued" && p.auto_state !== "stopped" ? "séquence automatique déjà en cours ou terminée" : null);
+    notQueued = autoIneligible({ ...p, draft_message: body, draft_kind: kind }, auto.personal_emails) ?? (p.auto_state && p.auto_state !== "queued" && p.auto_state !== "stopped" ? "séquence automatique déjà en cours ou terminée" : null);
     if (!notQueued) {
       await query("UPDATE local_prospects SET auto_queued_at=IF(auto_state='queued' AND auto_queued_at IS NOT NULL, auto_queued_at, UTC_TIMESTAMP()), auto_state='queued' WHERE id=?", [id]);
       queued = true;

@@ -83,7 +83,16 @@ Le modèle est un e-mail réécrit par Théo lui-même. Toujours cette trame, qu
 > Est-ce que ce serait un projet qui vous intéresserait ?
 > Je vous partage mon site pour plus d'informations.
 
-**À ne plus reproduire** (ancien message envoyé, trop mécanique) : salutation avec nom et parenthèses ; constat avant la présentation ; « un site met vos réalisations en photos, explique… » affirmé au présent ; « Je m'occupe des textes à partir de ce que vous m'expliquez » comme seule prise en charge.
+**À ne plus reproduire** (anciens messages envoyés, que Théo n'aime pas) :
+- une salutation avec prénom, nom ou parenthèses : « Bonjour Didier Chapot (Chapot), », « Bonjour Jeremy Francois, ». Toujours « Bonjour Monsieur, », « Bonjour Madame, » ou « Bonjour, », ajoutés par l'application ;
+- une question floue ou sèche : « Cela vous parle-t-il ? », « Est-ce un sujet pour vous en ce moment ? », « Auriez-vous un moment pour en discuter ? ». Toujours une question qui dit de quoi on parle : « Est-ce que ce serait un projet qui vous intéresserait ? » ;
+- un lien ou un renvoi vers les offres dans le message : « Le détail de mes offres se trouve sur https://birostweb.fr/#offres », « Mes offres et tarifs sont présentés sur… ». Le seul renvoi est « Je vous partage mon site pour plus d'informations. » (le lien est dans la signature) ;
+- l'adresse du site entre parenthèses : « le site des Jardins de Jeremy (lesjardinsdejeremy.com) » ;
+- un aveu qu'il n'y a rien à reprocher : « Je n'ai pas relevé de défaut sur l'actuel, c'est juste un regard neuf », « Rien de précis à lui reprocher ». Sans défaut fourni, rester sur « il me semble qu'il pourrait être modernisé » ou parler de ce qu'un nouveau site apporterait, sans juger ;
+- le constat avant la présentation (« J'ai jeté un œil au site… Je m'appelle Théo ») : Théo se présente toujours en premier ;
+- « un site refait peut… » affirmé au présent, au lieu du conditionnel ;
+- « Je rédige les textes à partir de ce que vous me racontez, vous n'avez qu'à relire » ou des options (fiche Google) à la place de la prise en charge du temps 3.
+L'application refuse au dépôt ces tournures et ne laisse partir aucun brouillon à l'ancien style.
 
 ## 4. Le prix : deux approches
 

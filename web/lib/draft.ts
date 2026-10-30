@@ -251,6 +251,9 @@ export function checkWrittenCore(core: string, subject: string, ref: Draft, comp
   if (/^\s*(bonjour|bonsoir|salut|cher|chère|madame|monsieur)\b/i.test(first)) problems.push("ne pas écrire de salutation : « Bonjour, » (ou Monsieur/Madame) est ajouté par l'application");
   else if (/^\s*[A-ZÀ-Ý][a-zà-ÿ'’-]+\s+[A-ZÀ-Ý][a-zà-ÿA-ZÀ-Ý'’-]+\s*[,:]/.test(first)) problems.push("première ligne : ne pas commencer par un nom de personne");
   if (/garanti/i.test(text)) problems.push("aucune garantie de résultat ne peut être promise");
+  // Tournures de l'ancien style, abandonnées : question floue, constat sans défaut, renvoi vers les offres (skill message-prospection)
+  const stale = text.match(/cela vous parle|regard neuf|(?:relevé|repéré) (?:de|aucun) défaut|rien de précis à (?:lui )?reprocher|(?:détail de )?mes offres/i);
+  if (stale) problems.push(`tournure abandonnée « ${stale[0]} » : suivre les cinq temps (question « Est-ce que ce serait un projet qui vous intéresserait ? », puis « Je vous partage mon site pour plus d'informations. »)`);
   // Jamais un message qui parle d'un site non vérifié : un message neutre ne parle ni d'un site existant ni d'une absence de site ;
   // un message de création ne parle pas d'un site existant.
   const angle = kindAngle(ref.kind);
