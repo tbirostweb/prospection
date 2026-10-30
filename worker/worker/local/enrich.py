@@ -73,7 +73,7 @@ UNREACHABLE_RETRY_DAYS = 3
 SEARCH_MORE_TRIES, SEARCH_MORE_DAYS, SEARCH_MORE_LATER_DAYS = 3, 1, 14
 KEEP_RUNS = 500
 
-FREE_STEPS = ("company_state", "naf", "manual", "stuck", "site_identity", "places_site", "places_backfill", "site_guess", "email_domain_site", "unreachable", "site_email")
+FREE_STEPS = ("company_state", "naf", "manual", "stuck", "insee", "site_identity", "places_site", "places_backfill", "site_guess", "email_domain_site", "unreachable", "site_email")
 ENGINE_STEPS = ("email", "recheck", "search_more", "stuck_search")   # l'e-mail d'abord (priorité), borné à LOCAL_EMAIL_SEARCH_PER_RUN requêtes
 STOP_TEXT = {"budget": "budget du jour des moteurs réservé aux autres tâches", "time": "budget de temps", "quota": "quota", "engines": "moteurs indisponibles", "error": "erreur", "lock": "verrou pris"}
 
@@ -420,11 +420,12 @@ def record_skipped(conn, reason: str) -> None:
 
 
 def free_steps(conn, report: Report, fetch, deadline: float) -> None:
-    from . import companystate, emailsearch, naflabels
+    from . import companystate, emailsearch, insee, naflabels
     report.step(conn, "company_state", lambda d: companystate.run(conn, deadline=d), deadline)   # d'abord : une fiche fermée ne coûte plus rien
     report.step(conn, "naf", lambda d: (lambda r: _out(r["examined"], r.get("labelled", 0), "nothing"))(naflabels.backfill(conn)), deadline)
     report.step(conn, "manual", lambda d: _out(emailsearch.rescore_manual(conn)), deadline)
     report.step(conn, "stuck", lambda d: finish_stuck(conn, fetch, None, deadline=d), deadline)
+    report.step(conn, "insee", lambda d: insee.run(conn, deadline=d), deadline)
     report.step(conn, "site_identity", lambda d: site_identity(conn, fetch, deadline=d), deadline)   # avant tout envoi : sites d'une autre entreprise écartés
 
     def site(d):

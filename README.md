@@ -244,6 +244,28 @@ verrou pris, budget de temps, quota, moteurs indisponibles, rien à faire), tabl
 
 Le journal est `logs/mail.log` (worker). Les e-mails envoyés sont aussi copiés dans le dossier « Envoyés » de ta boîte.
 
+### Civilité INSEE (facultative)
+
+Après la migration `036_insee_civilite.sql` (automatique au démarrage), renseigner `INSEE_API_KEY` dans `.env`, puis recréer le worker.
+Sans clé, cette étape ne fait aucun appel HTTP ni SQL. `LOCAL_INSEE_PER_RUN` vaut 50 par défaut ; 0 désactive l'étape.
+La clé porte exactement le nom `INSEE_API_KEY` : Docker la transmet à l'entrypoint, puis le planificateur qui remplace cron
+l'autorise explicitement dans l'environnement des tâches, sans l'écrire sur disque.
+
+L'étape `insee` des passages d'enrichissement (y compris `--no-engines`) utilise
+`GET https://api.insee.fr/api-sirene/3.11/siren/{siren}` avec l'en-tête `X-INSEE-Api-Key-Integration`.
+Elle complète seulement `manager_civility` vide : « Monsieur » pour M, « Madame » pour F, exclusivement si
+`statutDiffusionUniteLegale=O` et si la période actuelle de `periodesUniteLegale` (`dateFin=null`) porte
+`categorieJuridiqueUniteLegale=1000` (entrepreneur individuel). Aucune déduction à partir d'un prénom.
+Les fiches opposées, écartées, déjà contactées ou dans une campagne en cours sont exclues comme pour les autres enrichissements.
+
+La provenance `insee` conserve uniquement `source`, `status`, `checked_at` : ni nom, ni sexe, ni réponse brute, ni URL avec SIREN.
+Une fiche déjà traitée, même sans civilité (404, non diffusible, personne morale, valeur inconnue), n'est plus appelée.
+Un 429 arrête immédiatement le passage sans marquer la fiche ; la pause `Retry-After` (au moins 60 secondes)
+est conservée en base. Les autres erreurs restent réessayables au passage suivant.
+La cadence de 30 requêtes/minute maximum (2,01 secondes entre départs), partagée en base entre les passages,
+respecte le budget de temps de l'étape. Le verrou d'enrichissement empêche les passages concurrents.
+La clé et le contenu des réponses ne sont jamais journalisés par le module.
+
 ## Dépannage
 
 | Symptôme | Cause probable / solution |

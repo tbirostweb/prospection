@@ -41,5 +41,6 @@ python -m worker.local.rescore >> "$LOG_DIR/worker.log" 2>&1 || \
     echo "[entrypoint] recalcul des scores en échec (voir logs)."
 
 # 2) Planificateur (remplace cron, sans root, sans écrire l'environnement sur disque). Cf. worker/scheduler.py.
+# INSEE_API_KEY est héritée ici puis explicitement autorisée par scheduler.job_env (pas de préfixe LOCAL_).
 echo "[entrypoint] Démarrage du planificateur."
 exec python -m worker.scheduler

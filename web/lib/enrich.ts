@@ -10,6 +10,7 @@ export const STEP_LABELS: Record<string, [string, string]> = {
   naf: ["métier lu dans le code NAF", "métiers lus dans le code NAF"],
   manual: ["e-mail ajouté à la main rescoré", "e-mails ajoutés à la main rescorés"],
   stuck: ["fiche bloquée reprise", "fiches bloquées reprises"],
+  insee: ["fiche vérifiée auprès de l'INSEE (civilité)", "fiches vérifiées auprès de l'INSEE (civilité)"],
   site_identity: ["site retenu relu (identité)", "sites retenus relus (identité)"],
   places_site: ["site Google vérifié", "sites Google vérifiés"],
   places_backfill: ["fiche interrogée sur Google Places", "fiches interrogées sur Google Places"],

@@ -53,7 +53,7 @@ JOBS: list[tuple[str, list[str] | None, str | None]] = [
 # Variables transmises aux tâches (identique à l'ancien filtre de la crontab, + allowlist Telegram et variables système).
 ENV_PATTERN = re.compile(
     r"^(DATABASE_URL|SEARXNG_URL|TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|TELEGRAM_ALLOWED_USER_IDS|TELEGRAM_OFFSET_STATE|APP_URL|TZ|"
-    r"LOG_LEVEL|MIGRATIONS_DIR|PAGESPEED_API_KEY|LOCAL_[A-Z_]+|PATH|HOME|LANG|LC_[A-Z]+|PYTHONUNBUFFERED)$"
+    r"LOG_LEVEL|MIGRATIONS_DIR|PAGESPEED_API_KEY|INSEE_API_KEY|LOCAL_[A-Z_]+|PATH|HOME|LANG|LC_[A-Z]+|PYTHONUNBUFFERED)$"
 )
 
 _RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
