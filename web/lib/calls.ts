@@ -1,4 +1,3 @@
-import { shortActivity } from "./activity";
 import type { Angle } from "./complete";
 
 /** « À appeler » et formulaire : fiches SANS e-mail utilisable, contactées à la main par Théo. Rien n'est envoyé automatiquement. */
@@ -15,13 +14,13 @@ export function addDays(day: string, n: number): string {
 
 /** Argumentaire d'appel en 3 lignes, construit à partir du métier et de l'angle. Constat prudent, aucun prix. */
 export function callScript(activityLabel: string | null | undefined, angle: Angle): string[] {
-  const metier = shortActivity(activityLabel)?.toLowerCase() ?? null;
+  void activityLabel;                    // le libellé de catégorie est au pluriel (« Architectes ») : jamais lu tel quel au téléphone
   const intro = "Bonjour, Théo, développeur web indépendant près de Troyes. Je vous dérange une minute ?";
   const constat = angle === "refonte"
-    ? "En regardant votre site, j'ai vu quelques points qui pourraient être améliorés (affichage, rapidité, lisibilité sur mobile)."
+    ? "J'ai regardé votre site internet, et je me demandais si vous pensiez à le refaire un jour."   // aucun défaut affirmé sans l'avoir vu
     : angle === "creation"
-      ? `Je n'ai pas trouvé de site internet pour votre activité${metier ? ` de ${metier}` : ""}, sauf erreur de ma part.`
-      : `J'aide des entreprises de la région${metier ? ` (${metier})` : ""} à mieux se faire trouver sur internet.`;
+      ? "Je n'ai pas trouvé de site internet pour votre entreprise, sauf erreur de ma part."
+      : "J'aide les entreprises du coin à se faire trouver sur internet.";
   return [intro, constat, "Est-ce que ce serait un sujet pour vous ?"];
 }
 

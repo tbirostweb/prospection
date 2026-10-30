@@ -18,7 +18,8 @@ test("argumentaire : 3 lignes, présentation, constat prudent selon l'angle, que
     assert.match(s[2], /Est-ce que ce serait un sujet pour vous \?/);
     assert.doesNotMatch(s.join(" "), /€|euro|prix|tarif/i);
   }
-  assert.match(callScript("Plombiers", "creation")[1], /pas trouvé de site.*plombiers.*sauf erreur/);
+  assert.match(callScript("Plombiers", "creation")[1], /pas trouvé de site.*votre entreprise.*sauf erreur/);
+  assert.doesNotMatch(callScript("Architectes", "creation").join(" "), /architectes|de instituts/i);   // jamais le libellé de catégorie au pluriel
   assert.match(callScript("Plombiers", "refonte")[1], /votre site/);
   assert.doesNotMatch(callScript("Plombiers", "neutre")[1], /votre site|pas trouvé/);   // neutre : ni site existant ni absence de site
   assert.doesNotMatch(callScript(null, "creation")[1], /null|undefined/);
