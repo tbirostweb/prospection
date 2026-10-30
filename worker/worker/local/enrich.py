@@ -60,6 +60,7 @@ LOCK_WAIT_S = _env_int("LOCAL_ENRICH_LOCK_WAIT_S", 600)             # attente du
 SITE_GUESS_PER_RUN = _env_int("LOCAL_SITE_GUESS_PER_RUN", 20)
 SITE_SEARCH_PER_RUN = _env_int("LOCAL_SITE_SEARCH_PER_RUN", 3)      # ≈ 6 requêtes chacune
 UNREACHABLE_PER_RUN = _env_int("LOCAL_UNREACHABLE_RETRY_PER_RUN", 5)
+EMAIL_DOMAIN_SITE_PER_RUN = _env_int("LOCAL_EMAIL_DOMAIN_SITE_PER_RUN", 20)   # ≈ 2 à 6 lectures chacune, aucune requête aux moteurs
 SITE_EMAIL_PER_RUN = _env_int("LOCAL_SITE_EMAIL_PER_RUN", 10)
 SITE_EMAIL_RETRY_DAYS = _env_int("LOCAL_SITE_EMAIL_RETRY_DAYS", 14)  # site retenu toujours sans e-mail : relu après ce délai…
 SITE_EMAIL_MAX_TRIES = _env_int("LOCAL_SITE_EMAIL_MAX_TRIES", 3)     # … au plus ce nombre de lectures en tout (la première comprise)
@@ -72,7 +73,7 @@ UNREACHABLE_RETRY_DAYS = 3
 SEARCH_MORE_TRIES, SEARCH_MORE_DAYS, SEARCH_MORE_LATER_DAYS = 3, 1, 14
 KEEP_RUNS = 500
 
-FREE_STEPS = ("company_state", "naf", "manual", "stuck", "site_identity", "places_site", "places_backfill", "site_guess", "unreachable", "site_email")
+FREE_STEPS = ("company_state", "naf", "manual", "stuck", "site_identity", "places_site", "places_backfill", "site_guess", "email_domain_site", "unreachable", "site_email")
 ENGINE_STEPS = ("email", "recheck", "search_more", "stuck_search")   # l'e-mail d'abord (priorité), borné à LOCAL_EMAIL_SEARCH_PER_RUN requêtes
 STOP_TEXT = {"budget": "budget du jour des moteurs réservé aux autres tâches", "time": "budget de temps", "quota": "quota", "engines": "moteurs indisponibles", "error": "erreur", "lock": "verrou pris"}
 
@@ -172,6 +173,29 @@ def site_guess(conn, fetch, limit: int = SITE_GUESS_PER_RUN, deadline: float | N
                 store.set_provenance(conn, row["id"], "presend_site", {"at": runner._now_iso(), "result": "none", "tries": 0, "cleared_by": "site_guess"})
         return saved
     return _loop(conn, rows, limit, deadline, one, _mark(conn, "site_guess"))
+
+
+def email_domain_sites(conn, fetch, limit: int = EMAIL_DOMAIN_SITE_PER_RUN, deadline: float | None = None) -> dict:
+    """Fiches « sans site » (NOT_FOUND / UNCERTAIN / jamais résolues), jamais contactées, avec un e-mail PROFESSIONNEL (hors messageries gratuites) :
+    le site du domaine de l'adresse est lu SANS moteur (`siterecheck.email_domain_site` : https://domaine, www, http ; parqué, maintenance, page
+    d'hébergeur : rien). Une fois par adresse (provenance `email_domain_site.domain`), celles qui ont un brouillon d'abord."""
+    from .contacts import FREEMAIL
+    if limit <= 0:
+        return _out(stop="off")
+    dom_sql = "SUBSTRING_INDEX(LOWER(TRIM(p.email)), '@', -1)"
+    free = ", ".join("'" + d.replace("'", "") + "'" for d in sorted(FREEMAIL))
+    rows = _rows(conn, f"""(p.website_status IN ('NOT_FOUND','UNCERTAIN') OR (p.website_status IS NULL AND p.pipeline_stage = 'DONE'))
+        AND p.pipeline_stage = 'DONE' AND {BASE} AND p.email IS NOT NULL AND p.email LIKE '%%@%%.%%' AND {dom_sql} NOT IN ({free})
+        AND COALESCE(JSON_UNQUOTE({_prov('email_domain_site.domain')}), '') <> {dom_sql}""", limit)
+
+    def one(row):
+        ctx = siterecheck.ctx_for(conn, row["id"])
+        return siterecheck.email_domain_site(conn, row, ctx, fetch)[1]
+
+    def mark(row, exc):
+        dom = (row.get("email") or "").strip().lower().rpartition("@")[2]
+        store.set_provenance(conn, row["id"], "email_domain_site", {"checked_at": runner._now_iso(), "domain": dom, "error": type(exc).__name__[:60]})
+    return _loop(conn, rows, limit, deadline, one, mark)
 
 
 def site_identity(conn, fetch, limit: int = SITE_IDENTITY_PER_RUN, deadline: float | None = None) -> dict:
@@ -415,6 +439,7 @@ def free_steps(conn, report: Report, fetch, deadline: float) -> None:
         return _out(r["asked"], r["found"], r["stop"], places.stop_reason if r["stop"] == "quota" else None)
     report.step(conn, "places_backfill", backfill, deadline)
     report.step(conn, "site_guess", lambda d: site_guess(conn, fetch, deadline=d), deadline)
+    report.step(conn, "email_domain_site", lambda d: email_domain_sites(conn, fetch, deadline=d), deadline)
     report.step(conn, "unreachable", lambda d: unreachable_retry(conn, fetch, deadline=d), deadline)
     report.step(conn, "site_email", lambda d: site_emails(conn, fetch, deadline=d), deadline)
 

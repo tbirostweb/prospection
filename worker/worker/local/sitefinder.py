@@ -73,7 +73,7 @@ GUESS_PATHS = ("mentions-legales", "mentions-legales/", "mentions", "legal", "co
 # Poids des preuves (somme plafonnée à 1). Documentés ici pour rester lisibles ET testables.
 WEIGHTS = {"siret": 0.60, "siren": 0.50, "address_exact": 0.30, "address_street": 0.18, "phone": 0.25, "name_exact": 0.30, "name_partial": 0.30,
            "domain_name": 0.10, "city": 0.10, "postal": 0.12, "schema_org": 0.20, "legal_name": 0.15, "structured_source": 0.20,
-           "activity": 0.04, "other_siren": -0.55, "homonym": -0.30}
+           "activity": 0.04, "email_domain_proof": 0.65, "other_siren": -0.55, "homonym": -0.30}
 NAME_ONLY_CAP = 0.55                  # nom seul (sans ville, code postal, adresse, téléphone ni SIREN) : preuve faible
 NO_NAME_CAP = 0.30
 
@@ -421,6 +421,13 @@ def score_candidate(company: dict, url: str, hit: Hit | None, pages: list[htmlin
     if frac and act and any(len(w) > 4 and w in tf for w in act):
         add("activity", "activité cohérente avec le contenu du site")
 
+    proof = (company.get("email_proof_domain") or "").lower().removeprefix("www.")
+    if proof and proof == domain:
+        # L'adresse e-mail pro de la fiche est sur CE domaine : preuve d'identité de plus (jamais seule pour CONFIRMED / PROBABLE : 0,65 = « à trancher »
+        # tant que ni le nom, ni la ville, ni le code postal ne figurent sur le site). Lève les plafonds « nom introuvable » / « nom seul » ; les rejets
+        # (autre SIREN, autre localisation, société éditrice différente, site de groupe) restent appliqués plus bas, en priorité.
+        add("email_domain_proof", f"l'adresse e-mail de la fiche est sur le domaine du site ({domain})")
+        strong = True
     contradictions: list[str] = []
     # Vérification INVERSÉE : le site se déclare-t-il autre chose ?
     other = {n for n in ident.sirens if n != siren}
@@ -657,6 +664,59 @@ def email_site_urls(company: dict) -> list[str]:
     if dom and "." in dom and dom not in FREEMAIL and not _in_set(dom, NOT_OFFICIAL | SOCIAL):
         out.append(f"https://www.{dom}/")
     return list(dict.fromkeys(out))
+
+
+def email_proof_domain(company: dict) -> str | None:
+    """Domaine PROFESSIONNEL de l'adresse e-mail de la fiche, ou None : hors messageries gratuites (`contacts.FREEMAIL`), hors domaines techniques
+    (`contacts.IGNORED_DOMAINS`), réseaux sociaux, annuaires, domaine signalé « mauvais site » de la fiche, et hors adresse lue SUR ce site
+    (preuve circulaire : l'adresse vient du site qu'on cherche à juger)."""
+    from .contacts import FREEMAIL, IGNORED_DOMAINS
+    dom = (company.get("email") or "").strip().lower().rpartition("@")[2].removeprefix("www.")
+    if not dom or "." not in dom or dom in FREEMAIL or _in_set(dom, IGNORED_DOMAINS | NOT_OFFICIAL | SOCIAL) or looks_like_directory(dom, company):
+        return None
+    if dom in {d.lower().removeprefix("www.") for d in company.get("bad_domains") or []}:
+        return None
+    src = (urlparse(company.get("email_source_url") or "").hostname or "").lower().removeprefix("www.")
+    return None if src and src == dom else dom
+
+
+def resolve_email_domain(company: dict, fetch: Fetcher, thresholds: "Thresholds | None" = None) -> Resolution:
+    """Site du domaine de l'adresse e-mail pro de la fiche (contact@palatium-club.com → palatium-club.com), SANS moteur : https://domaine, puis
+    https://www.domaine, puis http en repli. Lecture et règle d'identité de `check_site` (mentions légales et contact lus ; parqué, maintenance,
+    page d'hébergeur « site en construction », certificat invalide : aucun site) avec, en plus, la preuve « e-mail sur ce domaine »
+    (`email_domain_proof`). Renvoie CONFIRMED / PROBABLE (site retenu), UNCERTAIN (il répond mais sans preuve suffisante : site candidat dans
+    `candidates`) ou NOT_FOUND (rien à retenir : injoignable, parqué, en construction, autre entreprise ; l'absence de site reste vraie)."""
+    th = thresholds or Thresholds()
+    res = Resolution(status="NOT_FOUND")
+    dom = email_proof_domain(company)
+    if not dom:
+        return res
+    co = {**company, "email_proof_domain": dom}
+    best = None
+    for url in (f"https://{dom}/", f"https://www.{dom}/", f"http://{dom}/", f"http://www.{dom}/"):
+        a = _assess(co, url, None, fetch, th=th, declared=True)
+        if a.pages and a.reachable:
+            best = a
+            break
+    if best is None or best.parked or best.maintenance or best.verdict in ("parked", "maintenance", "unreachable"):
+        return res
+    tier = th.tier(best.confidence, best.reachable)
+    if tier in ("CONFIRMED", "PROBABLE") and (best.contradictions or best.verdict != "ok"):
+        tier = "UNCERTAIN"
+    if best.verdict in ("other_company", "group_site"):
+        tier = "UNCERTAIN"                      # adresse sur le site d'une société sœur ou du groupe : ni « son site », ni « aucun site » (message neutre)
+    if tier in ("CONFIRMED", "PROBABLE") and SSL_STRICT and https_broken(best.url, fetch):
+        return res
+    if tier in ("NOT_FOUND", "UNREACHABLE"):
+        return res
+    res.status, res.confidence = tier, best.confidence
+    res.evidence = best.evidence + [ev("email_domain", f"site du domaine de l'adresse e-mail de la fiche ({dom}), lu et vérifié sur le site", 0.0)]
+    res.candidates = [{"url": best.url, "domain": best.domain, "confidence": best.confidence, "reachable": best.reachable, "evidence": res.evidence,
+                       "original_url": best.original_url, "redirect_chain": best.chain, "verdict": best.verdict, "via": "email_domain"}]
+    if tier in ("CONFIRMED", "PROBABLE"):
+        res.url, res.pages, res.identity = best.url, best.pages, best.identity
+        res.original_url, res.final_url, res.canonical_domain, res.redirect_chain = best.original_url, best.url, best.domain, best.chain
+    return res
 
 
 def dns_resolves(domains: list[str], timeout: float = 4.0) -> list[str]:
@@ -945,6 +1005,8 @@ def identity_verdict(company: dict, pages: list[htmlinfo.Page], domain: str, cod
     holder = next((n for k, n in owners if k == "copyright" and other_name(company, n)), None)
     if holder:
         return "other_company", f"pied de page : « © {holder[:60]} », une autre entreprise", related
+    if "email_domain_proof" in codes and (related or locality):         # après tous les rejets ci-dessus : le domaine de l'e-mail ne les contourne pas
+        return "ok", "domaine de l'adresse e-mail de la fiche, avec le nom ou la localité de l'entreprise sur le site", True
     return ("no_proof", "aucune preuve propre à l'entreprise sur le site (SIRET, ou nom dans le titre / l'en-tête / le pied de page avec la ville, "
                         "le code postal ou le téléphone, ou domaine = nom)", related)
 

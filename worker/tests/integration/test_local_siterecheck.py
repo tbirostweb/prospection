@@ -75,3 +75,25 @@ def test_brouillon_redige_d_abord(env, conn, monkeypatch):
     web, search = _setup(conn, monkeypatch)
     ids = [r["id"] for r in siterecheck.candidates(conn, 10)]
     assert ids and ids[0] == prospect(conn, DUPONT)["id"]
+
+
+# ── Domaine de l'e-mail pro (enrich.email_domain_sites) ──────────────────────────────────────────────────────
+def test_etape_domaine_de_l_email_site_retenu_brouillon_efface(env, conn, monkeypatch):
+    from worker.local import enrich
+    web, _search = _setup(conn, monkeypatch, email="contact@club-dupont-troyes.com", email_kind="GENERIC_BUSINESS")
+    monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])
+    web.add_site("club-dupont-troyes.com", html(title="Accueil", h1="Bienvenue", desc="Pains", canonical=False, body="<p>Troyes 10000</p>"))
+    out = enrich.email_domain_sites(conn, web, limit=10)
+    p = prospect(conn, DUPONT)
+    assert out["found"] == 1 and p["website_status"] in ("CONFIRMED", "PROBABLE") and p["website_url"] == "https://club-dupont-troyes.com/"
+    assert p["draft_message"] is None and p["auto_state"] is None and p["contacted_at"] is None
+    assert enrich.email_domain_sites(conn, web, limit=10)["found"] == 0                 # une seule fois par adresse
+
+
+def test_etape_domaine_de_l_email_messagerie_gratuite_jamais_lue(env, conn, monkeypatch):
+    from worker.local import enrich
+    web, _search = _setup(conn, monkeypatch, email="dupont@gmail.com", email_kind="UNCERTAIN")
+    web.calls.clear()
+    enrich.email_domain_sites(conn, web, limit=50)
+    assert not any("gmail.com" in u for u in web.calls)
+    assert "email_domain_site" not in (prospect(conn, DUPONT)["provenance"] or "")

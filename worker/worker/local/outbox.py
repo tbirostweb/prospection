@@ -325,6 +325,53 @@ def presend_site(conn, p: dict, now: dt.datetime, fetch=None, timeout: float = P
     return "none", ""
 
 
+def presend_email_domain(conn, p: dict, now: dt.datetime, fetch=None, timeout: float = PRESEND_TIMEOUT) -> tuple[str, str]:
+    """Garde-fou avant un message « sans site » : le domaine PROFESSIONNEL de l'adresse e-mail héberge-t-il un vrai site ? (contact@club.com →
+    club.com : « je n'ai pas trouvé de site » serait faux.) Lecture sans moteur dans un fil borné (`siterecheck.email_domain_site`). Renvoie
+    (verdict, détail) : 'none' (domaine sans site exploitable, ou messagerie gratuite : le message peut partir), 'found' (site retenu), 'uncertain'
+    (le site répond sans preuve suffisante : fiche « à trancher »), 'retry' (trop lent ou en échec). Rien trouvé : noté 3 jours (PRESEND_FRESH)."""
+    from . import runner, siterecheck, sitefinder
+    company = runner._company(conn, p)
+    dom = sitefinder.email_proof_domain(company)
+    if not dom:
+        return "none", ""
+    prev = complete._json(p.get("provenance")).get("email_domain_site")
+    try:
+        if isinstance(prev, dict) and prev.get("domain") == dom and prev.get("status") == "NOT_FOUND" \
+                and now - dt.datetime.fromisoformat(str(prev["checked_at"]).replace("Z", "+00:00")) < PRESEND_FRESH:
+            return "none", "déjà vérifié"
+    except (KeyError, TypeError, ValueError):
+        pass
+    if fetch is None:
+        from . import fetch as fetch_mod
+        fetch = fetch_mod.Fetcher(timeout=6.0)
+    ctx = siterecheck.ctx_for(conn, p["id"])
+    out: list = []
+
+    def work():
+        try:
+            out.append(sitefinder.resolve_email_domain(company, fetch, ctx.site_thresholds))
+        except Exception as exc:  # noqa: BLE001 — une erreur de lecture = rien de conclu
+            log.warning("[mail] site du domaine de l'e-mail en échec : %s", exc)
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(timeout)
+    if not out:
+        return "retry", "vérification du domaine de l'e-mail trop longue ou en échec"
+    res = out[0]
+    try:
+        status, saved = siterecheck.email_domain_site(conn, p, ctx, fetch, res=res)
+    except Exception as exc:  # noqa: BLE001 — enregistrement en échec : rien d'envoyé, nouvel essai plus tard
+        conn.rollback()
+        return "retry", f"enregistrement du site en échec ({type(exc).__name__})"
+    conn.commit()
+    if saved:
+        return "found", res.url or ""
+    if res.status == "UNCERTAIN":
+        return "uncertain", res.candidates[0]["url"] if res.candidates else ""
+    return "none", ""
+
+
 def _site_down_draft(p: dict) -> bool:
     return "site_inaccessible" in (p.get("draft_kind") or "")
 
@@ -490,6 +537,15 @@ def send_one(conn, kind: str, p: dict, cfg: dict, sender: dict, now: dt.datetime
             _defer(conn, p, now, "DNS du destinataire injoignable")
             return "deferred"
         if _sans_site(p):
+            verdict, detail = presend_email_domain(conn, p, now, fetch=site_fetch)
+            if verdict in ("found", "uncertain"):
+                _redraft(conn, p, f"le domaine de l'e-mail héberge un site ({detail})")      # le message de création serait faux : repart en rédaction
+                conn.commit()
+                log.info("[mail] prospect %s : site sur le domaine de son e-mail (%s), message « sans site » effacé, rien d'envoyé", p["id"], detail)
+                return "found_site"
+            if verdict == "retry":
+                _defer(conn, p, now, detail)
+                return "deferred"
             verdict, detail = presend_site(conn, p, now, fetch=site_fetch)
             if verdict == "found":
                 log.info("[mail] prospect %s : site trouvé avant l'envoi (%s), message « sans site » effacé, rien d'envoyé", p["id"], detail)

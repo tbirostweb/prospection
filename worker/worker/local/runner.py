@@ -167,6 +167,8 @@ def _company(conn, row: dict) -> dict:
     prov = json.loads(prov) if isinstance(prov, (str, bytes)) else (prov or {})
     if isinstance(prov.get("email_domain_site"), dict) and prov["email_domain_site"].get("url"):
         company["email_site"] = prov["email_domain_site"]["url"]   # site constaté par l'envoi sur le domaine de l'adresse : candidat prioritaire
+    if isinstance(prov.get("email"), dict) and prov["email"].get("url"):
+        company["email_source_url"] = prov["email"]["url"]      # page où l'adresse a été lue : une adresse lue SUR un site ne prouve rien pour ce site
     if osm_data and osm_data.get("phone") and not company.get("phone"):
         company["phone"] = osm_data["phone"]                    # sert UNIQUEMENT à chercher / vérifier (jamais affiché comme contact confirmé)
     company["bad_domains"] = store.bad_domains(conn, row.get("siret"), row.get("fingerprint"))
@@ -336,6 +338,8 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch, res=
         # Aucun site confirmé : sans contact, un prospect reste plafonné sous le seuil « À contacter ». Sources encore possibles : OpenStreetMap
         # (déjà vérifié par proximité + nom) et les extraits de recherche attribuables (nom + ville) — jamais un contact inventé.
         _fallback_contacts(conn, pid, row, res, search, fetch)
+        if fetch is not None and _email_domain_site(conn, pid, ctx, fetch):
+            return                                              # site retenu via le domaine de l'e-mail : suite faite par siterecheck (process_prospect relancé)
     store.set_stage(conn, pid, "SCORING")
     fresh = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (pid,))
     _rescore(conn, fresh, ctx, issues)
@@ -343,6 +347,20 @@ def process_prospect(conn, row: dict, ctx: Ctx, stats: dict, search, fetch, res=
     store.clear_error(conn, pid, "DONE")
     # plus d'enrichissement approfondi : une fiche traitée est PRÊTE (today.READY / READY_SQL de web/lib/local.ts exigent deep_enriched_at)
     db.execute(conn, "UPDATE local_prospects SET deep_enriched_at=COALESCE(deep_enriched_at, UTC_TIMESTAMP()) WHERE id=%s", (pid,))
+
+
+def _email_domain_site(conn, pid: int, ctx: Ctx, fetch) -> bool:
+    """Fiche qui termine sans site retenu mais avec un e-mail pro (trouvé par les contacts ou le repli) : le site du domaine de l'adresse est lu
+    avant de conclure (`siterecheck.email_domain_site`, une fois par fiche). Renvoie : site retenu ? Une erreur ici n'empêche jamais la fin du traitement."""
+    from . import siterecheck
+    fresh = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (pid,))
+    if fresh is None or not fresh.get("email") or fresh.get("website_status") not in ("NOT_FOUND", "UNCERTAIN"):
+        return False
+    try:
+        return siterecheck.email_domain_site(conn, fresh, ctx, fetch)[1]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[local] site du domaine de l'e-mail de #%s en échec : %s", pid, exc)
+        return False
 
 
 def _now_iso() -> str:

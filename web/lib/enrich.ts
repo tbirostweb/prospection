@@ -14,6 +14,7 @@ export const STEP_LABELS: Record<string, [string, string]> = {
   places_site: ["site Google vérifié", "sites Google vérifiés"],
   places_backfill: ["fiche interrogée sur Google Places", "fiches interrogées sur Google Places"],
   site_guess: ["devinette de domaine", "devinettes de domaine"],
+  email_domain_site: ["site du domaine de l'e-mail lu", "sites du domaine de l'e-mail lus"],
   unreachable: ["site injoignable réessayé", "sites injoignables réessayés"],
   site_email: ["site relu pour l'e-mail", "sites relus pour l'e-mail"],
   recheck: ["revérification de site", "revérifications de site"],

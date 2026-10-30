@@ -254,6 +254,52 @@ def _conclude(conn, row: dict, ctx, company: dict, res, fetch, only_if_found: bo
     return res.status, True
 
 
+def email_domain_site(conn, row: dict, ctx, fetch, res=None) -> tuple[str, bool]:
+    """Site du domaine de l'e-mail pro de la fiche (`sitefinder.resolve_email_domain`, sans moteur), pour une fiche « sans site » jamais contactée.
+    Renvoie (statut, site retenu ?). `res` : résolution déjà faite (l'envoi la fait dans un fil borné). Provenance `email_domain_site`
+    {checked_at, domain, status, url} : une fois par adresse (voir `enrich.email_domain_sites`).
+      * CONFIRMED / PROBABLE : enregistré comme une revérification (`_conclude` : contacts ajoutés, suite du runner, brouillon effacé,
+        sortie de la file) ; provenance `website` = source « email_domain », preuve « e-mail de la fiche sur ce domaine » dans les preuves ;
+      * UNCERTAIN (le site répond, preuve insuffisante) : la fiche passe de « sans site » à « site à trancher » avec le site en candidat, le brouillon
+        « sans site » est effacé (le message de création serait faux) ;
+      * rien (injoignable, parqué, en construction, autre entreprise) : seule la provenance est posée, l'absence de site reste vraie."""
+    pid = row["id"]
+    company = runner._company(conn, row)
+    dom = sitefinder.email_proof_domain(company)
+    if not dom:
+        return row.get("website_status") or "NOT_FOUND", False
+    if res is None:
+        res = sitefinder.resolve_email_domain(company, fetch, ctx.site_thresholds)
+    flag = {"checked_at": runner._now_iso(), "domain": dom, "status": res.status}
+    saved = False
+    fresh = db.fetch_one(conn, f"SELECT p.* FROM local_prospects p WHERE p.id=%s AND {UNTOUCHABLE}", (pid,))
+    if fresh is not None and res.accepted:
+        saved = _conclude(conn, fresh, ctx, company, res, fetch, only_if_found=True)[1]
+        if saved:
+            flag["url"] = res.url
+            store.set_provenance(conn, pid, "website", {"source": "email_domain", "strategies": [], "status": res.status, "url": res.url,
+                                                        "at": runner._now_iso()})
+            log.info("[local] fiche #%s : site %s retenu d'après le domaine de son e-mail (%s)", pid, res.url, res.status)
+    elif fresh is not None and res.status == "UNCERTAIN" and fresh.get("website_status") in (None, "NOT_FOUND"):
+        cand = res.candidates[0]
+        flag["url"] = cand["url"]
+        with conn.cursor() as cur:
+            n = cur.execute(f"""UPDATE local_prospects p SET p.website_status='UNCERTAIN', p.website_confidence=%s, p.website_absence_confidence=NULL,
+                                    p.website_evidence=JSON_SET(COALESCE(p.website_evidence, JSON_OBJECT()), '$.evidence', CAST(%s AS JSON),
+                                                                '$.candidates', CAST(%s AS JSON)),
+                                    p.website_checked_at=UTC_TIMESTAMP()
+                                 WHERE p.id=%s AND {UNTOUCHABLE} AND p.website_status <=> %s""",
+                            (round(res.confidence, 2), json.dumps(res.evidence, ensure_ascii=False, default=str),
+                             json.dumps(res.candidates, ensure_ascii=False, default=str), pid, fresh.get("website_status")))
+        if n:
+            if "sans_site" in (fresh.get("draft_kind") or ""):
+                _drop_no_site_draft(conn, pid)                     # « je n'ai pas trouvé de site » serait faux : brouillon effacé
+            runner._rescore(conn, db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (pid,)), ctx)
+            log.info("[local] fiche #%s : site %s possible d'après le domaine de son e-mail, à trancher", pid, cand["url"])
+    store.set_provenance(conn, pid, "email_domain_site", flag)
+    return res.status, saved
+
+
 def stop_after(rows: list, limit: int) -> str:
     """Raison d'arrêt d'un passage qui a traité toutes ses fiches : « limit » s'il en reste sans doute, « nothing » sinon."""
     return "limit" if len(rows) >= limit else "nothing"

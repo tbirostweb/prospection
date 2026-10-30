@@ -10,6 +10,8 @@ import json
 from worker import db
 from worker.local import complete, outbox, sitefinder
 
+from local_fixtures import html
+
 from .test_local_mail import BODY, T0, mail, row  # noqa: F401 — fixture `mail` réutilisée
 from .test_local_siterecheck import DUPONT, SITE, _setup
 
@@ -164,3 +166,36 @@ def test_fil_trop_lent_report_et_site_qui_bloque_les_robots(mail, conn, monkeypa
     assert mail.run(T0, fetch=lambda url: _t.sleep(0.5))["status"] == "deferred" and mail.smtp.sent == []
     verdict, _detail = outbox.presend_unreachable(conn, row(conn, pid), T0, fetch=lambda url: type("R", (), {"status": 403, "text": "", "ok": False})())
     assert verdict == "retry"                                                          # 403 : peut-être joignable, jamais « inaccessible »
+
+
+# ── Domaine de l'e-mail pro : un vrai site y est hébergé, le message « création » serait faux ─────────────────
+CLUB_DOM = "club-dupont-troyes.com"
+
+
+def test_domaine_de_l_email_avec_un_site_redraft_avant_l_envoi(mail, conn, monkeypatch):
+    pid, web = _queue_dupont(conn, monkeypatch, email="contact@" + CLUB_DOM, email_kind="GENERIC_BUSINESS", draft_kind="sans_site")
+    web.add_site(CLUB_DOM, html(title="Accueil", h1="Bienvenue", desc="Pains", canonical=False, body="<p>Troyes 10000</p>"))
+    mail.enable()
+    monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])
+    r = mail.run(T0, fetch=web)
+    p = row(conn, pid)
+    assert r["status"] == "found_site" and mail.smtp.sent == [] and mail.tg.texts == []
+    assert p["draft_message"] is None and p["draft_kind"] is None and p["auto_state"] is None and p["contacted_at"] is None
+    assert p["website_status"] in ("CONFIRMED", "PROBABLE") and p["website_url"] == f"https://{CLUB_DOM}/"
+    assert json.loads(p["provenance"])["email_domain_site"]["domain"] == CLUB_DOM
+
+
+def test_domaine_de_l_email_sans_site_le_message_part(mail, conn, monkeypatch):
+    pid, web = _queue_dupont(conn, monkeypatch, email="contact@" + CLUB_DOM, email_kind="GENERIC_BUSINESS", draft_kind="sans_site")
+    mail.enable()                                                                  # domaine injoignable
+    monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])
+    r = mail.run(T0, fetch=web)
+    assert r["status"] == "sent" and json.loads(row(conn, pid)["provenance"])["email_domain_site"]["status"] == "NOT_FOUND"
+
+
+def test_domaine_pro_en_construction_le_message_part(mail, conn, monkeypatch):
+    pid, web = _queue_dupont(conn, monkeypatch, email="contact@" + CLUB_DOM, email_kind="GENERIC_BUSINESS", draft_kind="sans_site")
+    web.add_site(CLUB_DOM, html(title="Site en construction", h1="Site en construction", desc=None, canonical=False, body="<p>Ce site est en cours de construction.</p>"))
+    mail.enable()
+    monkeypatch.setattr(sitefinder, "dns_resolves", lambda ds, timeout=4.0: [])
+    assert mail.run(T0, fetch=web)["status"] == "sent"
