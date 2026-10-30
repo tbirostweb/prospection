@@ -125,7 +125,7 @@ L'application refuse au dépôt ces tournures et ne laisse partir aucun brouillo
 
 ## 6. Faits, chiffres et liens
 
-- N'utiliser que les faits fournis. Ne jamais inventer une spécialité, une réalisation, un besoin, un client ou un chiffre.
+- N'utiliser que les faits fournis. Ne jamais inventer une spécialité, une réalisation, un besoin, un client ou un chiffre. Les prestations citées viennent des faits, du métier déclaré ou du nom de l'entreprise (« Sos Chauff'O » : dépannage ; « Lrc Climatisation » : climatisation) ; sinon écrire « vos prestations ». « Plombier » ne prouve pas le dépannage d'urgence, « couvreur » ne prouve pas la réfection complète, « peintre » ne prouve pas l'extérieur. Pas de jugement sur le marché local (« la concurrence est forte »).
 - **Ce qui peut être promis** : distinguer quatre choses.
   1. Les bénéfices d'un site en général (qu'on vous trouve, qu'on voie ce que vous faites, qu'on puisse vous joindre) : à dire comme des possibilités, sans chiffre ni garantie.
   2. Ce que l'offre comprend vraiment : un site vitrine entièrement sur mesure (design, textes, mise en ligne, maintenance) ; les textes sont rédigés par Théo et relus par le client ; mise en ligne en deux à quatre semaines (le délai ne se dit pas par défaut).
