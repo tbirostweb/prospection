@@ -163,6 +163,14 @@ def _link(p: dict) -> str:
     return f'\n<a href="{APP_URL}/local/{p["id"]}">Ouvrir la fiche</a>' if APP_URL else ""
 
 
+def _alert_reply(p: dict, label: str, body: str) -> str:
+    """Alerte immédiate (pastille violette) : « 🟣 Réponse intéressée : entreprise (ville) — « extrait » — lien »."""
+    ville = f" ({htmllib.escape(p['city'])})" if p.get("city") else ""
+    ext = htmllib.escape((excerpt(body) or "")[:200])
+    lien = f' — <a href="{APP_URL}/local/{p["id"]}">Ouvrir la fiche</a>' if APP_URL else ""
+    return f"🟣 {label} : <b>{_name(p)}</b>{ville} — « {ext} »{lien}"
+
+
 def apply(conn, sent: dict, kind: str, msg: Message) -> str | None:
     """Met à jour le prospect selon le message reçu ; renvoie ce qui a été fait (pour le journal)."""
     p = db.fetch_one(conn, "SELECT * FROM local_prospects WHERE id=%s", (sent["prospect_id"],))
@@ -204,14 +212,17 @@ def apply(conn, sent: dict, kind: str, msg: Message) -> str | None:
         if current is None or (current > when if result == "interested" else current < when):    # intéressé : le plus tôt gagne ; plus tard : remplace un rappel plus proche, jamais un rappel plus lointain
             sets += ["remind_at=%s", "remind_note=%s"]
             args += [when, note]
-        msg = (f"🔥 <b>{_name(p)}</b> semble intéressé ! Relances arrêtées : à rappeler aujourd'hui.{_link(p)}" if result == "interested"
+        msg = (_alert_reply(p, "Réponse intéressée", body) if result == "interested"
                else f"🕒 <b>{_name(p)}</b> a répondu : plus tard. Rappel posé le {when.strftime('%d/%m/%Y')}. Relances arrêtées.{_link(p)}")
     else:
         if worked:
             sets.append("status='REPLIED', response_status='REPLIED'")
-        msg = f"💬 <b>{_name(p)}</b> a répondu à ton e-mail ! Relances arrêtées. Réponds-lui depuis ta boîte mail.{_link(p)}"
+        msg = _alert_reply(p, "Nouvelle réponse", body)
     db.execute(conn, f"UPDATE local_prospects SET {', '.join(sets)} WHERE id=%s", (*args, p["id"]))
-    notify.send_text(msg)
+    try:
+        notify.send_text(msg)    # une alerte qui échoue ne doit jamais faire échouer la lecture de la boîte
+    except Exception as e:
+        log.warning("[inbox] alerte de réponse non envoyée : %s", e)
     return result
 
 

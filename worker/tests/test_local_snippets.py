@@ -67,9 +67,9 @@ def test_requetes_email_plafonnees():
     assert len(snippets.email_queries(DUPONT, 2)) == 2 and snippets.email_queries({"company_name": "X"}) == []
 
 
-def test_email_defaut_deux_requetes():
+def test_email_defaut_une_requete():
     from worker.local import runner
-    assert runner.EMAIL_QUERIES_PER_PROSPECT == 2
+    assert runner.EMAIL_QUERIES_PER_PROSPECT == 1
 
 
 def test_email_search_s_arrete_au_premier_email_et_delai_court_si_rien(monkeypatch):

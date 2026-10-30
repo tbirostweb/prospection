@@ -38,8 +38,8 @@ MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "ao�
 
 FOLLOWUP_TEXT = {
     "followup1": "Je vous ai écrit {quand} au sujet d'un site internet. Est-ce que c'est un sujet pour vous en ce moment ?",
-    "followup2": "Je vous ai écrit la semaine dernière au sujet d'un site internet. Je ne vous relancerai plus : si le sujet revient un jour, "
-                 "il suffit de répondre à ce message.",
+    "followup2": "Je vous ai écrit la semaine dernière au sujet d'un site internet. Si ça peut vous donner une idée, vous trouverez quelques-unes "
+                 "de mes réalisations sur mon site. Je ne vous relancerai plus : si le sujet revient un jour, il suffit de répondre à ce message.",
 }
 
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDraft, sanitizeOffer, checkWrittenCore, deName, offerParagraphs, photosOffered, salutation, wrapDraft } from "../lib/draft";
+import { buildDraft, sanitizeOffer, checkWrittenCore, deName, offerParagraphs, photosOffered, salutation, siteDefects, wrapDraft } from "../lib/draft";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -119,16 +119,16 @@ test("enveloppe : salutation, opposition, signature et notice toujours ajoutées
 });
 
 test("site existant avec défauts vérifiés : refonte proposée, jamais « corriger », année du © citée telle quelle", () => {
-  const site = { ...P, website_status: "CONFIRMED", website_url: "https://www.garage-exemple.test/", site_year: 2015,
+  const site = { ...P, website_status: "CONFIRMED", website_url: "https://www.garage-exemple.test/", site_year: 2015, audit: JSON.stringify({ copyright_year: 2015 }),
     issues: JSON.stringify([{ code: "no_viewport" }, { code: "meta_description_missing" }, { code: "canonical_missing" }]) };
   const d = buildDraft(site, SENDER, OFFER)!;
   assert.equal(d.kind, "site_ameliorable");
-  assert.match(d.facts[0], /date de 2015/);
-  assert.ok(d.facts.includes("l'affichage sur téléphone ne semble pas adapté") && d.facts.length === 3);
+  assert.match(d.facts[0], /dernière date visible sur le site.*est 2015/);
+  assert.ok(d.facts.some((f) => /ne s'affiche pas bien sur téléphone/.test(f)) && d.facts.length === 3);
   assert.match(d.core, /refonte/);
   assert.doesNotMatch(d.core, /corriger|—|perdre des clients/);
-  assert.deepEqual(checkWrittenCore("J'ai regardé votre site : la mention de copyright date de 2015 et l'affichage sur téléphone ne semble pas adapté. Je m'appelle Théo, je suis développeur web près de Troyes. Une refonte vous intéresserait ?", "Votre site", d), []);
-  assert.equal(buildDraft({ ...site, issues: "[]", site_year: new Date().getFullYear() - 1 }, SENDER, OFFER), null);   // site récent : pas de refonte à proposer
+  assert.deepEqual(checkWrittenCore("J'ai regardé votre site : la dernière date visible est 2015 et le site ne s'affiche pas bien sur téléphone. Je m'appelle Théo, je suis développeur web près de Troyes. Une refonte vous intéresserait ?", "Votre site", d), []);
+  assert.equal(buildDraft({ ...site, issues: "[]", audit: null, site_year: new Date().getFullYear() - 1 }, SENDER, OFFER), null);   // site récent : pas de refonte à proposer
 });
 
 test("site sans défaut relevé : message prudent « site_refonte », aucune faiblesse inventée, adresse du site citée", () => {
@@ -142,8 +142,23 @@ test("site sans défaut relevé : message prudent « site_refonte », aucune fai
   assert.ok(!d.kind.includes("sans_site"));
   assert.equal(buildDraft({ ...site, website_url: null }, SENDER, OFFER)!.kind, "neutre");   // site sans adresse : pas vérifié, message neutre
   assert.equal(buildDraft({ ...site, site_year: new Date().getFullYear() }, SENDER, OFFER), null);   // site récent sans défaut : rien à proposer
-  const old = buildDraft({ ...site, site_year: 2015, issues: null }, SENDER, OFFER)!;
+  const old = buildDraft({ ...site, site_year: 2015, audit: { copyright_year: 2015 }, issues: null }, SENDER, OFFER)!;
   assert.equal(old.kind, "site_ameliorable");   // un fait vérifié (© 2015) reste cité comme fait
+  // « © 2012-2026 » : l'audit retient 2026, rien à citer (jamais l'année de départ de la plage)
+  assert.equal(buildDraft({ ...site, site_year: 2012, audit: { copyright_year: 2026 }, issues: "[]" }, SENDER, OFFER)!.kind, "site_refonte");
+});
+
+test("défauts concrets : phrases prudentes, seulement ce qui est certain", () => {
+  const f = (issues: any[], extra: any = {}) => siteDefects({ issues, audit: { copyright_year: null }, ...extra }, new Date("2026-10-30"));
+  assert.deepEqual(f([{ code: "no_https" }]), ["le site n'est pas sécurisé (pas de cadenas https dans la barre d'adresse : les navigateurs l'affichent comme « non sécurisé »)"]);
+  assert.match(f([{ code: "no_contact_visible" }])[0], /pas vu de numéro de téléphone ni d'adresse e-mail sur la page d'accueil/);
+  assert.match(f([{ code: "old_tech", evidence: "Flash / SWF" }])[0], /technologie abandonnée/);
+  assert.match(f([{ code: "old_tech", evidence: "générateur de site ancien (Microsoft FrontPage 4.0)" }])[0], /technologie abandonnée/);
+  assert.deepEqual(f([{ code: "old_tech", evidence: "balises <font> / <center> (mise en forme HTML ancienne)" }]), []);   // doute : non relevé
+  assert.deepEqual(f([], { audit: { copyright_year: 2023 } }).length, 1);                    // 2026 − 3 = 2023 : cité
+  assert.deepEqual(f([], { audit: { copyright_year: 2024 } }), []);
+  assert.match(f([], { lighthouse_performance: 20 })[0], /très lent à s'afficher sur téléphone/);
+  assert.deepEqual(f([], { lighthouse_performance: 60 }), []);
 });
 
 test("file de rédaction : les fiches avec site (CONFIRMED/PROBABLE/UNREACHABLE) entrent même en « À examiner », exclusions gardées", async () => {

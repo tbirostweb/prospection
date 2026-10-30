@@ -82,11 +82,12 @@ export function callToAction(website?: string): string {
 export const ISSUE_PHRASES: Record<string, string> = {
   noindex: "la page d'accueil semble demander aux moteurs de recherche de ne pas l'indexer",
   robots_blocks_all: "le fichier robots.txt semble interdire tout le site aux moteurs de recherche",
-  no_https: "le site n'est pas servi en HTTPS (les navigateurs l'affichent comme « non sécurisé »)",
-  no_viewport: "l'affichage sur téléphone ne semble pas adapté",
+  no_https: "le site n'est pas sécurisé (pas de cadenas https dans la barre d'adresse : les navigateurs l'affichent comme « non sécurisé »)",
+  no_viewport: "le site ne s'affiche pas bien sur téléphone (il n'est pas adapté aux petits écrans)",
+  no_contact_visible: "je n'ai pas vu de numéro de téléphone ni d'adresse e-mail sur la page d'accueil du site",
   no_https_redirect: "l'adresse en HTTP ne redirige pas vers la version sécurisée",
-  slow_response: "la page d'accueil met plusieurs secondes à répondre",
-  old_tech: "certaines technologies du site semblent anciennes",
+  slow_response: "la page d'accueil met plusieurs secondes à s'afficher",
+  old_tech: "le site repose sur une technologie abandonnée depuis des années",
   title_missing: "la page d'accueil n'a pas de titre pour Google",
   meta_description_missing: "la page d'accueil n'a pas de description pour Google (le texte affiché sous le lien dans les résultats)",
   h1_missing: "la page d'accueil n'a pas de titre principal",
@@ -99,8 +100,23 @@ export const ISSUE_PHRASES: Record<string, string> = {
   structured_data_missing: "la page d'accueil ne donne pas à Google vos informations pratiques (adresse, horaires) sous une forme qu'il sait lire",
   js_shell: "le contenu de la page d'accueil ne s'affiche qu'avec JavaScript, ce que les moteurs de recherche lisent mal",
 };
-// Site daté : la mention « © » la plus récente du site a au moins OLD_SITE_YEARS ans (fait vérifiable, l'année est citée telle quelle).
-const OLD_SITE_YEARS = 6;
+// Site daté : la mention « © » la plus récente du site (année courante − OLD_SITE_YEARS ou avant, fait vérifiable cité telle quelle).
+// Miroir de worker/local/scoring.py OLD_SITE_YEARS, LIGHTHOUSE_SLOW et CERTAIN_OLD_TECH.
+export const OLD_SITE_YEARS = 3;
+export const LIGHTHOUSE_SLOW = 35;
+const CERTAIN_OLD_TECH = /Flash|frames|marquee|blink|WordPress|générateur/;
+/** Défauts CONCRETS d'un site audité, dans l'ordre où on les cite : phrases prudentes, prêtes à l'emploi. Seulement ce qui est certain. */
+export function siteDefects(p: any, now = new Date()): string[] {
+  const issues: any[] = j(p.issues) ?? [];
+  const audit = j(p.audit) ?? {};
+  const codes = new Set(issues.filter((i) => i.code !== "old_tech" || CERTAIN_OLD_TECH.test(i.evidence || i.label || "")).map((i) => i.code));
+  const out: string[] = [];
+  const year = Number(audit.copyright_year);
+  if (year && year <= now.getFullYear() - OLD_SITE_YEARS) out.push(`la dernière date visible sur le site (mention de copyright) est ${year}, il a sans doute vieilli`);
+  if (p.lighthouse_performance != null && Number(p.lighthouse_performance) <= LIGHTHOUSE_SLOW && !codes.has("no_viewport")) out.push("le site est très lent à s'afficher sur téléphone");
+  out.push(...PRIORITY.filter((c) => codes.has(c)).map((c) => ISSUE_PHRASES[c]));
+  return out;
+}
 // Événements officiels (BODACC) qui donnent une raison d'écrire MAINTENANT — citées seulement si publiées il y a moins d'un an.
 export const EVENT_OPENINGS: Record<string, (name: string, where: string) => string> = {
   takeover: (name, where) => `J'ai vu que vous aviez repris ${name}${where} récemment : félicitations !`,
@@ -149,10 +165,8 @@ export function buildDraft(p: any, sender: Sender = {}, offer: Offer = {}): Draf
     opening = ` En voulant consulter le site de ${name}, je n'ai pas pu y accéder lors de ma vérification${p.website_url ? ` (${p.website_url})` : ""}.`;
     facts.push("site inaccessible lors de ma vérification");
   } else {                                                                         // refonte : site vérifié
-    const codes = new Set(issues.map((i) => i.code));
-    const found = PRIORITY.filter((c) => codes.has(c)).map((c) => ISSUE_PHRASES[c]);
+    const found = siteDefects(p);
     const year = Number(p.site_year);
-    if (year && year <= new Date().getFullYear() - OLD_SITE_YEARS) found.unshift(`la mention de copyright du site date de ${year}, il a sans doute vieilli`);
     const addr = p.website_url ? String(p.website_url).replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
     if (found.length) {
       kind = "site_ameliorable";

@@ -40,6 +40,10 @@ FREE_SUBDOMAINS = ("wixsite.com", "jimdosite.com", "jimdofree.com", "jimdo.com",
                    "mystrikingly.com", "simplesite.com", "webnode.fr", "webnode.com", "wifeo.com", "free.fr", "pagesperso-orange.fr", "canva.site",
                    "carrd.co", "square.site", "editorx.io",
                    "artizo.fr")         # plateforme de sites d'artisans (« quentin-cheron.artizo.fr ») : page générique de plateforme, argument de refonte
+# Générateurs de sites abandonnés (la balise generator est écrite par l'outil lui-même : fait, pas supposition)
+OLD_GENERATOR = re.compile(r"microsoft frontpage(?: [\d.]+)?|ms ?frontpage|frontpage express|netscape composer|microsoft word(?: [\d.]+)?|microsoft publisher|adobe golive|namo webeditor|"
+                           r"joomla! 1\.\d|joomla 1\.\d|dreamweaver [1-4]\b|macromedia dreamweaver", re.I)
+CONTACT_LINK = re.compile(r"contact|devis|nous (?:joindre|écrire|ecrire)|rendez-vous|appelez|mailto:|tel:", re.I)
 DIRECTORY_SITE = re.compile(r"\bsolocal\.com|site-solocal\.com|r[ée]alis[ée] par (?:solocal|pagesjaunes)", re.I)
 
 
@@ -77,6 +81,7 @@ class Audit:
     ecommerce: bool = False
     old_signals: list[str] = field(default_factory=list)
     copyright_year: int | None = None
+    contact_visible: bool = True               # False : aucun téléphone, e-mail, formulaire ni lien « contact » sur l'accueil (page qui affiche du texte)
     issues: list[Issue] = field(default_factory=list)
     technical_score: int | None = None
     seo_score: int | None = None
@@ -187,12 +192,18 @@ def audit_site(url: str, fetch, home: htmlinfo.Page | None = None, now: date | N
     a.cms = next((name for name, rx in CMS_SIGNATURES if re.search(rx, raw)), None)
     a.ecommerce = bool(re.search(ECOM_SIGNATURES, raw))
     a.old_signals = [label for _, label, rx in OLD_TECH if re.search(rx, raw)]
-    if m := re.search(r"WordPress\s+([1-4])\.\d", home.meta.get("generator", "")):
+    gen = home.meta.get("generator", "")
+    if m := re.search(r"WordPress\s+([1-4])\.\d", gen):
         a.old_signals.append(f"WordPress {m.group(0).split()[-1]} (version très ancienne)")
+    if m := OLD_GENERATOR.search(gen):
+        a.old_signals.append(f"générateur de site ancien ({m.group(0)})")      # balise <meta name="generator"> : déclarée par le site lui-même
+    # Coordonnées : ni téléphone, ni e-mail, ni formulaire, ni lien « contact » sur l'accueil d'une page qui affiche du texte (jamais sur une page vide / JS)
+    a.contact_visible = bool(home.phones() or home.emails() or home.forms or any(CONTACT_LINK.search(f"{u} {t}") for u, t in home.links)) or visible < 400
     host = (urlparse(a.final_url).hostname or "").lower()
     a.free_subdomain = next((d for d in FREE_SUBDOMAINS if host == d or host.endswith("." + d)), None)
     a.directory_site = bool(DIRECTORY_SITE.search(host) or DIRECTORY_SITE.search(raw[-30000:]) or DIRECTORY_SITE.search(raw[:5000]))
     years = [int(y) for y in re.findall(r"(?:©|&copy;|copyright)\s*(?:\d{4}\s*[-–]\s*)?(20\d{2}|19\d{2})", raw)]
+    years = [y for y in years if 1995 <= y <= now.year]            # une année future est une faute de frappe ou un modèle : ignorée
     a.copyright_year = max(years) if years else None
 
     _issues_and_scores(a, now)
@@ -267,6 +278,9 @@ def _issues_and_scores(a: Audit, now: date) -> None:
         add("site_builder", f"Site fait avec un créateur de sites ({a.cms}) : souvent peu personnalisé et moins bien référencé", "low", "technical", a.cms)
     if a.directory_site:
         add("directory_site", "Site fourni par un annuaire (Solocal / PagesJaunes) : souvent un abonnement coûteux et générique", "medium", "technical")
+    if not a.contact_visible and not a.js_shell:
+        add("no_contact_visible", "Aucune coordonnée visible sur l'accueil (ni téléphone, ni e-mail, ni formulaire, ni lien contact)", "medium", "technical",
+            "accueil sans téléphone, e-mail, formulaire ni lien de contact")
     if not a.favicon:
         add("favicon_missing", "Favicon absente", "info", "technical"); tech -= 3
     for label in a.old_signals:
@@ -309,8 +323,10 @@ def _issues_and_scores(a: Audit, now: date) -> None:
     if not a.viewport:
         pts += 3; ev.append("pas de balise viewport (mobile)")
     for label in a.old_signals:
-        pts += 3 if any(w in label for w in ("Flash", "frames", "marquee", "WordPress")) else 2
+        pts += 3 if any(w in label for w in ("Flash", "frames", "marquee", "WordPress", "générateur")) else 2
         ev.append(label)
+    if not a.contact_visible and not a.js_shell:
+        pts += 1; ev.append("aucune coordonnée visible sur l'accueil")
     if a.free_subdomain:
         pts += 2; ev.append(f"sous-domaine gratuit ({a.free_subdomain})")
     if a.directory_site:

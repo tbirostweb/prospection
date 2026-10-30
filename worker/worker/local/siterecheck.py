@@ -469,6 +469,10 @@ def main() -> int:
         with db.connect() as conn:
             places.PURPOSE = "enrich"
             stats = run(conn, engines.SearchPool(conn))
+            from . import auditrefresh
+            refresh = auditrefresh.run(conn)                   # audit refait une fois par fiche (défauts concrets), sans moteur
+            if refresh["refreshed"] or refresh["failed"]:
+                log.info("[local] rattrapage de l'audit : %s", json.dumps(refresh))
         if stats["rechecked"]:
             log.info("[local] nouvelle recherche de sites : %s", json.dumps(stats))
     finally:

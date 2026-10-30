@@ -135,6 +135,33 @@ def data_confidence(p: dict) -> tuple[int, list[dict]]:
     return int(round(min(100, sum(x["points"] for x in comp)))), comp
 
 
+# Défauts CONCRETS d'un site vérifié : visibles par un artisan, vérifiables, certains (miroir de web/lib/draft.ts ISSUE_PHRASES / siteDefects).
+# Ni « sitemap », ni « données structurées », ni H1 : réels mais obscurs, ils ne suffisent pas à justifier un message.
+CONCRETE_ISSUES = {"no_viewport", "no_https", "no_https_redirect", "slow_response", "no_contact_visible", "noindex", "robots_blocks_all",
+                   "title_missing", "meta_description_missing", "free_subdomain", "directory_site", "unreachable", "http_error"}
+OLD_SITE_YEARS = 3         # dernière mention « © » du site : année courante − 3 ou avant = site visiblement ancien
+LIGHTHOUSE_SLOW = 35       # Lighthouse mobile (performance) à ce niveau ou en dessous : « très lent sur téléphone »
+CERTAIN_OLD_TECH = ("Flash", "frames", "marquee", "blink", "WordPress", "générateur")
+
+
+def concrete_defects(p: dict, today: date | None = None) -> list[str]:
+    """Défauts concrets relevés sur un site AUDITÉ (codes). Liste vide = site vérifié sans aucun défaut précis à citer."""
+    today = today or date.today()
+    out: list[str] = []
+    issues = p.get("issues") or []
+    codes = {i.get("code") for i in issues}
+    out += sorted(codes & CONCRETE_ISSUES)
+    if any(i.get("code") == "old_tech" and any(w in (i.get("evidence") or i.get("label") or "") for w in CERTAIN_OLD_TECH) for i in issues):
+        out.append("old_tech")
+    audit = p.get("audit") or {}
+    year = audit.get("copyright_year") if isinstance(audit, dict) else None
+    if year and int(year) <= today.year - OLD_SITE_YEARS:
+        out.append("copyright_old")
+    if p.get("lighthouse_performance") is not None and int(p["lighthouse_performance"]) <= LIGHTHOUSE_SLOW:
+        out.append("lighthouse_slow")
+    return out
+
+
 def objective_need(p: dict) -> str | None:
     """Besoin potentiel OBSERVABLE (jamais « site non trouvé » seul) : libellé de la preuve, ou None."""
     status = p.get("website_status")
@@ -149,6 +176,8 @@ def objective_need(p: dict) -> str | None:
             return "page d'accueil lente (mesure légère)"
         if any(i.get("severity") in ("high", "medium") for i in (p.get("issues") or [])):
             return "problèmes techniques objectifs détectés"
+        if concrete_defects(p):
+            return "défaut concret relevé sur le site (" + ", ".join(concrete_defects(p)[:3]) + ")"
     return None
 
 
@@ -200,9 +229,13 @@ def score_prospect(p: dict, weights: dict | None = None, thresholds: dict | None
         add("site_potential", 0.35, "un site possible existe mais son identité n'est pas assez sûre : non retenu")
     elif status in SITE_OK and audited:
         mod = p.get("modernization_opportunity") or "LOW"
+        defects = concrete_defects(p, today)
         very_good = mod == "LOW" and (p.get("technical_score") or 0) >= 85 and (p.get("seo_score") or 0) >= 80
-        add("site_potential", 0.05 if very_good else {"HIGH": f_high, "MEDIUM": f_med, "LOW": f_low}[mod],
-            "site déjà très bon" if very_good else f"site existant, modernisation {mod} d'après des indices objectifs" + (" (priorité : refonte)" if focus == "redesign" and mod != "LOW" else ""))
+        lifted = mod == "LOW" and bool([x for x in defects if x != "lighthouse_slow"])          # indices de modernisation faibles mais un défaut concret (ancienneté, lenteur, coordonnées absentes…)
+        add("site_potential", 0.05 if very_good and not defects else (0.8 * f_med if lifted else {"HIGH": f_high, "MEDIUM": f_med, "LOW": f_low}[mod]),
+            "site déjà très bon" if very_good and not defects else f"site existant, modernisation {mod} d'après des indices objectifs"
+            + (f" + défaut concret ({', '.join(defects[:3])})" if lifted else "") + (" (priorité : refonte)" if focus == "redesign" and (mod != "LOW" or lifted) else "")
+            + (" · aucun défaut concret relevé : priorité basse" if not defects and p.get("issues") is not None else ""))
     else:
         add("site_potential", 0.33, "site pas encore recherché ou pas encore audité (valeur neutre)")
 
@@ -279,6 +312,8 @@ def score_prospect(p: dict, weights: dict | None = None, thresholds: dict | None
         cap(CHAIN_CAP, {"NETWORK": "réseau multi-villes", "FRANCHISE": "franchise"}.get(kind, "chaîne / grosse entreprise")
             + " : site fourni par l'enseigne, pas une cible")
     if stage == "FINAL":
+        if status in SITE_OK and audited and p.get("issues") is not None and not concrete_defects(p, today):
+            cap(th["A_EXAMINER"] - 1, "site vérifié sans aucun défaut concret relevé (mobile, HTTPS, ancienneté, lenteur, coordonnées…) : refonte peu justifiable, priorité basse", soft=True)
         if status == "NOT_FOUND":
             cap(NO_SITE_CAP, "site non trouvé (≠ absence certaine) : jamais « Très bon » sur ce seul signal", soft=True)
         if not has_contact(p):

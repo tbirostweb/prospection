@@ -238,7 +238,7 @@ TODAY = date(2026, 9, 21)
 GOOD = dict(siret="12345678900011", distance_km=2.0, company_created_at=date(2026, 3, 1), employee_range="NN", website_status="CONFIRMED", website_confidence=0.95,
             audited_at=TODAY, modernization_opportunity="HIGH", technical_score=40, seo_score=20, seo_opportunity_score=80, performance_score=15,
             email="contact@x.fr", email_kind="GENERIC_BUSINESS", phone="0325123456", contact_confidence=0.95, geo_confidence=0.9, business_status_confidence=0.85,
-            issues=[{"severity": "high"}])
+            issues=[{"severity": "high", "code": "no_viewport"}])
 
 
 def sc(**over):

@@ -369,7 +369,7 @@ def _now_iso() -> str:
 
 EMAIL_RECHECK_DAYS = int(os.getenv("LOCAL_EMAIL_RECHECK_DAYS") or "30")               # adresse trouvée (ou fiche sans objet) : pas refaite avant
 EMAIL_RECHECK_MISS_DAYS = int(os.getenv("LOCAL_EMAIL_RECHECK_MISS_DAYS") or "10")     # rien trouvé : nouvel essai plus tôt (une page publiée plus tard)
-EMAIL_QUERIES_PER_PROSPECT = max(1, int(os.getenv("LOCAL_EMAIL_QUERIES_PER_PROSPECT") or "2"))   # requêtes par fiche et par essai (2 : budget des moteurs gratuits ; 4 existent, voir snippets.email_query_plan)
+EMAIL_QUERIES_PER_PROSPECT = max(1, int(os.getenv("LOCAL_EMAIL_QUERIES_PER_PROSPECT") or "1"))   # requêtes par fiche et par essai (1 : 2 requêtes ont donné 0 e-mail sur 36 fiches ; 4 existent, voir snippets.email_query_plan)
 
 
 def email_recently_searched(row: dict | None) -> bool:

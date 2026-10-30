@@ -149,7 +149,7 @@ def test_relances_courtes_en_reponse_au_premier_message():
     assert "dites-le-moi simplement" in r1 and "Le lundi 26 octobre 2026 à 10:12, Théo Exemple a écrit :" in r1
     assert "> Je n'ai pas trouvé de site" in r1 and "> Coordonnées trouvées" not in r1
     r2 = mailer.followup_body("followup2", {**P, "manager_name": "Nicolas George (George)"}, first, dt.datetime(2026, 11, 2, 10, 0, tzinfo=dt.timezone.utc), "Théo Exemple")
-    assert r2.startswith("Bonjour,\n\nJe vous ai écrit la semaine dernière") and "Je ne vous relancerai plus" in r2
+    assert r2.startswith("Bonjour,\n\nJe vous ai écrit la semaine dernière") and "quelques-unes de mes réalisations" in r2 and "Je ne vous relancerai plus" in r2
     for banned in ("je me permets", "je reviens vers vous", "n'hésitez pas"):
         assert banned not in (r1 + r2).lower()
     msg = mailer.build_message(from_addr="contact@exemple-web.fr", from_name="Théo Exemple", to=P["email"], subject=mailer.reply_subject("Votre garage"),
@@ -268,3 +268,29 @@ def test_recherche_email_pas_refaite_avant_30_jours():
     assert runner.email_recently_searched({"provenance": json.dumps({"email_search": {"checked_at": now}})}) is True
     assert runner.email_recently_searched({"provenance": {"email_search": {"checked_at": "2026-01-01T00:00:00Z"}}}) is False
     assert runner.email_recently_searched({"provenance": None}) is False
+
+
+def _apply_reply(monkeypatch, body, send):
+    from email.message import EmailMessage
+    from worker import db, notify
+    p = {"id": 7, "trade_name": "Garage Dupont", "city": "Troyes", "status": "CONTACTED", "remind_at": None, "deal_stage": None}
+    monkeypatch.setattr(db, "fetch_one", lambda conn, sql, args=(): p)
+    monkeypatch.setattr(db, "execute", lambda *a, **k: None)
+    monkeypatch.setattr(notify, "send_text", send)
+    monkeypatch.setattr(inbox, "APP_URL", "https://app.test")
+    m = EmailMessage()
+    m["Subject"] = "Re: votre site"
+    m.set_content(body)
+    return inbox.apply(None, {"id": 1, "prospect_id": 7, "to_email": "a@b.fr"}, "message", m)
+
+
+def test_reponse_interessee_alerte_violette(monkeypatch):
+    sent = []
+    assert _apply_reply(monkeypatch, "Oui, rappelez-moi.", lambda t, *a, **k: sent.append(t) or True) == "interested"
+    assert len(sent) == 1 and sent[0].startswith("🟣 Réponse intéressée : ") and "Garage Dupont" in sent[0] and "(Troyes)" in sent[0] and "/local/7" in sent[0]
+
+
+def test_alerte_en_echec_ne_bloque_pas_la_lecture(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("telegram HS")
+    assert _apply_reply(monkeypatch, "Oui, rappelez-moi.", boom) == "interested"
