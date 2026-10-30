@@ -63,6 +63,16 @@ def followups(conn, now: datetime | None = None) -> list[dict]:
     return [{**r, "due": d} for r in rows if (d := followup_due(r, now))]
 
 
+def reminders(conn, now: datetime | None = None) -> list[dict]:
+    """« À rappeler » : rappels posés sur une fiche, arrivés à échéance (aujourd'hui à Paris, ou en retard). Les « intéressés » d'abord, puis les plus anciens.
+    Miroir de REMINDERS_SQL (web/lib/localdb.ts)."""
+    from zoneinfo import ZoneInfo
+    day = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Europe/Paris")).date()
+    return db.fetch_all(conn, """SELECT id, company_name, trade_name, city, phone, email, activity_key, remind_at, remind_note, reply_kind, deal_stage
+                                 FROM local_prospects WHERE remind_at IS NOT NULL AND remind_at <= %s AND do_not_contact=0 AND status <> 'DO_NOT_CONTACT'
+                                 AND COALESCE(deal_stage, '') NOT IN ('WON','LOST') ORDER BY reply_kind='interested' DESC, remind_at, id""", (day,))
+
+
 def _signals(r: dict) -> list:
     raw = r.get("buy_signals")
     try:

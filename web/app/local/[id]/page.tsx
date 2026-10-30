@@ -113,7 +113,9 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
         </dl>
       </section>
 
-      <ProspectActions id={p.id} status={p.status} notes={p.notes} doNotContact={!!p.do_not_contact} websiteUrl={p.website_url} siteAccepted={siteOk} feedbackReason={p.feedback_reason} />
+      <ProspectActions id={p.id} status={p.status} notes={p.notes} doNotContact={!!p.do_not_contact} websiteUrl={p.website_url} siteAccepted={siteOk} feedbackReason={p.feedback_reason}
+        deal={{ stage: p.deal_stage ?? null, stageAt: p.deal_stage_at ? new Date(p.deal_stage_at).toISOString() : null, remindAt: p.remind_at ? new Date(p.remind_at).toISOString().slice(0, 10) : null,
+          remindNote: p.remind_note ?? null, replyKind: p.reply_kind ?? null, replyExcerpt: p.reply_excerpt ?? null, replyAt: p.reply_at ? new Date(p.reply_at).toISOString() : null }} />
       {(p.auto_state || emails.length > 0 || canQueue || notAuto) && (
         <section className="panel text-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">

@@ -32,14 +32,25 @@ def daily() -> None:
     Les relances du jour ne sont PAS concernées : elles reviennent tant qu'elles sont dues."""
     with db.connect() as conn:
         due = today.followups(conn)
+        remind = today.reminders(conn)
         top = today.top_prospects(conn, 3, fresh_only=True)
         tour = today.tour(conn, 6)
         todo = db.fetch_one(conn, f"SELECT COUNT(*) AS n FROM local_prospects p WHERE category IN {today.GOOD} AND status IN {today.OPEN_STATUSES} AND {today.CLEAN} AND {today.READY}")["n"]
         problems = health.degradations(conn)
-        if not (due or top or tour or problems):
+        if not (remind or due or top or tour or problems):
             log.info("[digest] résumé du matin vide (aucune relance, aucun nouveau prospect, pas de tournée) : rien envoyé")
             return
         lines = ["☀️ <b>Ta journée de prospection</b>"]
+        if remind:
+            lines.append(f"\n⏰ <b>À rappeler ({len(remind)})</b>")
+            for r in remind[:8]:
+                how = f"☎ {r['phone']}" if r.get("phone") else ("✉ " + r["email"] if r.get("email") else "")
+                tag = "🔥 intéressé · " if r.get("reply_kind") == "interested" else ""
+                note = f" — {notify.esc(r['remind_note'])}" if r.get("remind_note") else ""
+                page = _link(f"/local/{r['id']}", _name(r))
+                lines.append(f"• {page}{note}\n   {tag}{notify.esc(how)}".rstrip())
+            if len(remind) > 8:
+                lines.append(f"   … et {len(remind) - 8} autre(s) : {_link('/local/envois', 'Envois')}")
         if due:
             lines.append(f"\n🔁 <b>Relances du jour ({len(due)})</b>")
             for r in due[:6]:
@@ -63,7 +74,7 @@ def daily() -> None:
             maps = notify.esc(tour["maps_url"])
             details = _link(f"/local/tournee?c={tour['campaign_id']}", "détails")
             lines.append(f'<a href="{maps}">Ouvrir l\'itinéraire</a>' + (f" · {details}" if APP_URL else ""))
-        if not (due or top):
+        if not (remind or due or top):
             lines.append("\nRien d'urgent : aucune relance due et aucun nouveau prospect « À contacter ».")
         lines.append(f"\n{todo} fiche(s) prête(s) à contacter au total")
         for p in problems:

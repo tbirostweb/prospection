@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DISLIKE_REASONS, STATUS_LABELS } from "@/lib/local";
+import { DEAL_STAGES, DISLIKE_REASONS, REPLY_KINDS, STATUS_LABELS } from "@/lib/local";
+import { dateFr } from "@/lib/format";
 
 // Les étapes du suivi, dans l'ordre. « Ne plus contacter » est à part (définitif).
 const STEPS: { status: string; label: string; response?: string }[] = [
@@ -14,13 +15,18 @@ const STEPS: { status: string; label: string; response?: string }[] = [
 ];
 
 /** Suivi commercial : tout est fait PAR TOI. Aucun envoi depuis ces boutons. « Ne plus contacter » est définitif depuis l'interface. */
-export default function ProspectActions({ id, status, notes, doNotContact, websiteUrl, siteAccepted, feedbackReason }: { id: number; status: string; notes: string | null; doNotContact: boolean; websiteUrl: string | null; siteAccepted: boolean; feedbackReason: string | null }) {
+export default function ProspectActions({ id, status, notes, doNotContact, websiteUrl, siteAccepted, feedbackReason, deal }: { id: number; status: string; notes: string | null; doNotContact: boolean; websiteUrl: string | null; siteAccepted: boolean; feedbackReason: string | null;
+  deal: { stage: string | null; stageAt: string | null; remindAt: string | null; remindNote: string | null; replyKind: string | null; replyExcerpt: string | null; replyAt: string | null } }) {
   const router = useRouter();
   const [text, setText] = useState(notes ?? "");
   const [msg, setMsg] = useState<string | null>(null);
   const [reason, setReason] = useState(feedbackReason ?? "");
   const [foundUrl, setFoundUrl] = useState("");
   const [showFound, setShowFound] = useState(false);
+  const [remindAt, setRemindAt] = useState(deal.remindAt ?? "");
+  const [remindNote, setRemindNote] = useState(deal.remindNote ?? "");
+  const stage = deal.stage ?? (status === "WON" ? "WON" : null);
+  const dealOpen = !!stage || ["REPLIED", "INTERESTED", "WON"].includes(status) || !!deal.replyKind;
 
   async function patch(body: any) {
     setMsg(null);
@@ -65,6 +71,32 @@ export default function ProspectActions({ id, status, notes, doNotContact, websi
                 <option value="">— facultatif —</option>{DISLIKE_REASONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
           )}
         </>
+      )}
+      {deal.replyKind && (
+        <div className="mb-5 rounded-2xl border border-line bg-surface px-4 py-3 text-sm">
+          <div><span className="chip">{REPLY_KINDS[deal.replyKind] ?? deal.replyKind}</span>{deal.replyAt && <span className="ml-2 text-xs text-muted">réponse du {dateFr(deal.replyAt)}</span>}</div>
+          {deal.replyExcerpt && <p className="mt-2 whitespace-pre-line text-muted">« {deal.replyExcerpt} »</p>}
+        </div>
+      )}
+      {!doNotContact && dealOpen && (
+        <div className="mb-5">
+          <span className="mono mb-2 block">Où en est l'affaire</span>
+          <div className="flex flex-wrap gap-2">
+            {DEAL_STAGES.map(([k, label]) => <button key={k} onClick={() => patch({ action: "deal_stage", stage: k })} aria-pressed={stage === k} className={`pill ${stage === k ? "pill-on" : ""}`}>{label}</button>)}
+          </div>
+          {deal.stageAt && stage && <p className="mt-1.5 text-xs text-muted">Depuis le {dateFr(deal.stageAt)}</p>}
+        </div>
+      )}
+      {!doNotContact && (
+        <div className="mb-5">
+          <span className="mono mb-2 block">À rappeler le</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="date" value={remindAt} onChange={(e) => setRemindAt(e.target.value)} className="field" aria-label="Date du rappel" />
+            <input value={remindNote} onChange={(e) => setRemindNote(e.target.value)} maxLength={255} placeholder="Note courte : devis à relancer…" className="field min-w-[200px] flex-1" aria-label="Note du rappel" />
+            <button onClick={() => patch({ action: "remind", date: remindAt || null, note: remindNote })} disabled={!remindAt} className="btn-primary btn-sm">Poser le rappel</button>
+            {deal.remindAt && <button onClick={() => { setRemindAt(""); setRemindNote(""); patch({ action: "remind", date: null }); }} className="btn-ghost btn-sm">Rappel fait</button>}
+          </div>
+        </div>
       )}
       <label className="flex flex-col gap-1.5 text-sm"><span className="mono">Notes</span>
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} className="field w-full" placeholder="Appel du 21/09, à rappeler jeudi…" /></label>

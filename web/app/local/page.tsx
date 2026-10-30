@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
+import RemindersPanel from "@/components/RemindersPanel";
 import LocalBoard from "@/components/LocalBoard";
 import { BOARD_SQL, LIST_COLUMNS, safeRows } from "@/lib/localdb";
 import { LocalRow } from "@/lib/local";
@@ -16,6 +17,7 @@ export default async function LocalPage({ searchParams }: { searchParams: Promis
         <Link href="/local/carte" className="btn-ghost btn-sm">Carte</Link>
         <Link href="/local/import" className="btn-ghost btn-sm">Importer un CSV</Link>
       </PageHeader>
+      <RemindersPanel />
       <LocalBoard rows={JSON.parse(JSON.stringify(rows))} initialView={typeof view === "string" ? view : "all"} />
     </div>
   );

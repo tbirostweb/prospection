@@ -189,7 +189,19 @@ def _mail(headers: str, body: str = "") -> object:
 
 
 @pytest.mark.parametrize("text,expected", [
-    ("Bonjour, oui pourquoi pas, appelez-moi jeudi.", "replied"),
+    ("Bonjour, oui pourquoi pas, appelez-moi jeudi.", "interested"),
+    ("Oui, ça m'intéresse, pouvez-vous m'envoyer un devis ?", "interested"),
+    ("Bonjour, rappelez-moi la semaine prochaine.", "interested"),
+    ("Quand êtes-vous disponible pour un rendez-vous ?", "interested"),
+    ("Pas pour le moment, revenez vers moi dans quelques mois.", "later"),
+    ("Plus tard, nous refaisons notre activité l'année prochaine.", "later"),
+    ("Oui mais plus tard, après l'été.", "later"),
+    ("Non, pas intéressé, merci.", "not_interested"),
+    ("Appelez-moi, mais je n'ai pas de budget", "replied"),                      # négation : doute -> neutre
+    ("Je ne suis pas disponible jeudi.", "replied"),
+    ("Merci pour votre message.", "replied"),
+    ("D'où tenez-vous mon adresse ?", "replied"),
+    ("Oui. " + "Bla bla. " * 80, "replied"),                                     # long message : on ne devine pas
     ("Merci de ne plus me contacter.", "opted_out"),
     ("STOP", "opted_out"),
     ("Supprimez mon adresse de votre fichier", "opted_out"),
@@ -205,10 +217,23 @@ def test_desinscription_par_le_lien_du_message():
     assert inbox.outcome("", "Désinscription") == "opted_out"
 
 
+def test_l_objet_ne_fait_pas_l_interet():
+    assert inbox.outcome("Merci.", "Re: Un devis pour votre site ?") == "replied"
+    assert inbox.outcome("STOP", "Re: devis") == "opted_out"
+
+
+@pytest.mark.parametrize("start,months,expected", [
+    (dt.date(2026, 10, 30), 3, dt.date(2027, 1, 30)), (dt.date(2026, 11, 30), 3, dt.date(2027, 2, 28)),
+    (dt.date(2026, 12, 15), 3, dt.date(2027, 3, 15)), (dt.date(2026, 5, 31), 1, dt.date(2026, 6, 30)),
+])
+def test_rappel_dans_trois_mois(start, months, expected):
+    assert inbox.add_months(start, months) == expected
+
+
 def test_texte_de_reponse_sans_le_message_cite():
     msg = _mail("From: a@garage-exemple.fr\nSubject: Re: Votre garage\nContent-Type: text/plain; charset=utf-8",
                 "Oui, rappelez-moi.\n\nLe lun. 26 oct. 2026 à 10:12, Théo Exemple <contact@exemple-web.fr> a écrit :\n> Merci de ne plus me contacter si…")
-    assert inbox.reply_text(msg) == "Oui, rappelez-moi." and inbox.outcome(inbox.reply_text(msg)) == "replied"
+    assert inbox.reply_text(msg) == "Oui, rappelez-moi." and inbox.outcome(inbox.reply_text(msg)) == "interested"   # la citation (« ne plus me contacter ») ne compte pas
 
 
 def test_classement_reponse_auto_et_erreurs():

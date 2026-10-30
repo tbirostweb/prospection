@@ -112,3 +112,27 @@ test("état des passages d'enrichissement : requêtes exécutées", { skip }, as
   assert.equal(enrichSummary(parseSteps(full.steps)), "10 sites Google vérifiés (3 trouvés)");
   assert.deepEqual([Number(day.runs), Number(day.locked), Number(day.skipped)], [2, 1, 0]);
 });
+
+// « À rappeler » : la requête de lib/localdb.ts (REMINDERS_SQL) est lue dans la source et exécutée sur la base migrée (034 comprise).
+test("À rappeler : échus et en retard, intéressés d'abord, ni gagnés/perdus ni opposition", { skip }, async () => {
+  const src = fs.readFileSync(path.join(ROOT, "web", "lib", "localdb.ts"), "utf8");
+  const sql = /REMINDERS_SQL = `([^`]+)`/.exec(src)![1];
+  await conn.query("DELETE FROM local_prospects");
+  const rows: Record<string, any>[] = [
+    { remind_at: "2026-11-02", reply_kind: null }, { remind_at: "2026-10-20", reply_kind: null }, { remind_at: "2026-11-02", reply_kind: "interested" },
+    { remind_at: "2026-11-09", reply_kind: null }, { remind_at: "2026-11-02", deal_stage: "WON" }, { remind_at: "2026-11-02", do_not_contact: 1 }, { remind_at: null },
+  ];
+  let id = 0;
+  for (const r of rows) { id++; await conn.query("INSERT INTO local_prospects SET ?", [{ id, siret: String(40000000000000 + id), fingerprint: `rm-${id}`, company_name: `RAPPEL ${id}`, ...r }]); }
+  const out = (await conn.query(sql, ["2026-11-02"]))[0] as any[];
+  assert.deepEqual(out.map((r) => r.id), [3, 2, 1]);                 // intéressé, puis le plus en retard, puis aujourd'hui
+  await conn.query("DELETE FROM local_prospects");
+});
+
+test("migration 034 : idempotente", { skip }, async () => {
+  const sql = fs.readFileSync(path.join(ROOT, "db", "updates", "034_suivi_commercial.sql"), "utf8");
+  await conn.query(sql);
+  await conn.query(sql);
+  const [cols] = await conn.query("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE table_schema = DATABASE() AND table_name = 'local_prospects' AND column_name IN ('deal_stage','deal_stage_at','remind_at','remind_note','reply_kind','reply_excerpt','reply_at')");
+  assert.equal(Number((cols as any[])[0].n), 7);
+});

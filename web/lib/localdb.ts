@@ -36,6 +36,19 @@ export const EMAIL_QUEUE_SQL = `FROM local_prospects p
       AND TRIM(COALESCE(p.email, '')) <> '' AND COALESCE(p.auto_state, '') <> 'bounced'
     ORDER BY p.status = 'TO_CONTACT' DESC, p.prospect_score DESC LIMIT ${CONTACT_QUEUE_LIMIT}`;
 
+/** « À rappeler » : rappels arrivés à échéance (aujourd'hui, heure de Paris, ou en retard). Les « intéressés » d'abord, puis les plus anciens.
+ *  Miroir de today.reminders (worker). `?` = le jour (YYYY-MM-DD, voir parisDay). */
+export const REMINDERS_SQL = `SELECT id, company_name, trade_name, city, phone, email, remind_at, remind_note, reply_kind, reply_excerpt, deal_stage FROM local_prospects
+    WHERE remind_at IS NOT NULL AND remind_at <= ? AND do_not_contact = 0 AND status <> 'DO_NOT_CONTACT' AND COALESCE(deal_stage, '') NOT IN ('WON','LOST')
+    ORDER BY reply_kind = 'interested' DESC, remind_at, id LIMIT 100`;
+/** Le jour en cours à Paris, au format YYYY-MM-DD. */
+export const parisDay = (d: Date = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+export const getReminders = () => safeRows<any>(REMINDERS_SQL, [parisDay()]);
+
+/** Fiches contactées avec ce qu'il faut pour le tableau « Ce qui répond » (lib/replystats.ts). */
+export const getReplyRows = () => safeRows<any>(`SELECT activity_label, draft_kind, prospect_score, status, response_status, reply_kind FROM local_prospects
+    WHERE contacted_at IS NOT NULL OR status IN ('CONTACTED','REPLIED','INTERESTED','WON','LOST')`);
+
 export async function getLocalHome(): Promise<{ city?: string; postalCode?: string; defaultRadius?: number }> {
   try {
     const rows = await query<any>("SELECT value_json FROM settings WHERE skey='local_home' LIMIT 1");

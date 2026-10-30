@@ -3,10 +3,11 @@ import { PageHeader, StatCard } from "@/components/LocalUI";
 import AutoSendButton from "@/components/AutoSendButton";
 import BulkQueueButton from "@/components/BulkQueueButton";
 import EmailInput from "@/components/EmailInput";
+import RemindersPanel from "@/components/RemindersPanel";
 import { getAutoSend, getSetting, safeRows } from "@/lib/localdb";
 import { AUTO_STATES, EMAIL_KINDS, autoIneligible, effectiveCap } from "@/lib/autosend";
 import { ficheReason } from "@/lib/complete";
-import { formatPhone, verifiedSocials } from "@/lib/local";
+import { REPLY_KINDS, formatPhone, verifiedSocials } from "@/lib/local";
 import type { Sender } from "@/lib/draft";
 import { dateTimeFr } from "@/lib/format";
 
@@ -88,9 +89,9 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
   const toQueue = ready.filter((p) => p.auto_state !== "queued" && p.why === null);
   const active = await safeRows<any>(`SELECT id, company_name, trade_name, city, email, contacted_at, followups FROM local_prospects
     WHERE auto_state='active' ORDER BY contacted_at LIMIT 200`);
-  const ended = await safeRows<any>(`SELECT id, company_name, trade_name, city, auto_state, last_prospect_contact_at, last_contacted_at FROM local_prospects
+  const ended = await safeRows<any>(`SELECT id, company_name, trade_name, city, auto_state, last_prospect_contact_at, last_contacted_at, reply_kind, reply_excerpt FROM local_prospects
     WHERE auto_state IN ('replied','opted_out','bounced','abandoned','failed') ORDER BY COALESCE(last_prospect_contact_at, last_contacted_at) DESC LIMIT 50`);
-  const emails = await safeRows<any>(`SELECT e.kind, e.to_email, e.status, e.error, e.sent_at, p.id, p.company_name, p.trade_name FROM local_emails e
+  const emails = await safeRows<any>(`SELECT e.kind, e.to_email, e.status, e.error, e.sent_at, p.id, p.company_name, p.trade_name, p.reply_kind, p.reply_excerpt FROM local_emails e
     JOIN local_prospects p ON p.id = e.prospect_id ORDER BY e.sent_at DESC LIMIT 60`);
   const [today] = await safeRows<any>("SELECT COUNT(*) AS n FROM local_emails WHERE status IN ('sent','bounced') AND sent_at >= ?", [parisMidnightUtc()]);
   const sentToday = Number(today?.n ?? 0);
@@ -120,6 +121,8 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
       <PageHeader title="Envois" intro="Les e-mails envoyés automatiquement, les relances prévues et les réponses. Une réponse arrête aussitôt les relances.">
         <Link href="/settings" className="btn-ghost btn-sm">Réglages d'envoi</Link>
       </PageHeader>
+
+      <RemindersPanel />
 
       <div className="stat-grid mb-8 grid-cols-2 !gap-2 sm:grid-cols-4 sm:!gap-4">
         <StatCard featured label="Envoyés aujourd'hui" value={`${sentToday} / ${cap}`} hint={auto.enabled ? `${until ? `montée en charge : ${cap}/jour jusqu'au ${until.toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })} · ` : ""}de ${auto.start_hour} h à ${auto.end_hour} h (pause ${auto.pause_start} h-${auto.pause_end} h), 1 par ${auto.min_gap_min} min` : "envoi désactivé"} />
@@ -165,6 +168,8 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
             <div key={p.id} className="row-item py-3 text-sm">
               <Link href={`/local/${p.id}`} className="font-semibold hover:text-accent">{name(p)}</Link>
               <span className="text-muted"> · {AUTO_STATES[p.auto_state] ?? p.auto_state}{p.last_prospect_contact_at ? ` · ${dateTimeFr(p.last_prospect_contact_at)}` : ""}</span>
+              {p.reply_kind && <> <span className="chip">{REPLY_KINDS[p.reply_kind] ?? p.reply_kind}</span></>}
+              {p.reply_excerpt && <div className="truncate text-xs text-muted">« {p.reply_excerpt} »</div>}
             </div>))}</div>
         </section>
       )}
@@ -211,6 +216,8 @@ export default async function Envois({ searchParams }: { searchParams: Promise<{
               <Link href={`/local/${e.id}`} className="font-semibold hover:text-accent">{name(e)}</Link>
               <span className="text-muted"> · {EMAIL_KINDS[e.kind] ?? e.kind} · {e.to_email}</span>
               {e.status !== "sent" && <span className="text-red-700"> · {e.status === "bounced" ? "revenu (adresse invalide)" : `échec${e.error ? ` : ${e.error}` : ""}`}</span>}
+              {e.reply_kind && emails.findIndex((x) => x.id === e.id) === i && <> <span className="chip">{REPLY_KINDS[e.reply_kind] ?? e.reply_kind}</span>
+                {e.reply_excerpt && <div className="truncate text-xs text-muted">« {e.reply_excerpt} »</div>}</>}
             </div>))}
           {emails.length === 0 && <div className="px-6 py-10 text-center text-muted">Aucun e-mail envoyé pour l'instant : ceux de l'onglet « Prêts à envoyer » mis en file partiront en semaine, aux heures réglées.</div>}
         </div>}

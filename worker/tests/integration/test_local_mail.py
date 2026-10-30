@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from worker import db
-from worker.local import complete, http, outbox, sitefinder
+from worker.local import complete, http, inbox, outbox, sitefinder
 
 from local_fixtures import FakeWeb, html
 
@@ -202,12 +202,77 @@ def test_une_reponse_arrete_les_relances(mail, conn):
     mail.imap.add(f"From: Garage <patron@garage-exemple.fr>\nSubject: Re: Votre garage\nIn-Reply-To: {mid}\nContent-Type: text/plain; charset=utf-8\n"
                   f"Content-Transfer-Encoding: 8bit\n\nBonjour, oui, appelez-moi jeudi matin.\n")
     r = mail.run(T0 + dt.timedelta(days=3))
-    assert r["inbox"]["replied"] == 1 and r["status"] == "idle" and len(mail.smtp.sent) == 1
+    assert r["inbox"]["interested"] == 1 and r["status"] == "idle" and len(mail.smtp.sent) == 1
     p = row(conn, pid)
-    assert (p["status"], p["response_status"], p["auto_state"]) == ("REPLIED", "REPLIED", "replied")
-    assert mail.imap.readonly is True and any("a répondu" in t for t in mail.tg.texts)
+    assert (p["status"], p["response_status"], p["auto_state"]) == ("INTERESTED", "INTERESTED", "replied")      # « appelez-moi » = intéressé
+    assert p["reply_kind"] == "interested" and "appelez-moi jeudi" in p["reply_excerpt"] and p["deal_stage"] == "REPLIED"
+    assert p["remind_at"] == inbox.paris_today() and p["remind_note"]
+    assert mail.imap.readonly is True and any("intéressé" in t for t in mail.tg.texts)
     assert db.fetch_one(conn, "SELECT imap_last_uid FROM local_mail_state WHERE id=1")["imap_last_uid"] == 101
     assert mail.run(T0 + dt.timedelta(days=3, minutes=10))["inbox"]["read"] == 0  # le même message n'est pas relu
+
+
+def _reponse(mail, conn, siret: str, text: str, jours: int = 3):
+    pid = add(conn, siret)
+    mail.enable()
+    mail.run(T0)
+    mid = mail.smtp.sent[0]["Message-ID"]
+    mail.imap.add(f"From: Garage <patron@garage-exemple.fr>\nSubject: Re: Votre garage\nIn-Reply-To: {mid}\nContent-Type: text/plain; charset=utf-8\n"
+                  f"Content-Transfer-Encoding: 8bit\n\n{text}\n")
+    mail.run(T0 + dt.timedelta(days=jours))
+    return pid
+
+
+def test_plus_tard_pose_un_rappel_dans_trois_mois(mail, conn):
+    pid = _reponse(mail, conn, "10000000000021", "Pas pour le moment, revenez vers moi dans quelques mois.")
+    p = row(conn, pid)
+    assert (p["status"], p["auto_state"], p["reply_kind"]) == ("REPLIED", "replied", "later")
+    assert p["remind_at"] == inbox.add_months(inbox.paris_today(), 3) and "plus tard" in p["remind_note"]
+    assert "plus tard" in p["reply_excerpt"] or "Pas pour le moment" in p["reply_excerpt"]
+    mail.run(T0 + dt.timedelta(days=8))
+    assert len(mail.smtp.sent) == 1                                          # jamais de relance après une réponse
+
+
+def test_reponse_neutre_ni_rappel_ni_categorie_d_interet(mail, conn):
+    pid = _reponse(mail, conn, "10000000000022", "Merci pour votre message, je regarde ça.")
+    p = row(conn, pid)
+    assert (p["status"], p["reply_kind"], p["remind_at"], p["deal_stage"]) == ("REPLIED", "replied", None, "REPLIED")
+    mail.run(T0 + dt.timedelta(days=8))
+    assert len(mail.smtp.sent) == 1
+
+
+def test_pas_interesse_perdu_sans_rappel(mail, conn):
+    pid = _reponse(mail, conn, "10000000000023", "Non merci, nous avons déjà un site.")
+    p = row(conn, pid)
+    assert (p["status"], p["response_status"], p["reply_kind"], p["deal_stage"], p["remind_at"]) == ("LOST", "NOT_INTERESTED", "not_interested", "LOST", None)
+
+
+def test_interesse_ne_reecrase_pas_un_statut_pose_a_la_main(mail, conn):
+    pid = add(conn, "10000000000024")
+    mail.enable()
+    mail.run(T0)
+    db.execute(conn, "UPDATE local_prospects SET status='WON', response_status='WON', remind_at='2027-05-01' WHERE id=%s", (pid,))
+    conn.commit()
+    mid = mail.smtp.sent[0]["Message-ID"]
+    mail.imap.add(f"From: Garage <patron@garage-exemple.fr>\nSubject: Re: Votre garage\nIn-Reply-To: {mid}\nContent-Type: text/plain; charset=utf-8\n"
+                  f"Content-Transfer-Encoding: 8bit\n\nOui, rappelez-moi.\n")
+    mail.run(T0 + dt.timedelta(days=3))
+    p = row(conn, pid)
+    assert (p["status"], p["reply_kind"]) == ("WON", "interested") and p["remind_at"] == inbox.paris_today()   # le rappel le plus proche l'emporte
+
+
+def test_a_rappeler_aujourd_hui_et_en_retard(conn):
+    from worker.local import today
+    day = dt.date(2026, 11, 2)
+    for i, (r, kind, extra) in enumerate([(day, None, ""), (dt.date(2026, 10, 20), None, ""), (day, "interested", ""), (dt.date(2026, 11, 9), None, ""),
+                                          (day, None, ", deal_stage='WON'"), (day, None, ", do_not_contact=1, status='DO_NOT_CONTACT'")], 1):
+        db.execute(conn, f"""INSERT INTO local_prospects (siret, fingerprint, company_name, remind_at, reply_kind) VALUES (%s,%s,%s,%s,%s)""",
+                   (f"5000000000000{i}", f"fp-r{i}", f"RAPPEL {i}", r, kind))
+        if extra:
+            db.execute(conn, f"UPDATE local_prospects SET {extra[2:]} WHERE siret=%s", (f"5000000000000{i}",))
+    conn.commit()
+    now = dt.datetime(2026, 11, 2, 9, 0, tzinfo=dt.timezone.utc)
+    assert [r["company_name"] for r in today.reminders(conn, now)] == ["RAPPEL 3", "RAPPEL 2", "RAPPEL 1"]
 
 
 def test_refus_ajoute_a_ne_plus_contacter(mail, conn):

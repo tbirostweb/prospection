@@ -58,6 +58,11 @@ export const STATUS_LABELS: Record<string, string> = {
 };
 export const MANUAL_STATUSES = ["QUALIFIED", "TO_CONTACT", "CONTACTED", "REPLIED", "INTERESTED", "WON", "LOST", "DO_NOT_CONTACT"] as const;
 
+/** Avancement de l'affaire après une réponse (local_prospects.deal_stage), dans l'ordre. */
+export const DEAL_STAGES: [string, string][] = [["REPLIED", "A répondu"], ["MEETING", "Rendez-vous"], ["QUOTE", "Devis envoyé"], ["WON", "Gagné"], ["LOST", "Perdu"]];
+/** Réponse classée par le worker (local_prospects.reply_kind, worker/local/inbox.py outcome). */
+export const REPLY_KINDS: Record<string, string> = { interested: "Intéressé", later: "Plus tard", not_interested: "Pas intéressé", replied: "A répondu", opted_out: "Ne plus contacter" };
+
 // ⭐ bon prospect · 🚫 pas intéressant · 📞 contacté · 💬 réponse reçue · 🏆 client obtenu
 export const FEEDBACK_ACTIONS: { icon: string; label: string; status: string; response?: string }[] = [
   { icon: "⭐", label: "Bon prospect", status: "TO_CONTACT" },

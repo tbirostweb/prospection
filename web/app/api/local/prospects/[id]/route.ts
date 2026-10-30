@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, transaction } from "@/lib/db";
 import { readJson, routeId } from "@/lib/api";
-import { DISLIKE_REASONS, MANUAL_STATUSES, isImported } from "@/lib/local";
+import { DEAL_STAGES, DISLIKE_REASONS, MANUAL_STATUSES, isImported } from "@/lib/local";
 import { FREEMAIL, autoIneligible } from "@/lib/autosend";
 import { getAutoSend } from "@/lib/localdb";
 
@@ -117,6 +117,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     else await query("UPDATE local_prospects SET status='LOST', response_status='NO_ANSWER' WHERE id=?", [id]);
     return NextResponse.json({ ok: true });
   }
+  // Suivi commercial après une réponse : étape de l'affaire (avec sa date) et rappel. Rien n'est envoyé depuis ces actions.
+  if (b.action === "deal_stage") {
+    const stage = String(b.stage ?? "");
+    if (!DEAL_STAGES.some(([k]) => k === stage)) return NextResponse.json({ error: "étape invalide" }, { status: 400 });
+    if (p.do_not_contact) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
+    // L'étape pilote le statut et la réponse existants (suivi, apprentissage). « Perdu » = pas intéressé ; gagné ou perdu : plus de rappel.
+    const [status, response] = ({ REPLIED: ["REPLIED", "REPLIED"], MEETING: ["INTERESTED", "INTERESTED"], QUOTE: ["INTERESTED", "INTERESTED"],
+      WON: ["WON", "WON"], LOST: ["LOST", "NOT_INTERESTED"] } as Record<string, [string, string]>)[stage];
+    const closed = stage === "WON" || stage === "LOST";
+    await query(`UPDATE local_prospects SET deal_stage=?, deal_stage_at=UTC_TIMESTAMP(), status=?, response_status=?,
+      contacted_at=COALESCE(contacted_at, UTC_TIMESTAMP()), last_prospect_contact_at=UTC_TIMESTAMP(),
+      remind_at=IF(?, NULL, remind_at), remind_note=IF(?, NULL, remind_note) WHERE id=?`, [stage, status, response, closed ? 1 : 0, closed ? 1 : 0, id]);
+    return NextResponse.json({ ok: true });
+  }
+  // « À rappeler le » + note courte ; date vide = rappel fait / supprimé.
+  if (b.action === "remind") {
+    const date = b.date ? String(b.date) : null;
+    if (date) {
+      const d = new Date(`${date}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== date) return NextResponse.json({ error: "date invalide" }, { status: 400 });
+      if (p.do_not_contact) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
+    }
+    await query("UPDATE local_prospects SET remind_at=?, remind_note=? WHERE id=?", [date, date ? String(b.note ?? "").trim().slice(0, 255) || null : null, id]);
+    return NextResponse.json({ ok: true });
+  }
   if (b.feedback_reason !== undefined) {
     if (b.feedback_reason && !DISLIKE_REASONS.some(([k]) => k === b.feedback_reason)) return NextResponse.json({ error: "raison invalide" }, { status: 400 });
     await query("UPDATE local_prospects SET feedback_reason=? WHERE id=?", [b.feedback_reason || null, id]);
@@ -139,7 +164,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await query(`UPDATE local_prospects SET status=?,
                    followups = IF(? = 'CONTACTED' AND contacted_at IS NULL, 0, followups),
                    contacted_at = IF(? IN ('CONTACTED','REPLIED','INTERESTED','WON') AND contacted_at IS NULL, UTC_TIMESTAMP(), contacted_at),
-                   last_contacted_at = IF(? = 'CONTACTED', UTC_TIMESTAMP(), last_contacted_at) WHERE id=?`, [b.status, b.status, b.status, b.status, id]);
+                   last_contacted_at = IF(? = 'CONTACTED', UTC_TIMESTAMP(), last_contacted_at),
+                   deal_stage = IF(? = 'WON', 'WON', deal_stage), deal_stage_at = IF(? = 'WON', UTC_TIMESTAMP(), deal_stage_at),
+                   remind_at = IF(? = 'WON', NULL, remind_at), remind_note = IF(? = 'WON', NULL, remind_note) WHERE id=?`, [b.status, b.status, b.status, b.status, b.status, b.status, b.status, b.status, id]);
     }
   }
   if (b.response_status !== undefined) {

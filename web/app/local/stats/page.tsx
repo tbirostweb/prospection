@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/LocalUI";
 import PlacesBackfillButton from "@/components/PlacesBackfillButton";
-import { getEmailSearchStats, getEnrichStats, getIdentityStats, getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
+import { getReplyRows, getEmailSearchStats, getEnrichStats, getIdentityStats, getPlacesStats, getQualityStats, getSetting, safeRows } from "@/lib/localdb";
+import { replyTables } from "@/lib/replystats";
 import { MODE_LABELS, STEP_LABELS, STOP_LABELS, enrichSummary, type EnrichRun } from "@/lib/enrich";
 import { ENGINE_TIER_LABELS, ERROR_LABELS, STATUS_LABELS, WEBSITE_LABELS, engineTier } from "@/lib/local";
 
@@ -93,6 +94,9 @@ export default async function LocalStats() {
   const gaps: [string, number][] = ([["Sans contact fiable", quality.missing.noContact], ["Site à trancher", quality.missing.siteTodo],
     ["Métier inconnu", quality.missing.noMetier], ["E-mail invalide", quality.missing.emailInvalid], ["Traitement en cours", quality.missing.processing]] as [string, number][])
     .filter(([, v]) => v > 0);
+  const replyT = replyTables(await getReplyRows());
+  const replyCols: [string, (r: any) => any][] = [["Contactés", (r) => r.contacted], ["Réponses", (r) => r.replied], ["Intéressés", (r) => r.interested],
+    ["Taux de réponse", (r) => (r.rate == null ? "—" : `${Math.round(r.rate * 100)} %`)]];
   const learn = await getSetting<any>("local_learning", null);
   const learned = learn ? Object.values(learn.features ?? {}).filter((f: any) => f.n >= 4).sort((a: any, b: any) => b.points - a.points) as any[] : [];
   const cards: [string, any, string?][] = [
@@ -226,6 +230,13 @@ export default async function LocalStats() {
           {(places.pending > 0 || places.backfillOn) && <div className="mt-2"><PlacesBackfillButton on={places.backfillOn} /></div>}
           <p className="mt-1 text-xs text-muted">Une fiche par passage d'enrichissement (~52 par jour), dans le quota Google du jour (une réserve est gardée aux fiches existantes) ; s'arrête seul quand toutes sont faites ou au plafond mensuel.</p>
         </div>
+      </section>
+      <section className="mb-10 min-w-0">
+        <h2 className="section-title">Ce qui répond</h2>
+        <p className="mb-3 text-sm text-muted">Fiches contactées, par métier, par angle du message et par tranche de score. « Réponses » compte toute réponse (y compris « pas intéressé ») ; les lignes de moins de 3 contactés sont regroupées dans « Autres ». Peu de contacts : lis ces taux avec prudence.</p>
+        <Table title="Par métier" rows={replyT.activity} cols={replyCols} />
+        <Table title="Par angle du message" rows={replyT.angle} cols={replyCols} />
+        <Table title="Par tranche de score" rows={replyT.score} cols={replyCols} />
       </section>
       <Table title="Répartition par activité et taux de réponse" rows={byActivity} cols={[["Entreprises", (r) => r.n], ["Sans site", (r) => r.no_site],
         ["Contactés", (r) => r.contacted], ["Réponses", (r) => `${r.replied} · ${pct(Number(r.replied), Number(r.contacted))}`], ["Clients", (r) => r.won]]} />

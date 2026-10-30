@@ -2,8 +2,9 @@
 
 Aucun message n'est modifié, déplacé ni marqué lu (EXAMINE + BODY.PEEK). Seuls les messages arrivés depuis le dernier passage sont lus.
 Une réponse est reconnue par ses en-têtes In-Reply-To / References (Message-ID de nos e-mails), sinon par l'adresse ou le domaine de
-l'expéditeur. Selon le contenu : refus explicite -> liste « ne plus contacter » ; « pas intéressé » -> perdu ; sinon -> a répondu (alerte
-Telegram). Les retours d'erreur définitifs (adresse inexistante) marquent l'adresse comme invalide. Les réponses automatiques sont ignorées.
+l'expéditeur. Selon le contenu : refus explicite -> liste « ne plus contacter » ; « pas intéressé » -> perdu ; « plus tard » -> a répondu + rappel
+dans 3 mois ; « intéressé » -> a répondu + à rappeler aujourd'hui ; sinon -> a répondu, sans catégorie (alerte Telegram). Les règles sont des
+mots-clés prudents : au moindre doute (négation, message long, ton ambigu) c'est « a répondu » neutre. La catégorie et un extrait sont gardés sur la fiche. Les retours d'erreur définitifs (adresse inexistante) marquent l'adresse comme invalide. Les réponses automatiques sont ignorées.
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from email.utils import getaddresses, parseaddr
 from .. import db, notify
 from ..config import APP_URL, log
 from .contacts import FREEMAIL
-from .mailer import email_domain
+from .mailer import PARIS, email_domain
 
 MAX_PER_RUN = 200
 WATCH_DAYS = 45                       # on ne lit la boîte que s'il y a eu un envoi automatique récent
@@ -30,8 +31,16 @@ MONTHS_EN = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 OPT_OUT = re.compile(r"ne (plus|pas) (me |nous )?(contacter|recontacter|ecrire|solliciter|relancer)|plus (me|nous) (contacter|ecrire|solliciter)|"
                      r"desinscri|desabonn|unsubscribe|\bstop\b|retire[rz]? (mon|notre|nos|mes|cette)|supprime[rz]? (mon|notre|nos|mes|cette)|"
                      r"pas de (demarchage|prospection|sollicitation)|\bopposition\b|bloctel|harcel")
-NOT_INTERESTED = re.compile(r"pas interess|non merci|pas besoin|pas pour (le moment|l'instant|nous)|ne (nous|m') interesse pas|"
-                            r"deja (un|une|notre|mon) (site|prestataire|agence|webmaster)|pas le moment")
+NOT_INTERESTED = re.compile(r"pas interess|non merci|pas besoin|pas pour (l'instant|nous)|ne (nous|m') interesse pas|"
+                            r"deja (un|une|notre|mon) (site|prestataire|agence|webmaster)")
+LATER = re.compile(r"plus tard|pas pour le moment|pas le moment|pas maintenant|dans quelques (mois|semaines)|(l'|une )?annee prochaine|"
+                   r"revenez (vers|me voir|nous voir)|reprendre contact (dans|en|plus|apres)|recontactez[- ](moi|nous) (dans|en|plus|apres)|"
+                   r"apres (l'ete|les fetes|la saison|les vacances)")
+INTERESTED = re.compile(r"\boui\b|interess|rappelez[- ]?(moi|nous)|appelez[- ]?(moi|nous)|(me|nous) (rappeler|appeler|contacter par telephone)|\bdevis\b|"
+                        r"rendez[- ]?vous|\brdv\b|disponible|quand (etes|pouvez|seriez|pourriez|passez|venez)")
+NEGATION = re.compile(r"\b(pas|non|jamais|aucun|aucune|sans|impossible)\b|n'(est|ai|avons|a)\b")
+INTERESTED_MAX_CHARS = 500            # un long message est nuancé : on ne devine pas
+EXCERPT_CHARS = 400
 QUOTE_START = re.compile(r"^(le .{5,120} a ecrit ?:|on .{5,120} wrote:|-{2,} ?(original|message d'origine|forwarded)|de ?: |from: |envoye ?: )", re.I)
 AUTO_SUBJECT = re.compile(r"absen|out of office|r[ée]ponse automatique|automatic reply|auto.?reply|accus[ée] de r[ée]ception|cong[ée]s", re.I)
 
@@ -78,13 +87,36 @@ def classify(msg: Message) -> str:
 
 
 def outcome(text: str, subject: str = "") -> str:
-    """'opted_out' (ne plus contacter) · 'not_interested' · 'replied'."""
+    """'opted_out' (ne plus contacter) · 'not_interested' · 'later' (plus tard) · 'interested' · 'replied' (neutre, au moindre doute)."""
     t = fold(f"{subject}\n{text}")
     if OPT_OUT.search(t) or fold(subject).strip() in ("desinscription", "stop"):
         return "opted_out"
     if NOT_INTERESTED.search(t):
         return "not_interested"
+    if LATER.search(t):
+        return "later"
+    body = fold(text)                  # l'objet (« Re: Votre site… ») ne compte pas pour juger l'intérêt
+    if len(body) <= INTERESTED_MAX_CHARS and INTERESTED.search(body) and not NEGATION.search(body.replace("pourquoi pas", "")):
+        return "interested"
     return "replied"
+
+
+def add_months(day: dt.date, months: int) -> dt.date:
+    """Même jour `months` mois plus tard (le 31 devient le dernier jour du mois d'arrivée)."""
+    y, m = divmod(day.month - 1 + months, 12)
+    y, m = day.year + y, m + 1
+    last = (dt.date(y + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1)).day
+    return dt.date(y, m, min(day.day, last))
+
+
+def paris_today(now: dt.datetime | None = None) -> dt.date:
+    """Le jour en cours à Paris (les rappels sont des jours calendaires)."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return now.astimezone(PARIS).date()
+
+
+def excerpt(text: str) -> str | None:
+    return re.sub(r"\s+", " ", text).strip()[:EXCERPT_CHARS] or None
 
 
 def _refs(msg: Message) -> list[str]:
@@ -141,7 +173,8 @@ def apply(conn, sent: dict, kind: str, msg: Message) -> str | None:
         db.execute(conn, "UPDATE local_prospects SET auto_state='bounced' WHERE id=%s", (p["id"],))
         notify.send_text(f"⚠️ <b>{_name(p)}</b> : l'e-mail est revenu (adresse invalide). Plus d'envoi automatique : à contacter par téléphone ou sur place.{_link(p)}")
         return "bounced"
-    result = outcome(reply_text(msg), str(msg.get("Subject", "")))
+    body = reply_text(msg)
+    result = outcome(body, str(msg.get("Subject", "")))
     if result == "opted_out":
         db.execute(conn, "INSERT INTO local_do_not_contact (siret, siren, domain, email, reason) VALUES (%s,%s,%s,%s,%s)",
                    (p["siret"], p["siren"], p.get("canonical_domain"), sent["to_email"], "a demandé à ne plus être contacté (réponse à un e-mail)"))
@@ -151,14 +184,34 @@ def apply(conn, sent: dict, kind: str, msg: Message) -> str | None:
         return result
     # Une réponse n'écrase jamais un statut posé à la main (intéressé, gagné…).
     worked = p["status"] in ("CONTACTED", "LOST", "TO_CONTACT", "QUALIFIED")
+    # Aucune relance automatique après une réponse : auto_state='replied' (l'envoi ne relance que auto_state='active').
+    sets = ["auto_state='replied'", "last_prospect_contact_at=UTC_TIMESTAMP()", "reply_kind=%s", "reply_excerpt=%s", "reply_at=UTC_TIMESTAMP()"]
+    args: list = [result, excerpt(body)]
+    stage = "LOST" if result == "not_interested" and worked else "REPLIED"
+    if not p.get("deal_stage") or stage == "LOST":
+        sets += ["deal_stage=%s", "deal_stage_at=UTC_TIMESTAMP()"]
+        args.append(stage)
+    today = paris_today()
     if result == "not_interested":
-        db.execute(conn, f"""UPDATE local_prospects SET auto_state='replied', last_prospect_contact_at=UTC_TIMESTAMP()
-                             {", status='LOST', response_status='NOT_INTERESTED'" if worked else ""} WHERE id=%s""", (p["id"],))
-        notify.send_text(f"💬 <b>{_name(p)}</b> a répondu : pas intéressé pour l'instant. Relances arrêtées.{_link(p)}")
+        if worked:
+            sets.append("status='LOST', response_status='NOT_INTERESTED'")
+        msg = f"💬 <b>{_name(p)}</b> a répondu : pas intéressé pour l'instant. Relances arrêtées.{_link(p)}"
+    elif result in ("interested", "later"):
+        if worked:
+            sets.append("status='INTERESTED', response_status='INTERESTED'" if result == "interested" else "status='REPLIED', response_status='REPLIED'")
+        when, note = (today, "A répondu : intéressé, à rappeler") if result == "interested" else (add_months(today, 3), "A répondu : plus tard, à recontacter")
+        current = p.get("remind_at")
+        if current is None or (current > when if result == "interested" else current < when):    # intéressé : le plus tôt gagne ; plus tard : remplace un rappel plus proche, jamais un rappel plus lointain
+            sets += ["remind_at=%s", "remind_note=%s"]
+            args += [when, note]
+        msg = (f"🔥 <b>{_name(p)}</b> semble intéressé ! Relances arrêtées : à rappeler aujourd'hui.{_link(p)}" if result == "interested"
+               else f"🕒 <b>{_name(p)}</b> a répondu : plus tard. Rappel posé le {when.strftime('%d/%m/%Y')}. Relances arrêtées.{_link(p)}")
     else:
-        db.execute(conn, f"""UPDATE local_prospects SET auto_state='replied', last_prospect_contact_at=UTC_TIMESTAMP()
-                             {", status='REPLIED', response_status='REPLIED'" if worked else ""} WHERE id=%s""", (p["id"],))
-        notify.send_text(f"💬 <b>{_name(p)}</b> a répondu à ton e-mail ! Relances arrêtées. Réponds-lui depuis ta boîte mail.{_link(p)}")
+        if worked:
+            sets.append("status='REPLIED', response_status='REPLIED'")
+        msg = f"💬 <b>{_name(p)}</b> a répondu à ton e-mail ! Relances arrêtées. Réponds-lui depuis ta boîte mail.{_link(p)}"
+    db.execute(conn, f"UPDATE local_prospects SET {', '.join(sets)} WHERE id=%s", (*args, p["id"]))
+    notify.send_text(msg)
     return result
 
 
