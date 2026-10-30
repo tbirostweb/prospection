@@ -136,3 +136,40 @@ test("migration 034 : idempotente", { skip }, async () => {
   const [cols] = await conn.query("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE table_schema = DATABASE() AND table_name = 'local_prospects' AND column_name IN ('deal_stage','deal_stage_at','remind_at','remind_note','reply_kind','reply_excerpt','reply_at')");
   assert.equal(Number((cols as any[])[0].n), 7);
 });
+
+test("migration 035 : idempotente", { skip }, async () => {
+  const sql = fs.readFileSync(path.join(ROOT, "db", "updates", "035_formulaire_telephone.sql"), "utf8");
+  await conn.query(sql);
+  await conn.query(sql);
+  const [cols] = await conn.query("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE table_schema = DATABASE() AND table_name = 'local_prospects' AND column_name IN ('contact_channel','call_attempts','last_call_at')");
+  assert.equal(Number((cols as any[])[0].n), 3);
+});
+
+test("files « À appeler » et « formulaire » : jamais contactées, sans e-mail, par score ; 3 appels sans réponse ou rappel à venir = hors liste", { skip }, async () => {
+  const src = fs.readFileSync(path.join(ROOT, "web", "lib", "localdb.ts"), "utf8");
+  const call = /CALL_QUEUE_SQL = `([^`]+)`/.exec(src)![1].replace("${CALL_QUEUE_LIMIT}", "200");
+  const form = /FORM_QUEUE_SQL = `([^`]+)`/.exec(src)![1].replace("${CONTACT_QUEUE_LIMIT}", "300");
+  await conn.query("DELETE FROM local_prospects");
+  const base = { pipeline_stage: "DONE", status: "QUALIFIED" };
+  const rows: Record<string, any>[] = [
+    { ...base, phone: "0325000001", prospect_score: 50 },                                         // 1 : à appeler (score moyen)
+    { ...base, phone: "0325000002", prospect_score: 90 },                                         // 2 : à appeler, en premier
+    { ...base, phone: "0325000003", email: "a@exemple.fr" },                                       // 3 : a un e-mail
+    { ...base, phone: "0325000004", email: "a@exemple.fr", auto_state: "bounced", prospect_score: 70 },   // 4 : e-mail revenu : à appeler
+    { ...base, phone: "0325000005", contacted_at: "2026-10-01 10:00:00" },                         // 5 : déjà contactée
+    { ...base, phone: "0325000006", call_attempts: 3 },                                            // 6 : 3 appels sans réponse
+    { ...base, phone: "0325000007", remind_at: "2026-11-10" },                                     // 7 : rappel à venir
+    { ...base, phone: "0325000008", remind_at: "2026-10-30", prospect_score: 10 },                 // 8 : rappel arrivé
+    { ...base, phone: "0325000009", do_not_contact: 1 },                                           // 9 : opposition
+    { ...base, contact_form: 1, contact_page: "https://exemple.fr/contact", prospect_score: 60 },  // 10 : formulaire
+    { ...base, contact_form: 1, contact_page: "https://exemple.fr/contact2", email: "b@exemple.fr", prospect_score: 99 },   // 11 : a un e-mail
+    { ...base, contact_form: 1, contact_page: "https://exemple.fr/contact3", contacted_at: "2026-10-01 10:00:00" },       // 12 : déjà contactée
+  ];
+  let id = 0;
+  for (const r of rows) { id++; await conn.query("INSERT INTO local_prospects SET ?", [{ id, siret: String(50000000000000 + id), fingerprint: `ap-${id}`, company_name: `APPEL ${id}`, ...r }]); }
+  const calls = (await conn.query(`SELECT p.id ${call}`, ["2026-10-30"]))[0] as any[];
+  assert.deepEqual(calls.map((r) => r.id), [2, 4, 1, 8]);
+  const forms = (await conn.query(`SELECT p.id ${form}`))[0] as any[];
+  assert.deepEqual(forms.map((r) => r.id), [10]);
+  await conn.query("DELETE FROM local_prospects");
+});

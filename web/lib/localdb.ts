@@ -36,6 +36,24 @@ export const EMAIL_QUEUE_SQL = `FROM local_prospects p
       AND TRIM(COALESCE(p.email, '')) <> '' AND COALESCE(p.auto_state, '') <> 'bounced'
     ORDER BY p.status = 'TO_CONTACT' DESC, p.prospect_score DESC LIMIT ${CONTACT_QUEUE_LIMIT}`;
 
+/** File « formulaire » (/rediger --canal formulaire) : jamais contactées, sans e-mail utilisable, avec une page de contact à formulaire. Triée par score. */
+export const FORM_QUEUE_SQL = `FROM local_prospects p
+    WHERE p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.status IN ('QUALIFIED','AUDITED','ENRICHED','DISCOVERED','TO_CONTACT')
+      AND p.is_chain = 0 AND p.contacted_at IS NULL AND COALESCE(p.category, '') <> 'IGNORER' AND p.pipeline_stage = 'DONE'
+      AND p.contact_form = 1 AND TRIM(COALESCE(p.contact_page, '')) <> ''
+      AND (TRIM(COALESCE(p.email, '')) = '' OR p.auto_state = 'bounced')
+    ORDER BY p.prospect_score DESC, p.id LIMIT ${CONTACT_QUEUE_LIMIT}`;
+
+/** Page « À appeler » : jamais contactées, avec un téléphone, sans e-mail utilisable (ou adresse revenue), moins de 3 appels sans réponse, pas de
+ *  rappel à venir. `?` = le jour (parisDay). */
+export const CALL_QUEUE_LIMIT = 200;
+export const CALL_QUEUE_SQL = `FROM local_prospects p
+    WHERE p.do_not_contact = 0 AND p.excluded_reason IS NULL AND p.status IN ('QUALIFIED','AUDITED','ENRICHED','DISCOVERED','TO_CONTACT')
+      AND p.is_chain = 0 AND p.contacted_at IS NULL AND COALESCE(p.category, '') <> 'IGNORER' AND p.pipeline_stage = 'DONE'
+      AND TRIM(COALESCE(p.phone, '')) <> '' AND (TRIM(COALESCE(p.email, '')) = '' OR p.auto_state = 'bounced')
+      AND p.call_attempts < 3 AND (p.remind_at IS NULL OR p.remind_at <= ?)
+    ORDER BY p.prospect_score DESC, p.id LIMIT ${CALL_QUEUE_LIMIT}`;
+
 /** « À rappeler » : rappels arrivés à échéance (aujourd'hui, heure de Paris, ou en retard). Les « intéressés » d'abord, puis les plus anciens.
  *  Miroir de today.reminders (worker). `?` = le jour (YYYY-MM-DD, voir parisDay). */
 export const REMINDERS_SQL = `SELECT id, company_name, trade_name, city, phone, email, remind_at, remind_note, reply_kind, reply_excerpt, deal_stage FROM local_prospects
@@ -46,7 +64,7 @@ export const parisDay = (d: Date = new Date()) => new Intl.DateTimeFormat("en-CA
 export const getReminders = () => safeRows<any>(REMINDERS_SQL, [parisDay()]);
 
 /** Fiches contactées avec ce qu'il faut pour le tableau « Ce qui répond » (lib/replystats.ts). */
-export const getReplyRows = () => safeRows<any>(`SELECT activity_label, draft_kind, prospect_score, status, response_status, reply_kind FROM local_prospects
+export const getReplyRows = () => safeRows<any>(`SELECT activity_label, draft_kind, prospect_score, status, response_status, reply_kind, contact_channel FROM local_prospects
     WHERE contacted_at IS NOT NULL OR status IN ('CONTACTED','REPLIED','INTERESTED','WON','LOST')`);
 
 export async function getLocalHome(): Promise<{ city?: string; postalCode?: string; defaultRadius?: number }> {

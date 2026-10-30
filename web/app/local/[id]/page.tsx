@@ -15,6 +15,7 @@ import { parseId, safeHref } from "@/lib/security";
 import ProspectActions from "./actions";
 import SiteReview from "./site-review";
 import DraftBox from "./draft";
+import FormSendBox from "@/components/FormSendBox";
 
 export const dynamic = "force-dynamic";
 const j = (v: any) => (typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v);
@@ -128,6 +129,10 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           {notAuto && <p className="mt-2 text-xs text-muted">{p.auto_state === "queued" ? "En attente" : "Pas d'envoi automatique"} : {notAuto}{notAuto.startsWith("fiche incomplète") ? " — l'app la complète seule." : ""}</p>}
           {canQueue && !p.draft_message && <p className="mt-2 text-xs text-muted">Crée d'abord le brouillon ci-dessous : c'est lui qui partira.</p>}
         </section>
+      )}
+
+      {p.contact_form && safeHref(p.contact_page) && (!p.email || p.auto_state === "bounced") && !p.do_not_contact && (p.contact_channel === "formulaire" || p.draft_message) && (
+        <FormSendBox id={p.id} body={p.draft_message} contactPage={safeHref(p.contact_page)!} sentAt={p.contact_channel === "formulaire" && p.contacted_at ? String(p.contacted_at) : null} />
       )}
 
       <DraftBox id={p.id} email={p.email} subject={p.draft_subject} body={p.draft_message} createdAt={p.draft_created_at ? String(p.draft_created_at) : null} doNotContact={!!p.do_not_contact} />

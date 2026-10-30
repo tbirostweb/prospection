@@ -3,7 +3,8 @@ import { query, queryOne, transaction } from "@/lib/db";
 import { readJson, routeId } from "@/lib/api";
 import { DEAL_STAGES, DISLIKE_REASONS, MANUAL_STATUSES, isImported } from "@/lib/local";
 import { FREEMAIL, autoIneligible } from "@/lib/autosend";
-import { getAutoSend } from "@/lib/localdb";
+import { getAutoSend, parisDay } from "@/lib/localdb";
+import { FORM_FOLLOWUP_DAYS, addDays, planCallResult } from "@/lib/calls";
 
 const RESPONSES = ["", "REPLIED", "INTERESTED", "NOT_INTERESTED", "NO_ANSWER", "NOT_A_FIT", "WON"];
 
@@ -129,6 +130,35 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await query(`UPDATE local_prospects SET deal_stage=?, deal_stage_at=UTC_TIMESTAMP(), status=?, response_status=?,
       contacted_at=COALESCE(contacted_at, UTC_TIMESTAMP()), last_prospect_contact_at=UTC_TIMESTAMP(),
       remind_at=IF(?, NULL, remind_at), remind_note=IF(?, NULL, remind_note) WHERE id=?`, [stage, status, response, closed ? 1 : 0, closed ? 1 : 0, id]);
+    return NextResponse.json({ ok: true });
+  }
+  // Message envoyé par le formulaire de contact du site (fait PAR TOI) : fiche contactée, canal noté, rappel à J+7. Rien n'est envoyé d'ici.
+  if (b.action === "form_sent") {
+    if (p.do_not_contact) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
+    await query(`UPDATE local_prospects SET status='CONTACTED', followups=IF(contacted_at IS NULL, 0, followups), contacted_at=COALESCE(contacted_at, UTC_TIMESTAMP()),
+      last_contacted_at=UTC_TIMESTAMP(), contact_channel='formulaire', remind_at=?, remind_note=? WHERE id=?`,
+      [addDays(parisDay(), FORM_FOLLOWUP_DAYS), "Relancer par téléphone ou formulaire", id]);
+    return NextResponse.json({ ok: true });
+  }
+  // Résultat d'un appel (page « À appeler ») : pas de réponse (rappel J+2, 3 essais), à rappeler le…, intéressé, pas intéressé.
+  // Dès que quelqu'un a répondu, la fiche est marquée contactée par téléphone. « Ne plus contacter » passe par `status: "DO_NOT_CONTACT"`.
+  if (b.action === "call_result") {
+    if (p.do_not_contact) return NextResponse.json({ error: "entreprise en liste « ne plus contacter »" }, { status: 409 });
+    const plan = planCallResult(String(b.result ?? ""), parisDay(), Number(p.call_attempts ?? 0), b.date ? String(b.date) : null);
+    if (!plan) return NextResponse.json({ error: "résultat d'appel ou date invalide" }, { status: 400 });
+    // une affaire déjà avancée (réponse, intérêt, gagnée) ne « recule » pas sur un simple « à rappeler »
+    const keepStatus = ["WON", "INTERESTED", "REPLIED"].includes(p.status) && plan.status === "CONTACTED";
+    const r = plan.reached ? 1 : 0;
+    await query(`UPDATE local_prospects SET call_attempts=call_attempts+?, last_call_at=UTC_TIMESTAMP(),
+      status=IF(? IS NULL OR ?, status, ?), response_status=COALESCE(?, response_status), deal_stage=COALESCE(?, deal_stage),
+      deal_stage_at=IF(? IS NULL, deal_stage_at, UTC_TIMESTAMP()),
+      followups=IF(? AND contacted_at IS NULL, 0, followups),
+      contacted_at=IF(?, COALESCE(contacted_at, UTC_TIMESTAMP()), contacted_at), last_contacted_at=IF(?, UTC_TIMESTAMP(), last_contacted_at),
+      last_prospect_contact_at=IF(?, UTC_TIMESTAMP(), last_prospect_contact_at), contact_channel=IF(?, 'telephone', contact_channel) WHERE id=?`,
+      [plan.attemptsInc ? 1 : 0, plan.status ?? null, keepStatus ? 1 : 0, plan.status ?? null, plan.response ?? null, plan.dealStage ?? null, plan.dealStage ?? null,
+        r, r, r, r, r, id]);
+    if (plan.remind !== undefined)
+      await query("UPDATE local_prospects SET remind_at=?, remind_note=? WHERE id=?", [plan.remind?.at ?? null, plan.remind?.note ?? null, id]);
     return NextResponse.json({ ok: true });
   }
   // « À rappeler le » + note courte ; date vide = rappel fait / supprimé.

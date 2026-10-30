@@ -1,10 +1,13 @@
 """Pont entre la commande Claude Code /rediger et l'application (bibliothèque standard uniquement ; ce script n'envoie aucun e-mail).
 
-    python3 scripts/rediger.py queue [--limit 5] [--include-drafted] [--email-only]
+    python3 scripts/rediger.py queue [--limit 5] [--include-drafted] [--email-only | --canal formulaire]
                                                                        -> file de rédaction (faits vérifiés + brouillon de référence), en JSON ;
                                                                           --email-only : seulement les prospects qui peuvent partir par e-mail automatique
-                                                                          (quel que soit leur site : il fixe seulement l'angle, refonte / creation / neutre)
-    python3 scripts/rediger.py save ID fichier.json [--no-auto]        -> dépose {"subject", "core"} comme brouillon (refusé si un garde-fou échoue)
+                                                                          (quel que soit leur site : il fixe seulement l'angle, refonte / creation / neutre) ;
+                                                                          --canal formulaire : fiches sans e-mail avec un formulaire de contact (par score), avec
+                                                                          l'URL de la page de contact ; leurs brouillons ne partent jamais seuls
+    python3 scripts/rediger.py save ID fichier.json [--no-auto] [--canal formulaire]
+                                                                       -> dépose {"subject", "core"} comme brouillon (refusé si un garde-fou échoue)
                                                                           et le met en file d'envoi automatique si le prospect est éligible
                                                                           (l'envoi est fait par le worker, seulement s'il est activé dans Réglages)
 
@@ -70,17 +73,25 @@ def main(argv: list[str]) -> int:
     if argv[0] == "queue":
         limit = argv[argv.index("--limit") + 1] if "--limit" in argv else "5"
         extra = ("&include_drafted=1" if "--include-drafted" in argv else "") + ("&email_only=1" if "--email-only" in argv else "")
+        if "--canal" in argv:
+            extra += "&canal=" + argv[argv.index("--canal") + 1]
         status, data = call("GET", f"/api/local/agent/queue?limit={int(limit)}{extra}")
         print(json.dumps(data, ensure_ascii=False, indent=2))
         return 0 if status == 200 else 1
     auto = "--no-auto" not in argv
+    canal = None
+    if "--canal" in argv:
+        i = argv.index("--canal")
+        canal = argv[i + 1] if i + 1 < len(argv) else None
+        argv = argv[:i] + argv[i + 2:]
     argv = [a for a in argv if a != "--no-auto"]
     if len(argv) != 3:
-        print("usage : rediger.py save ID fichier.json [--no-auto]", file=sys.stderr)
+        print("usage : rediger.py save ID fichier.json [--no-auto] [--canal formulaire]", file=sys.stderr)
         return 2
     draft = json.loads(pathlib.Path(argv[2]).read_text(encoding="utf-8"))
     status, data = call("POST", f"/api/local/prospects/{int(argv[1])}/draft",
-                        {"source": "rediger", "subject": draft.get("subject", ""), "core": draft.get("core", ""), "auto": auto})
+                        {"source": "rediger", "subject": draft.get("subject", ""), "core": draft.get("core", ""), "auto": auto,
+                         **({"canal": canal} if canal else {})})
     if status == 200:
         if data.get("queued"):
             where = "envoi automatique activé" if data.get("autoEnabled") else "envoi automatique DÉSACTIVÉ dans Réglages : rien ne part pour l'instant"

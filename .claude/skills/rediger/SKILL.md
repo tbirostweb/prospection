@@ -1,7 +1,7 @@
 ---
 name: rediger
 description: Rédige des e-mails de prospection personnalisés pour les prospects prêts de l'app (déclencheurs forts d'abord), à partir des seuls faits vérifiés et de l'offre réglée dans l'app, puis les dépose et les met en file d'envoi automatique (adresses professionnelles, et Gmail, Orange… si le réglage l'autorise). L'envoi est fait par l'app, seulement s'il est activé dans Réglages.
-argument-hint: "[nombre de prospects, 5 par défaut, 50 au plus] [avec prix] [sans envoi] [tous]"
+argument-hint: "[nombre de prospects, 5 par défaut, 50 au plus] [avec prix] [sans envoi] [tous] [formulaire]"
 model: haiku
 disable-model-invocation: true
 allowed-tools: Bash(python3 scripts/rediger.py *)
@@ -49,6 +49,22 @@ Si l'application refuse (`problems`), corriger exactement ce qui est listé et r
 ## 4. Compte rendu
 
 Un tableau court : entreprise, déclencheur (ou premier fait), objet, résultat (en file d'envoi / à contacter soi-même / refusé, avec la raison), lien `fiche`. Rappeler en une ligne : le suivi des envois et des réponses est dans l'onglet Envois de l'app ; un message en file peut être retiré depuis sa fiche avant son départ.
+
+## Variante `/rediger N formulaire` : fiches sans e-mail, par formulaire de contact
+
+Quand `$ARGUMENTS` contient « formulaire », ne traiter QUE les fiches jamais contactées, sans e-mail utilisable, qui ont une page de contact à formulaire (triées par score, sans déclencheurs d'abord) :
+
+```bash
+python3 scripts/rediger.py queue --limit N --canal formulaire
+```
+
+Chaque prospect a `canal: "formulaire"` et `page_contact` (l'URL de la page). Rédiger comme au point 2 en suivant le canal « formulaire de contact » du skill `message-prospection` (110 mots au plus, pas d'objet à soigner : l'objet reste court). Déposer avec :
+
+```bash
+python3 scripts/rediger.py save ID /chemin/vers/brouillon.json --canal formulaire
+```
+
+Ces brouillons ne sont **jamais** mis en file d'envoi automatique (même sans `--no-auto`). Sur la fiche de l'entreprise, Théo voit le message avec « Copier », le lien « Ouvrir la page de contact » et « Envoyé via le formulaire » (fiche marquée contactée, canal noté, rappel à J+7 « relancer par téléphone ou formulaire »). Compte rendu : entreprise, page de contact, résultat, lien `fiche` ; rappeler que rien n'est parti et qu'il reste à coller le message dans le formulaire. Les fiches avec seulement un téléphone ne passent pas par /rediger : elles sont dans l'onglet « À appeler » de l'app (argumentaire de 3 lignes construit par l'app).
 
 ## Configuration (une fois)
 

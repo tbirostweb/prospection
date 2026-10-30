@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 // Cinq entrées seulement. Carte et tournée sont accessibles depuis « Entreprises » et « À contacter », les statistiques depuis « Réglages ».
 const NAV = [
   { href: "/local/contact", label: "À contacter", also: ["/local/tournee", "/local/import"] },
+  { href: "/local/appeler", label: "À appeler", also: [] },
   { href: "/local/suivi", label: "Suivi", also: [] },
   { href: "/local/envois", label: "Envois", also: [] },
   { href: "/local", label: "Entreprises", also: ["/local/carte"] },
