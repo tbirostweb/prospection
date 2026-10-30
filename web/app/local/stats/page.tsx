@@ -234,6 +234,7 @@ export default async function LocalStats() {
       <section className="mb-10 min-w-0">
         <h2 className="section-title">Ce qui répond</h2>
         <p className="mb-3 text-sm text-muted">Fiches contactées, par métier, par angle du message et par tranche de score. « Réponses » compte toute réponse (y compris « pas intéressé ») ; les lignes de moins de 3 contactés sont regroupées dans « Autres ». Peu de contacts : lis ces taux avec prudence.</p>
+        <Table title="Par version du message (test A/B)" rows={replyT.version} cols={replyCols} />
         <Table title="Par canal (e-mail, formulaire, téléphone)" rows={replyT.channel} cols={replyCols} />
         <Table title="Par métier" rows={replyT.activity} cols={replyCols} />
         <Table title="Par angle du message" rows={replyT.angle} cols={replyCols} />

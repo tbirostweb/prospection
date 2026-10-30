@@ -49,3 +49,12 @@ test("aucune donnée : tableaux vides", () => {
   const t = replyTables([]);
   assert.deepEqual([t.activity, t.angle, t.score], [[], [], []]);
 });
+
+test("test A/B : version du message d'après son type", async () => {
+  const { messageVersion } = await import("../lib/replystats");
+  assert.equal(messageVersion("ai_sans_site"), "Version A (actuelle)");
+  assert.equal(messageVersion("aib_site_refonte"), "Variante B (courte)");
+  assert.equal(messageVersion("site_refonte"), "Avant le test / autre");
+  const t = replyTables([{ draft_kind: "aib_sans_site", reply_kind: "interested" }, { draft_kind: "ai_sans_site" }] as ReplyInput[]);
+  assert.deepEqual(t.version.map((r) => [r.name, r.contacted, r.interested]), [["Version A (actuelle)", 1, 0], ["Variante B (courte)", 1, 1]]);
+});

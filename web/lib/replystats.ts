@@ -44,8 +44,14 @@ export function groupReplies(rows: ReplyInput[], key: (r: ReplyInput) => string,
   return out;
 }
 
+/** Test A/B des premiers messages (/rediger) : « ai_ » = version actuelle, « aib_ » = variante B (plus courte, renvoi vers les réalisations). */
+export const VERSION_LABELS = ["Version A (actuelle)", "Variante B (courte)", "Avant le test / autre"];
+export const messageVersion = (kind: string | null | undefined) =>
+  /^aib_/.test(kind ?? "") ? VERSION_LABELS[1] : /^ai_/.test(kind ?? "") ? VERSION_LABELS[0] : VERSION_LABELS[2];
+
 export function replyTables(rows: ReplyInput[], minContacted = MIN_CONTACTED) {
   return {
+    version: groupReplies(rows, (r) => messageVersion(r.draft_kind), 1, VERSION_LABELS),
     channel: groupReplies(rows, (r) => channelLabel(r.contact_channel), 1, Object.values(CHANNEL_LABELS)),
     activity: groupReplies(rows, (r) => (r.activity_label || "Non classée").trim(), minContacted),
     angle: groupReplies(rows, (r) => { const a = draftAngle(r.draft_kind); return a ? ANGLE_LABELS[a] : "Message écrit à la main / inconnu"; }, minContacted,

@@ -1,7 +1,7 @@
 ---
 name: rediger
 description: Rédige des e-mails de prospection personnalisés pour les prospects prêts de l'app (déclencheurs forts d'abord), à partir des seuls faits vérifiés et de l'offre réglée dans l'app, puis les dépose et les met en file d'envoi automatique (adresses professionnelles, et Gmail, Orange… si le réglage l'autorise). L'envoi est fait par l'app, seulement s'il est activé dans Réglages.
-argument-hint: "[nombre de prospects, 5 par défaut, 50 au plus] [avec prix] [sans envoi] [tous] [formulaire]"
+argument-hint: "[nombre de prospects, 5 par défaut, 50 au plus] [avec prix] [sans envoi] [tous] [formulaire] [test]"
 model: haiku
 disable-model-invocation: true
 allowed-tools: Bash(python3 scripts/rediger.py *)
@@ -49,6 +49,10 @@ Si l'application refuse (`problems`), corriger exactement ce qui est listé et r
 ## 4. Compte rendu
 
 Un tableau court : entreprise, déclencheur (ou premier fait), objet, résultat (en file d'envoi / à contacter soi-même / refusé, avec la raison), lien `fiche`. Rappeler en une ligne : le suivi des envois et des réponses est dans l'onglet Envois de l'app ; un message en file peut être retiré depuis sa fiche avant son départ.
+
+## Test A/B : `/rediger N test`
+
+Avec « test » dans `$ARGUMENTS`, alterner dans l'ordre de la file : le premier prospect en version A (la trame habituelle), le suivant en **variante B** (section « Variante B » du skill `message-prospection`), et ainsi de suite. Déposer chaque message B avec `--variante-b` à la fin de la commande `save` (il est enregistré comme « aib_… » et compté à part). Les deux versions partent dans la même file, au même rythme. Le compte rendu indique la version de chaque message ; les résultats sont dans Statistiques, tableau « Par version du message (test A/B) ». Juger sur les réponses intéressées, pas sur les ouvertures, et pas avant une trentaine d'envois par version.
 
 ## Variante `/rediger N formulaire` : fiches sans e-mail, par formulaire de contact
 

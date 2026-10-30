@@ -32,6 +32,7 @@ test("seules les adresses professionnelles jamais contactées sont mises en file
   assert.equal(autoIneligible({ ...P, draft_message: null }, false), "pas de brouillon");
   assert.match(autoIneligible({ ...P, draft_kind: "site_refonte" }, false)!, /\/rediger/);             // brouillon du code : jamais envoyé tel quel
   assert.equal(autoIneligible({ ...P, draft_kind: "ai_site_refonte" }, false), null);
+  assert.equal(autoIneligible({ ...P, draft_kind: "aib_site_refonte" }, false), null);               // variante B du test A/B
   assert.equal(autoIneligible({ ...P, email: null }, false), "pas d'adresse e-mail");
 });
 

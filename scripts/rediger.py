@@ -84,14 +84,15 @@ def main(argv: list[str]) -> int:
         i = argv.index("--canal")
         canal = argv[i + 1] if i + 1 < len(argv) else None
         argv = argv[:i] + argv[i + 2:]
-    argv = [a for a in argv if a != "--no-auto"]
+    variant = "b" if "--variante-b" in argv else None          # test A/B : version courte (skill message-prospection, « Variante B »)
+    argv = [a for a in argv if a not in ("--no-auto", "--variante-b")]
     if len(argv) != 3:
-        print("usage : rediger.py save ID fichier.json [--no-auto] [--canal formulaire]", file=sys.stderr)
+        print("usage : rediger.py save ID fichier.json [--no-auto] [--canal formulaire] [--variante-b]", file=sys.stderr)
         return 2
     draft = json.loads(pathlib.Path(argv[2]).read_text(encoding="utf-8"))
     status, data = call("POST", f"/api/local/prospects/{int(argv[1])}/draft",
                         {"source": "rediger", "subject": draft.get("subject", ""), "core": draft.get("core", ""), "auto": auto,
-                         **({"canal": canal} if canal else {})})
+                         **({"canal": canal} if canal else {}), **({"variant": variant} if variant else {})})
     if status == 200:
         if data.get("queued"):
             where = "envoi automatique activé" if data.get("autoEnabled") else "envoi automatique DÉSACTIVÉ dans Réglages : rien ne part pour l'instant"

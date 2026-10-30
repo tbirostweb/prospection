@@ -36,8 +36,8 @@ export function autoIneligible(p: FicheFields & { contacted_at?: any; draft_mess
   if (p.contacted_at) return "déjà contacté";
   if (!p.draft_message) return "pas de brouillon";
   // Brouillon de référence construit par le code (« Créer un brouillon ») : pas au style validé, jamais envoyé tel quel. Seul un message
-  // rédigé avec /rediger (type « ai_… », modifiable ensuite à la main) part automatiquement.
-  if (p.draft_kind && !String(p.draft_kind).startsWith("ai_")) return "brouillon de référence : à rédiger avec /rediger avant l'envoi automatique";
+  // rédigé avec /rediger (type « ai_… », ou « aib_… » pour la variante B du test, modifiable ensuite à la main) part automatiquement.
+  if (p.draft_kind && !/^aib?_/.test(String(p.draft_kind))) return "brouillon de référence : à rédiger avec /rediger avant l'envoi automatique";
   return null;
 }
 

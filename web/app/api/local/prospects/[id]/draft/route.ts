@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (problems.length) return NextResponse.json({ error: "brouillon refusé", problems }, { status: 422 });
     subject = subj;
     body = wrapDraft(p, sender, core);
-    kind = `ai_${d.kind}`;
+    kind = `${b.variant === "b" ? "aib" : "ai"}_${d.kind}`;   // « aib_ » : variante B du test A/B (tableau « Par version du message »)
   }
   await query("UPDATE local_prospects SET draft_subject=?, draft_message=?, draft_kind=?, draft_created_at=UTC_TIMESTAMP() WHERE id=?", [subject, body, kind.slice(0, 24), id]);
   // Mise en file : jamais pour une séquence déjà en cours ou terminée (réponse, refus, adresse invalide…).

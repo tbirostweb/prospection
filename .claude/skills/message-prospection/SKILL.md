@@ -94,6 +94,15 @@ Le modèle est un e-mail réécrit par Théo lui-même. Toujours cette trame, qu
 - « Je rédige les textes à partir de ce que vous me racontez, vous n'avez qu'à relire » ou des options (fiche Google) à la place de la prise en charge du temps 3.
 L'application refuse au dépôt ces tournures et ne laisse partir aucun brouillon à l'ancien style.
 
+## Variante B (test A/B, seulement quand l'appelant la demande)
+
+Même trame, mêmes règles (faits, interdits, ton), avec ces différences et rien d'autre :
+- **Longueur** : environ 120 à 140 mots.
+- **Temps 3, prise en charge en deux phrases** : « Je prends en charge le design, les textes et la mise en ligne, puis la maintenance. Nous échangeons d'abord sur votre activité et vous validez le contenu avant publication. » Pas d'option photos.
+- **Temps 4, question** : création : « Est-ce que vous avez déjà envisagé de créer un site pour votre entreprise ? » ; refonte : « Est-ce que vous avez déjà envisagé de refaire votre site ? » ; neutre : « Est-ce que vous avez déjà pensé à être plus visible sur internet ? ».
+- **Temps 5, renvoi** : « Vous pouvez voir des exemples de mon travail sur mon site, dans ma signature. »
+- **Objet** : création et neutre : « Votre entreprise sur internet » ; refonte : « À propos de votre site ».
+
 ## 4. Le prix : deux approches
 
 - **Sans prix (par défaut)** : aucun montant, aucune offre, aucun lien vers la page des offres : le « Je vous partage mon site » du temps 5 suffit, le prix se donne quand la personne montre de l'intérêt.
